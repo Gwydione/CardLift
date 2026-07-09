@@ -42,6 +42,7 @@ DeckForge/
     ├── cropper.py             # CardCropper: renders + geometry → cropped card images
     ├── contact_sheet.py       # Tiles a list of images into a labeled QA sheet
     ├── exporter.py             # DeckExporter: orchestrates preview/export/contact-sheet
+    ├── measure.py              # --measure: pixel coords → suggested profile patch (no rendering, no pipeline)
     └── cli.py                  # argparse wiring
 ```
 
@@ -137,7 +138,8 @@ Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
    two files to `preview/`:
    - `calibration_overlay.png` — the full page with every cell drawn on
      it: **blue** = the raw cell (`left`/`top`/`card_width`/`card_height`/
-     `gap`), **red** = the actual saved crop (after trim).
+     `gap`), **red** = the actual saved crop (after trim), each labeled by
+     row/col (and card number, for a front page).
    - `page{N}_preview.png` — a contact sheet of just that page's cropped
      cards.
 3. Open `calibration_overlay.png` and adjust the profile based on what
@@ -154,12 +156,12 @@ Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
 
 4. Re-run `--preview` after every change until the red boxes sit exactly
    on the edges you want, with no art clipped and no neighboring card
-   included.
-5. If your deck's back page uses a different grid than the fronts,
-   repeat steps 2–4 for the `back_*` fields, checking `output/back.png`
-   after an export (there's no dedicated back-page preview command yet —
-   the fastest loop is export → check `output/back.png` → adjust →
-   re-export).
+   included. For a single stubborn card, `--inspect` (below) gives a much
+   closer look than the full-page overlay.
+5. If your deck's back page uses a different grid than the fronts, run
+   `--overlay --page <back_page>` to check the back grid directly (see
+   "Overlay and inspect" below) instead of round-tripping through a full
+   export.
 6. Export:
    ```bash
    python extract.py --profile your_deck --export
@@ -176,6 +178,113 @@ Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
    Writes `preview/contact_sheet.png` with every exported front (in
    order) plus the back, so you can scan the whole deck before importing.
 
+## Measuring a new deck fast (`--measure`)
+
+Starting a profile from `0`s and iterating blind against
+`calibration_overlay.png` works, but it can take many guess-render-look
+cycles to converge. `--measure` skips the guessing: give it pixel
+coordinates you read directly off an already-rendered image (from
+`--preview` or `--overlay`), and it converts them back into PDF points
+and prints the `left`/`top`/`card_width`/`card_height`/`gap_x`/`gap_y`
+values that would produce them — usually enough for the very first
+`--preview` to already land close.
+
+It does **not** render, crop, export, or touch your profile file — it's
+pure arithmetic over numbers you already have, kept deliberately outside
+the crop/export pipeline. It only ever prints a suggestion.
+
+1. Render a page you don't have a profile for yet (or a rough one), e.g.
+   ```bash
+   python extract.py --profile your_deck --overlay
+   ```
+   and open `preview/calibration_overlay.png` in any image viewer that
+   shows pixel coordinates on hover (e.g. GIMP, Photoshop, `ImageMagick
+   display`, or your OS's default viewer if it has a coordinate readout).
+2. Hover the top-left and bottom-right corners of one card's visible
+   cell and note their pixel coordinates.
+3. Run:
+   ```bash
+   python extract.py --profile your_deck --measure \
+     --card r0c0:240,420,960,1360
+   ```
+   `r0c0` says this measurement is row 0, column 0; the four numbers are
+   the cell's top-left corner `(x1,y1)` and bottom-right corner
+   `(x2,y2)`, in pixels. This alone is enough to derive `left`, `top`,
+   `card_width`, and `card_height` (assuming `gap_x`/`gap_y` are 0, or
+   whatever the profile currently has).
+4. To also derive `gap_x`/`gap_y`, measure a second card in a different
+   row and/or column and pass a second `--card`:
+   ```bash
+   python extract.py --profile your_deck --measure \
+     --card r0c0:240,420,960,1360 \
+     --card r0c1:1000,420,1720,1360
+   ```
+   Two cards in the same row (different column) derive `gap_x`; two in
+   the same column (different row) derive `gap_y`; a diagonal pair
+   derives both at once.
+5. `--measure` prints an old-value → new-value patch listing, e.g.:
+   ```
+   Suggested patch for profiles/your_deck.json:
+     "left": 0.000 -> 60.000
+     "top": 0.000 -> 105.000
+     "card_width": 0.000 -> 180.000
+     "card_height": 0.000 -> 235.000
+     "gap_x": 0.000 -> 10.000
+     "gap_y": 0.000  (unchanged -- not enough points to derive; add a second --card in a different row/col)
+   ```
+   Copy the values you want into `profiles/your_deck.json` by hand, then
+   run `--preview` to check them against the real crop — `--measure`
+   gets you close, but `trim_*` (shaving a border/cut-line) still needs
+   the usual visual check, since it's a stylistic choice, not something
+   derivable from a card's outer edges.
+6. Pass `--page` to measure against the back page's grid instead (only
+   meaningful if the back page uses `back_*` overrides — see "Front/back
+   grids can differ" above):
+   ```bash
+   python extract.py --profile your_deck --measure --page 8 \
+     --card r0c0:100,100,500,700
+   ```
+   When `--page` matches the profile's `back_page`, the suggested patch
+   uses `back_left`/`back_top`/`back_card_width`/`back_card_height`/
+   `back_gap_x`/`back_gap_y` instead of the front fields.
+
+## Overlay and inspect (fine-tuning a profile)
+
+`--preview` covers the common case (check the first front page, adjust,
+repeat), but two more targeted commands help once you're down to small
+adjustments or a single problem card:
+
+- **`--overlay`** renders one page — by default `first_front_page` — with
+  every crop rectangle drawn over it (same blue/red convention as
+  `--preview`) and writes it to `preview/calibration_overlay.png`. Pass
+  `--page` to check a different page instead, most usefully the deck's
+  `back_page`:
+
+  ```bash
+  python extract.py --profile solo_cards --overlay
+  python extract.py --profile solo_cards --overlay --page 8
+  ```
+
+  This is the same overlay `--preview` writes, just without also having
+  to re-crop and rebuild a contact sheet — use it when you only want to
+  re-check rectangle placement, especially for the back page, which
+  `--preview` doesn't cover.
+
+- **`--inspect CARD_NUM`** exports one card at high zoom, with the raw
+  cell (blue) and trimmed crop (red) boundaries drawn and a margin of
+  surrounding page content left visible, so you can see exactly what a
+  trim value is keeping or cutting off. `CARD_NUM` is 1-indexed and
+  matches the numbering `--export` uses for `front_NNN.png`:
+
+  ```bash
+  python extract.py --profile solo_cards --inspect 1
+  # → preview/inspect_card001.png
+  ```
+
+  Use this when the full-page overlay is too small to tell whether a red
+  box is 1-2pt off, or to check one specific card (e.g. the last one on a
+  page, in case of cumulative drift) without re-rendering the whole page.
+
 ## Commands
 
 ```bash
@@ -187,6 +296,15 @@ python extract.py --profile solo_cards --export
 
 python extract.py --profile solo_cards --contact-sheet
 # → preview/contact_sheet.png
+
+python extract.py --profile solo_cards --overlay [--page N]
+# → preview/calibration_overlay.png (defaults to first_front_page)
+
+python extract.py --profile solo_cards --inspect CARD_NUM
+# → preview/inspect_card{CARD_NUM:03d}.png
+
+python extract.py --profile solo_cards --measure --card r0c0:X1,Y1,X2,Y2 [--card rRcC:X1,Y1,X2,Y2] [--page N]
+# → prints a suggested left/top/card_width/card_height/gap_x/gap_y patch; writes nothing
 ```
 
 All front cards are guaranteed to come out at identical pixel dimensions

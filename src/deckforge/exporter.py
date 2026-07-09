@@ -18,7 +18,7 @@ from PIL import Image
 from .contact_sheet import build_contact_sheet
 from .cropper import CardCropper
 from .pdf_renderer import PDFRenderer
-from .profile import DeckProfile
+from .profile import DeckProfile, GridGeometry
 
 
 @dataclass
@@ -49,6 +49,12 @@ class ExportError(Exception):
 
 
 class DeckExporter:
+    # How much extra zoom --inspect renders at, relative to the profile's
+    # own render_scale, and how many points of surrounding page content it
+    # leaves visible around the card.
+    INSPECT_SCALE_MULTIPLIER = 3
+    INSPECT_MARGIN_PT = 24.0
+
     def __init__(self, profile: DeckProfile, paths: DeckForgePaths):
         self.profile = profile
         self.paths = paths
@@ -72,6 +78,46 @@ class DeckExporter:
             f"{self.paths.sample_decks_dir} (or the project root)."
         )
 
+    # -- shared helpers ---------------------------------------------------
+
+    def _geometry_for_page(self, page_num: int) -> GridGeometry:
+        """The grid geometry that applies to a given 1-indexed page: the
+        back grid for back_page, otherwise the front grid."""
+        if page_num == self.profile.back_page:
+            return self.profile.back_geometry()
+        return self.profile.front_geometry()
+
+    def _card_number_for(self, page_num: int, row: int, col: int) -> Optional[int]:
+        """The global card number (matching front_NNN.png numbering) for
+        (page_num, row, col), or None if page_num isn't a front page."""
+        p = self.profile
+        if not (p.first_front_page <= page_num <= p.last_front_page):
+            return None
+        page_offset = page_num - p.first_front_page
+        return page_offset * p.rows * p.cols + row * p.cols + col + 1
+
+    def _locate_card(self, card_number: int) -> tuple[int, int, int]:
+        """Maps a 1-indexed front card number to (page_num, row, col)."""
+        p = self.profile
+        per_page = p.rows * p.cols
+        total_pages = p.last_front_page - p.first_front_page + 1
+        total_cards = per_page * total_pages
+        if card_number < 1 or card_number > total_cards:
+            raise ExportError(
+                f"card {card_number} is out of range -- profile '{p.name}' "
+                f"has {total_cards} front cards (pages {p.first_front_page}-"
+                f"{p.last_front_page}, {p.rows}x{p.cols} grid per page)"
+            )
+        page_offset, local_index = divmod(card_number - 1, per_page)
+        row, col = divmod(local_index, p.cols)
+        return p.first_front_page + page_offset, row, col
+
+    def _overlay_image(self, page_image: Image.Image, geometry: GridGeometry, page_num: int) -> Image.Image:
+        return self.cropper.draw_calibration_overlay(
+            page_image, geometry,
+            card_number_fn=lambda row, col: self._card_number_for(page_num, row, col),
+        )
+
     # -- preview ------------------------------------------------------
 
     def preview(self) -> list[Path]:
@@ -86,7 +132,7 @@ class DeckExporter:
             page_image = renderer.render_page(page_num, self.profile.render_scale)
             geometry = self.profile.front_geometry()
 
-            overlay = self.cropper.draw_calibration_overlay(page_image, geometry)
+            overlay = self._overlay_image(page_image, geometry, page_num)
             overlay_path = self.paths.preview_dir / "calibration_overlay.png"
             overlay.save(overlay_path)
             written.append(overlay_path)
@@ -102,6 +148,50 @@ class DeckExporter:
             written.append(sheet_path)
 
         return written
+
+    # -- overlay ------------------------------------------------------
+
+    def overlay(self, page_num: Optional[int] = None) -> Path:
+        """Renders one page (default: first_front_page) with every crop
+        rectangle drawn over it, labeled by row/col and card number, and
+        writes it to preview/calibration_overlay.png. `page_num` can be
+        any page in the profile, including back_page, to check its grid
+        instead."""
+        self.paths.ensure_dirs()
+        if page_num is None:
+            page_num = self.profile.first_front_page
+        geometry = self._geometry_for_page(page_num)
+
+        with PDFRenderer(self._find_pdf()) as renderer:
+            page_image = renderer.render_page(page_num, self.profile.render_scale)
+            overlay_img = self._overlay_image(page_image, geometry, page_num)
+
+        overlay_path = self.paths.preview_dir / "calibration_overlay.png"
+        overlay_img.save(overlay_path)
+        return overlay_path
+
+    # -- inspect ------------------------------------------------------
+
+    def inspect(self, card_number: int) -> Path:
+        """Exports a high-zoom inspection image of one front card (1-
+        indexed, matching front_NNN.png numbering) to preview/, with the
+        cell and trimmed-crop boundaries drawn and a margin of surrounding
+        page content left visible."""
+        self.paths.ensure_dirs()
+        page_num, row, col = self._locate_card(card_number)
+        geometry = self.profile.front_geometry()
+        inspect_scale = self.profile.render_scale * self.INSPECT_SCALE_MULTIPLIER
+
+        with PDFRenderer(self._find_pdf()) as renderer:
+            page_image = renderer.render_page(page_num, inspect_scale)
+
+        inspect_img = self.cropper.crop_inspect(
+            page_image, geometry, row, col,
+            scale=inspect_scale, margin_pt=self.INSPECT_MARGIN_PT,
+        )
+        inspect_path = self.paths.preview_dir / f"inspect_card{card_number:03d}.png"
+        inspect_img.save(inspect_path)
+        return inspect_path
 
     # -- export ---------------------------------------------------------
 
