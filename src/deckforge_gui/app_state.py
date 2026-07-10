@@ -49,7 +49,7 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
     ),
     WorkflowStep.FIND_CARDS: (
         "Show DeckForge your cards.",
-        "Point out where the card grid starts on the page.",
+        "Click anywhere on the card grid to mark this page.",
     ),
     WorkflowStep.CALIBRATE_CARDS: (
         "Show DeckForge the first card.",

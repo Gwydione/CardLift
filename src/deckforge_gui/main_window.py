@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
 from .calibrate_toolbar import CalibrateToolbar
+from .find_cards_state import FindCardsState
 from .guidance_panel import GuidancePanel
 from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
@@ -72,6 +73,7 @@ class MainWindow(QMainWindow):
 
         self.state = AppState()
         self.session = DeckSession()
+        self.find_cards_state = FindCardsState()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -114,12 +116,13 @@ class MainWindow(QMainWindow):
         self.workspace_stack = QStackedWidget()
         center_layout.addWidget(self.workspace_stack, 1)
 
-        self.workspaces = build_workspaces(self.state)
+        self.workspaces = build_workspaces(self.state, self.find_cards_state)
         for step in WORKFLOW_ORDER:
             self.workspace_stack.addWidget(self.workspaces[step])
 
         self.deck_workspace = self.workspaces[WorkflowStep.DECK]
         self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
+        self.find_cards_workspace = self.workspaces[WorkflowStep.FIND_CARDS]
 
         self.guidance_panel = GuidancePanel(self.state)
         self.guidance_panel.collapse_toggled.connect(self._on_guidance_collapse_toggled)
@@ -149,6 +152,11 @@ class MainWindow(QMainWindow):
             self.deck_workspace.show_error(str(exc))
             return
         self._update_deck_status_label()
+        # A newly (or re-)loaded PDF invalidates any previous markers --
+        # page N in a different PDF has no relationship to page N's marker
+        # in the last one.
+        self.find_cards_state.clear_all()
+        self.find_cards_workspace.set_pdf(path, self.session.page_count)
         self._on_step_selected(WorkflowStep.FIND_CARDS)
 
     def _update_deck_status_label(self) -> None:

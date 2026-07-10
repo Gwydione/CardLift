@@ -151,6 +151,48 @@ so nothing changes below `_COMPACT_WIDTH`. `theme.lerp()`/`clamp()`/
 same "scale with available width" behavior can reuse them instead of
 duplicating the math.
 
+**Find Cards milestone.** The documented workflow order is Deck -> Find
+Cards -> Calibrate -> Review Cards -> Export (docs/ui/UI_DECISIONS.md),
+so Find Cards runs *before* any calibration profile exists. It is
+deliberately a coarse, page-level scoping step, not detection or
+calibration: there is no automatic card-detection algorithm anywhere in
+DeckForge (README's MVP is manual-calibration-only), and Calibrate's own
+two-corner-click flow (the CLI's `--calibrate`, via
+`measure.derive_geometry()`) already owns deriving precise card geometry
+later -- redoing that work here would just be duplication.
+
+`find_cards_state.py` is the pure-Python model (no PySide6 import, unit
+tested in `tests/test_find_cards_state.py`, same pattern as
+`app_state.py`/`session.py`): `FindCardsState` holds at most one
+`PageMarker` per page, storing it in **PDF points** -- the same canonical
+page coordinate space `profile.py`/`geometry.py` already use everywhere --
+rather than rendered-image or widget pixels, so a marker stays correct
+across a window resize or a future zoom/pan change. A point, not a
+rectangle: Calibrate will re-derive the actual card box from scratch via
+its own corner clicks, so a coarser region here would add nothing
+Calibrate can't already produce more precisely itself.
+
+`find_cards_workspace.py` (`FindCardsWorkspace`) renders the current page
+via the engine's `PDFRenderer` at a fixed `PREVIEW_RENDER_SCALE` (no
+profile/render_scale exists yet at this point in the workflow), fits it to
+the canvas without upscaling, and lets the user click to place/replace
+that page's marker. `FindCardsView` is the pure (no Qt-widget-instance
+dependency) coordinate transform between PDF points and widget pixels,
+recomputed on every paint -- unit tested directly in
+`tests/test_find_cards_workspace.py`, including that the same stored point
+lands on the same relative spot on the page at any widget size. Page
+navigation (Previous/Next) and "Clear this page" are local to the
+workspace; there is no app-wide Start Over feature yet for Find Cards
+state to participate in. Loading a (new or replacement) PDF via
+`MainWindow._on_pdf_chosen` clears any previous markers, since a marker's
+page number has no relationship to the same page number in a different
+PDF.
+
+Out of scope for this milestone, deferred to later ones: inferring
+rows/cols or precise crop geometry from a marker, selecting/moving/
+resizing individual card rectangles (Edit Cards is a separate, later
+concern), and any app-wide reset/Start Over feature.
+
 ## Common Commands
 
 All commands go through `extract.py` and require `--profile <name>`
@@ -393,7 +435,9 @@ DeckForge/
 │   ├── guidance_panel.py         # Collapsible right-hand guidance panel
 │   ├── calibrate_toolbar.py      # Fit/Zoom/Pan toolbar shown above the Calibrate workspace
 │   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
-│   └── workspaces.py             # Central workspace per workflow step (placeholders past Deck)
+│   ├── find_cards_state.py       # Pure FindCardsState/PageMarker model -- coarse per-page markers, in PDF points
+│   ├── find_cards_workspace.py   # Find Cards page: PDF page-by-page preview + marker placement
+│   └── workspaces.py             # Central workspace per workflow step (placeholders past Find Cards)
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 

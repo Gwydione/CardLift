@@ -14,6 +14,8 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from .app_state import AppState, WorkflowStep
 from .deck_workspace import DeckWorkspace
+from .find_cards_state import FindCardsState
+from .find_cards_workspace import FindCardsWorkspace
 from .theme import (
     BG_CARD,
     BG_WORKSPACE,
@@ -112,13 +114,11 @@ class CalibrateWorkspace(QWidget):
         super().mouseReleaseEvent(event)
 
 
-def build_workspaces(state: AppState) -> dict[WorkflowStep, QWidget]:
+def build_workspaces(state: AppState, find_cards_state: FindCardsState) -> dict[WorkflowStep, QWidget]:
     """One workspace instance per workflow step, in WORKFLOW_ORDER."""
     return {
         WorkflowStep.DECK: DeckWorkspace(),
-        WorkflowStep.FIND_CARDS: PlaceholderWorkspace(
-            "Find Cards", "DeckForge will help you point out where the cards are."
-        ),
+        WorkflowStep.FIND_CARDS: FindCardsWorkspace(find_cards_state),
         WorkflowStep.CALIBRATE_CARDS: CalibrateWorkspace(
             state, "Click the upper-left corner of a card to begin."
         ),
