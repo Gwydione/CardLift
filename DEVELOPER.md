@@ -155,6 +155,77 @@ hand. It never writes to the profile itself; you paste the values in
 yourself. Use it instead of `--measure` unless you're scripting or
 already have pixel coordinates from another tool.
 
+The window supports mouse-wheel zoom (anchored under the pointer), a
+persistent **Pan** toggle button, Spacebar+left-drag or middle-drag pan,
+"Fit to Window"/"100%" view buttons, and a **Crosshair** toggle that
+draws full-canvas guide lines through the pointer — see README's "Zooming
+and panning for precise clicks" and "Crosshair". These only change what's
+on screen; every
+click is converted from canvas (screen) pixels to rendered-image pixels
+exactly once, at the point of the click, via `ViewTransform` in
+`calibrate_ui.py`, so the same corner clicked at any zoom/pan/window-size
+produces the same measurement. Mouse-wheel input is normalized to a
+`-1`/`0`/`+1` direction (`wheel_direction()`) instead of trusting the raw
+`event.delta` magnitude, since Windows and macOS report wildly different
+scales for the same physical scroll — this is the one place that needs to
+reason about platform differences, and it's a pure function rather than a
+`sys.platform` branch. All of this — `ViewTransform`, the wheel-direction
+normalization, and the pan-vs-click gesture decision
+(`is_pan_gesture()`) — is plain Python with no Tkinter dependency, unit
+tested in `test_calibrate_ui.py` without opening a window.
+
+**Pan mode.** `is_pan_gesture(button, space_held, pan_mode)` is the single
+decision point for whether a left press pans or clicks — it accounts for
+persistent Pan mode (the button), temporary Spacebar hold, and the
+always-pan middle button. `CalibrationWindow._pan_mode` is only turned off
+by clicking Pan again or Escape (`pan_mode_after_escape()`); losing focus
+or releasing Spacebar clears *temporary* pan state only
+(`cleared_temporary_pan_state()`), leaving a deliberately-selected Pan
+mode alone. Pan mode changes only how the page is viewed, never a
+calibration value — clicking Pan on/off, panning, or zooming never
+touches `self.measurements`.
+
+**Crosshair.** A discoverable calibration aid, on by default, toggled by
+the **Crosshair** button next to Pan (same sunken/raised button treatment
+as Pan). While enabled and the pointer is over the canvas, two reusable
+canvas line items — one horizontal, one vertical, created lazily on first
+`<Motion>` and moved/hidden/shown afterward rather than recreated every
+event — are drawn through the pointer, spanning the full canvas. They
+live entirely in canvas space (`crosshair_display_position()` returns a
+canvas (x, y) or `None`) and are deliberately **not** added to
+`self._overlay_ids`, so `_redraw_overlays()` never deletes them; instead
+`_raise_crosshair()` runs after every image/overlay redraw to keep them
+on top of newly (re)created items. `crosshair_display_position()` and
+`coordinate_readout_position()` (for the small "X 1234  Y 5678" readout
+next to the zoom percentage, in rendered-image pixels) both fold in
+`pan_active()` — true for persistent Pan mode, a temporary Spacebar hold,
+or an active pan drag — so every caller (pointer motion, leaving the
+canvas, a resize, a pan-mode change) asks one function "where, if
+anywhere" instead of re-deriving the visibility rule. `Start Over` and
+`Escape` route the toggle's value through identity functions
+(`crosshair_enabled_after_reset()`, `crosshair_enabled_after_escape()`)
+purely so that invariant — neither ever touches the Crosshair preference
+— has a named, unit-tested home, matching `pan_mode_after_escape()`'s
+existing style. Like the rest of this section, none of it touches
+`self.measurements` or any image-space calibration math.
+
+**Responsive viewport.** The canvas is laid out with Tkinter grid
+row/column weights so it expands to fill whatever space the window is
+given, instead of being capped at a fixed pixel size — `MAX_DISPLAY_WIDTH`
+/ `MAX_DISPLAY_HEIGHT` now only seed the window's *initial* size. The
+canvas's `<Configure>` event (fired on resize/maximize) is debounced
+(`RESIZE_DEBOUNCE_MS`) and ignores degenerate sizes below
+`MIN_VIEWPORT_DIM`, so a window-border drag doesn't repeatedly re-crop the
+full-resolution source image, and the first render never happens against
+a placeholder 1×1 canvas. `recompute_view_for_resize()` is the single pure
+function deciding what happens to the view on resize: in Fit-to-Window
+mode it recalculates the fit for the new canvas size
+(`CalibrationWindow._fit_mode`, set by "Fit to Window" and cleared by
+"100%"/manual zoom); otherwise it preserves scale and keeps the image
+point at the old viewport's center under the new viewport's center
+(`ViewTransform.recentered_for_resize()`) before clamping. Like the rest
+of `ViewTransform`, these are unit tested without opening a window.
+
 ### `--measure`
 
 ```powershell

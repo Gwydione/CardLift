@@ -230,6 +230,61 @@ Use **Start Over** at any point to clear both measured corners and start
 over on the same page. The status line above the image always says what
 to click next and why; the window is done once it says "Step 3 of 3."
 
+The calibration window is resizable, and the image view expands to fill it:
+maximizing the window (or dragging it larger) gives you a bigger view of the
+page, not more blank space around a fixed-size image. Shrinking the window
+shrinks the view the same way. The image is never stretched — its aspect
+ratio is always preserved, with any leftover space on one axis left empty
+around it.
+
+### Zooming and panning for precise clicks
+
+High-resolution PDF pages get shrunk a lot to fit on screen, which can make
+it hard to land a click exactly on a corner. The calibration window can be
+zoomed and panned to get a closer look — this only changes what you see, it
+never changes the calibration values a click produces:
+
+- **Scroll** over the area you want to inspect to zoom in or out. Zoom
+  stays centered on wherever your mouse is, so scrolling in on a corner
+  brings that corner closer instead of the view jumping around.
+- **Pan.** Click the **Pan** button, then left-drag to move around the
+  page — the most discoverable way to move around, and the recommended
+  one if you're not used to the shortcuts below. Left-clicking while Pan
+  is off makes a calibration mark as usual; Pan never does. Click **Pan**
+  again, or press **Escape**, to go back to normal clicking.
+- **Hold Spacebar and drag** with the left mouse button to move around the
+  page without leaving Pan mode on — handy for a quick nudge mid-click.
+  Middle-mouse-button drag also works, if your mouse has one.
+- **Fit to Window** returns to the full-page view, recalculated for
+  however large the window currently is; **100%** shows the page at its
+  original rendered resolution (useful for checking fine detail). The
+  current zoom level is shown next to these buttons.
+- **Start Over** clears your measurements but keeps your current
+  zoom/pan view and Pan selection, so you can retry a mis-click without
+  losing your place.
+
+Panning and Pan mode only change what you're looking at — they never
+affect a calibration value. Clicking the same two corners produces the
+same calibration values no matter how zoomed in, panned, or resized the
+window is when you click them.
+
+### Crosshair
+
+The **Crosshair** button (next to Pan) draws a thin horizontal and
+vertical guide line through the mouse pointer, spanning the full canvas.
+It's on by default and helps line up a corner precisely — especially
+useful when a PDF's printed cut marks don't extend all the way across
+the card, so you only have a short mark to align against instead of a
+full edge. A small coordinate readout next to the zoom percentage shows
+the pointer's position in the same rendered-image pixels the crop math
+uses.
+
+Click **Crosshair** to turn it off if you find it distracting. It's
+purely a visual aid — like zoom and pan, it never changes a calibration
+value, and it automatically gets out of the way while panning (Pan mode,
+Spacebar-drag, or mid-drag) so it doesn't clutter the view while you're
+moving the page.
+
 ## Measuring a new deck fast (`--measure`)
 
 Starting a profile from `0`s and iterating blind against
