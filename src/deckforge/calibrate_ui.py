@@ -43,6 +43,7 @@ from typing import Optional, Sequence
 
 from PIL import Image, ImageTk
 
+from .exporter import PageResolution
 from .measure import (
     BACK_FIELDS,
     CARD_SPEC_RE,
@@ -167,14 +168,23 @@ def build_result_text(
     scale: float,
     fallback_gap_x: float,
     fallback_gap_y: float,
+    grid_label: Optional[str] = None,
 ) -> str:
     """Runs derive_geometry() and formats the same report --measure prints
-    to the console, for display in the window (and stdout)."""
+    to the console, for display in the window (and stdout).
+
+    `grid_label` overrides the default "front grid, page N"/"back grid,
+    page N" wording -- exporter.PageResolution.label supplies a
+    layout-aware version (e.g. "front grid (Boss cards), page 8") once a
+    profile has more than one layout. Left as an optional trailing
+    parameter (default None -> old wording) so single-layout profiles and
+    existing callers are unaffected."""
     result = derive_geometry(
         measurements, scale=scale,
         fallback_gap_x=fallback_gap_x, fallback_gap_y=fallback_gap_y,
     )
-    grid_label = f"back grid, page {page_num}" if is_back else f"front grid, page {page_num}"
+    if grid_label is None:
+        grid_label = f"back grid, page {page_num}" if is_back else f"front grid, page {page_num}"
     lines = [f"Measured {len(measurements)} card(s) on the {grid_label} at render_scale={scale}:"]
     for m in measurements:
         lines.append(
@@ -454,18 +464,18 @@ class CalibrationWindow(tk.Tk):
         profile: DeckProfile,
         profile_name: str,
         page_image: Image.Image,
-        page_num: int,
-        is_back: bool,
+        resolution: PageResolution,
     ):
         super().__init__()
         self.profile = profile
         self.profile_name = profile_name
         self.page_image = page_image
-        self.page_num = page_num
-        self.is_back = is_back
+        self.resolution = resolution
+        self.page_num = resolution.page_num
+        self.is_back = resolution.is_back
 
-        resolved = profile.back_geometry() if is_back else profile.front_geometry()
-        self.field_names = BACK_FIELDS if is_back else FRONT_FIELDS
+        resolved = resolution.geometry
+        self.field_names = BACK_FIELDS if resolution.is_back else FRONT_FIELDS
         self.current_values = dict(zip(self.field_names, (
             resolved.left, resolved.top,
             resolved.card_width, resolved.card_height,
@@ -530,7 +540,8 @@ class CalibrationWindow(tk.Tk):
         self._crosshair_v_id: Optional[int] = None
         self._pointer_xy: Optional[tuple[float, float]] = None
 
-        self.title(f"DeckForge Calibration -- {profile_name} (page {page_num})")
+        title_suffix = f", {resolution.label.rsplit(', page ', 1)[0]}" if len(profile.layouts) > 1 else ""
+        self.title(f"DeckForge Calibration -- {profile_name} (page {resolution.page_num}{title_suffix})")
         # Initial window size only; the canvas expands to fill whatever
         # space the user resizes/maximizes the window to.
         self.geometry(f"{MAX_DISPLAY_WIDTH}x{MAX_DISPLAY_HEIGHT + 200}")
@@ -1082,6 +1093,7 @@ class CalibrationWindow(tk.Tk):
                 profile_name=self.profile_name, page_num=self.page_num, is_back=self.is_back,
                 measurements=self.measurements, current=self.current_values,
                 field_names=self.field_names, scale=self.profile.render_scale,
+                grid_label=self.resolution.label,
                 fallback_gap_x=self.fallback_gap_x, fallback_gap_y=self.fallback_gap_y,
             )
         except MeasureError as e:
@@ -1221,9 +1233,8 @@ def run_calibration(
     profile: DeckProfile,
     profile_name: str,
     page_image: Image.Image,
-    page_num: int,
-    is_back: bool,
+    resolution: PageResolution,
 ) -> None:
     """Opens the interactive calibration window and blocks until closed."""
-    window = CalibrationWindow(profile, profile_name, page_image, page_num, is_back)
+    window = CalibrationWindow(profile, profile_name, page_image, resolution)
     window.mainloop()

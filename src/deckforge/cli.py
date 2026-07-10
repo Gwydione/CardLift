@@ -115,6 +115,46 @@ def friendly_error(e: Exception) -> str:
                 "comma, quote, or brace.\nNext step: open the file and "
                 "compare its structure against profiles/solo_cards.json."
             )
+        elif "has both 'layouts' and legacy" in detail:
+            explanation = (
+                "This profile mixes the old flat front-grid fields with "
+                "the new 'layouts' list -- DeckForge needs one or the "
+                "other.\nNext step: remove the legacy first_front_page/"
+                "last_front_page/rows/cols/left/top/card_width/"
+                "card_height/gap_x/gap_y fields if using 'layouts', or "
+                "remove 'layouts' if using the legacy flat fields."
+            )
+        elif "must include at least one layout" in detail:
+            explanation = (
+                "This profile's 'layouts' list is empty -- DeckForge "
+                "needs at least one layout describing where the front "
+                "cards are.\nNext step: add a layout entry with "
+                "first_page/last_page/rows/cols/left/top/card_width/"
+                "card_height/gap_x/gap_y/trim_* values."
+            )
+        elif "overlapping layout page ranges" in detail:
+            explanation = (
+                "Two layouts in this profile claim the same page -- each "
+                "page can only belong to one layout.\nNext step: fix the "
+                "first_page/last_page range on the layouts named below so "
+                "they don't overlap."
+            )
+        elif "back_page" in detail and "overlap" in detail:
+            explanation = (
+                "This profile's back_page is also claimed by one of its "
+                "layouts -- the shared back must be a page no layout "
+                "uses.\nNext step: change back_page, or adjust the "
+                "layout's first_page/last_page so it no longer includes "
+                "that page."
+            )
+        elif "greater than last_page" in detail:
+            explanation = (
+                "One of this profile's layouts has first_page after "
+                "last_page -- only contiguous (first_page <= last_page) "
+                "ranges are supported.\nNext step: fix that layout's "
+                "first_page/last_page, or split it into two layouts if "
+                "the pages really aren't contiguous."
+            )
         elif "missing required keys" in detail:
             explanation = (
                 "This profile is missing information DeckForge needs "
@@ -167,6 +207,14 @@ def friendly_error(e: Exception) -> str:
                 "DeckForge can't find the PDF named in this profile.\n"
                 "Next step: place it in sample_decks/ (or the project "
                 "root)."
+            )
+        elif "is not assigned to any layout" in detail:
+            explanation = (
+                "That page isn't part of this profile's card layout -- "
+                "it's outside every layout's front-page range and isn't "
+                "the shared back page either.\nNext step: check the page "
+                "number against the profile's layouts/back_page, or omit "
+                "--page to use the default."
             )
         elif "out of range" in detail:
             explanation = (
@@ -351,11 +399,11 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         elif args.measure:
-            page_num = args.page if args.page is not None else profile.first_front_page
-            is_back = page_num == profile.back_page
+            page_num = args.page if args.page is not None else profile.layouts[0].first_page
+            resolution = exporter.resolve_page(page_num)
 
             measurements = [parse_card_measurement(spec) for spec in args.card]
-            resolved = profile.back_geometry() if is_back else profile.front_geometry()
+            resolved = resolution.geometry
             result = derive_geometry(
                 measurements,
                 scale=profile.render_scale,
@@ -363,15 +411,14 @@ def main(argv: list[str] | None = None) -> int:
                 fallback_gap_y=resolved.gap_y,
             )
 
-            field_names = BACK_FIELDS if is_back else FRONT_FIELDS
+            field_names = BACK_FIELDS if resolution.is_back else FRONT_FIELDS
             current = dict(zip(field_names, (
                 resolved.left, resolved.top,
                 resolved.card_width, resolved.card_height,
                 resolved.gap_x, resolved.gap_y,
             )))
 
-            grid_label = f"back grid, page {page_num}" if is_back else f"front grid, page {page_num}"
-            print(f"Measured {len(measurements)} card(s) on the {grid_label} "
+            print(f"Measured {len(measurements)} card(s) on the {resolution.label} "
                   f"at render_scale={profile.render_scale}:")
             for m in measurements:
                 print(f"  r{m.row}c{m.col}: px({m.box.x1:g},{m.box.y1:g})-"
@@ -390,8 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.calibrate:
             from .calibrate_ui import run_calibration
 
-            page_image, page_num, is_back = exporter.render_calibration_page(args.page)
-            print(f"Opening calibration window for page {page_num} of profiles/{args.profile}.json.")
+            page_image, resolution = exporter.render_calibration_page(args.page)
+            print(f"Opening calibration window for page {resolution.page_num} of profiles/{args.profile}.json.")
             print(
                 "Click two corners of a card, then follow the on-screen steps. "
                 "Nothing is saved automatically -- you'll copy the suggested "
@@ -399,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             run_calibration(
                 profile=profile, profile_name=args.profile,
-                page_image=page_image, page_num=page_num, is_back=is_back,
+                page_image=page_image, resolution=resolution,
             )
 
     except (ProfileError, PDFRenderError, ExportError, GeometryError, MeasureError) as e:

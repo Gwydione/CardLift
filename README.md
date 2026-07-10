@@ -115,7 +115,11 @@ rather than edge-to-edge like the fronts. Rather than force one geometry
 onto both, a profile's `back_*` fields (`back_left`, `back_top`,
 `back_card_width`, `back_card_height`, `back_gap_x`, `back_gap_y`) are
 optional overrides used only for `back_page`. Omit them entirely if your
-back page shares the front grid exactly.
+back page shares the front grid exactly. Any field left unset falls back
+to the **first layout's** geometry -- for a single-layout (or legacy)
+profile that's simply "the front grid"; a profile with more than one
+layout that needs a distinct back geometry should set the overrides
+explicitly rather than relying on the fallback.
 
 The bundled `solo_cards.json` profile actually needs this: its back page
 cards are smaller and inset within their cell, while the fronts are
@@ -123,22 +127,115 @@ edge-to-edge.
 
 ## Profiles
 
-Every deck gets its own JSON file in `profiles/`. Required fields:
+Every deck gets its own JSON file in `profiles/`. Required fields, common
+to every profile regardless of which front-grid form it uses (below):
 
 | Field | Meaning |
 |---|---|
 | `pdf_file` | Filename to look for in `sample_decks/` (or the project root) |
-| `first_front_page`, `last_front_page` | 1-indexed page range containing card fronts |
 | `back_page` | 1-indexed page containing the card back(s) |
+| `trim_left/right/top/bottom` | Inward crop, in points (see "Trim scope" below for what this governs) |
+| `render_scale` | Points-to-pixels multiplier for output resolution (e.g. `4` ≈ 288 DPI) |
+
+Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
+`back_gap_x`, `back_gap_y` (see "Front/back grids can differ" below).
+
+### The front grid: legacy fields or `layouts`
+
+A profile describes its card-front grid(s) one of two ways -- pick one,
+not both:
+
+**Legacy flat fields** (what every profile used before multi-layout
+support, and still the simplest choice for a single-grid deck):
+
+| Field | Meaning |
+|---|---|
+| `first_front_page`, `last_front_page` | 1-indexed, contiguous page range containing card fronts |
 | `rows`, `cols` | Grid size per page |
 | `left`, `top` | Top-left corner of card (row 0, col 0), in points |
 | `card_width`, `card_height` | Size of one card cell, in points |
 | `gap_x`, `gap_y` | Space between cells, in points (0 = edge-to-edge) |
-| `trim_left/right/top/bottom` | Inward crop applied after grid positioning, in points |
-| `render_scale` | Points-to-pixels multiplier for output resolution (e.g. `4` ≈ 288 DPI) |
 
-Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
-`back_gap_x`, `back_gap_y` (see above).
+**`layouts`** -- a list of one or more grids, each tied to its own
+contiguous page range, for a deck that has more than one card shape/size
+(e.g. a small "boss card" layout living on different pages from the main
+deck):
+
+```json
+"layouts": [
+  {
+    "name": "Main deck",
+    "first_page": 2, "last_page": 7,
+    "rows": 3, "cols": 3,
+    "left": 35.75, "top": 61.25,
+    "card_width": 174.58, "card_height": 239.75,
+    "gap_x": 0, "gap_y": 0,
+    "trim_left": 2, "trim_right": 2, "trim_top": 2, "trim_bottom": 2
+  },
+  {
+    "name": "Boss cards",
+    "first_page": 9, "last_page": 9,
+    "rows": 2, "cols": 2,
+    "left": 40, "top": 60,
+    "card_width": 200, "card_height": 260,
+    "gap_x": 5, "gap_y": 5,
+    "trim_left": 2, "trim_right": 2, "trim_top": 2, "trim_bottom": 2
+  }
+]
+```
+
+`name` is optional and purely for readability in calibration/measure
+output; layouts without one are labeled `layout 1`, `layout 2`, etc. in
+profile order. Each layout carries its own `trim_left/right/top/bottom`
+-- there is no shared front trim once a profile uses `layouts`.
+
+Layouts are processed in **profile order** (the order they appear in the
+JSON list, not sorted by page number), pages ascending within a layout,
+and cards row-major within a page -- this determines `front_NNN.png`
+numbering, which is continuous across every layout in the profile.
+
+Front page ranges across all layouts must not overlap each other, and
+`back_page` must not fall inside any layout's range. A page that belongs
+to neither a layout nor `back_page` is unassigned; running a command
+against it (e.g. `--overlay --page 12`) fails with a clear error instead
+of guessing.
+
+**Contiguous ranges only.** Each layout is exactly one `first_page`..
+`last_page` range -- there's no separate list of individual page numbers.
+A deck whose front pages for one card shape aren't contiguous (e.g. pages
+2-4 and 9 use the same grid) can express that today as **two layout
+entries with identical geometry**, one per contiguous range:
+
+```json
+"layouts": [
+  { "name": "Main (part 1)", "first_page": 2, "last_page": 4, "...": "..." },
+  { "name": "Main (part 2)", "first_page": 9, "last_page": 9, "...": "..." }
+]
+```
+
+An explicit non-contiguous page list is deferred to a future phase, once
+there's a real deck that needs it badly enough to justify the extra
+schema/validation/GUI surface.
+
+### Trim scope: one unavoidable distinction
+
+`back_page` is deliberately **not** a layout -- DeckForge has exactly one
+shared back, and folding it into `layouts` would blur what a `CardLayout`
+means (a grid of card fronts). Since the back isn't a layout, its trim
+still needs to come from somewhere:
+
+- **Legacy profiles** (no `layouts`): the top-level `trim_left/right/top/
+  bottom` fields govern **both** the (single, normalized) front layout
+  and the back page, exactly as before multi-layout support existed.
+- **`layouts` profiles**: each layout owns its own front trim, so the
+  top-level `trim_left/right/top/bottom` fields apply to the **back page
+  only**.
+
+This is the one place a legacy profile and a `layouts` profile behave
+differently. Phase I deliberately does not introduce a separate
+`back_trim_*` schema or otherwise redesign back-page trimming -- the
+existing top-level trim fields are reused, just with their scope
+narrowed to "back only" once a profile opts into `layouts`.
 
 ## Calibrating a new deck
 
@@ -153,7 +250,8 @@ useful once you understand the fields and just want to nudge a value).
    ```bash
    python extract.py --profile your_deck --preview
    ```
-   This renders **only** `first_front_page`, crops its cards, and writes
+   This renders **only** the first page of the first layout (for a legacy
+   profile, that's just `first_front_page`), crops its cards, and writes
    two files to `preview/`:
    - `calibration_overlay.png` — the full page with every cell drawn on
      it: **blue** = the raw cell (`left`/`top`/`card_width`/`card_height`/
@@ -185,17 +283,28 @@ useful once you understand the fields and just want to nudge a value).
    ```bash
    python extract.py --profile your_deck --export
    ```
-   This assumes every page in `[first_front_page, last_front_page]`
-   shares the same front grid. If a real PDF has per-page drift (rare,
-   but possible with hand-assembled PnP sheets), you'll need to spot
-   check a few more pages, or split into a second profile for the
-   affected range.
+   This assumes every page within a layout's `[first_page, last_page]`
+   range shares that layout's grid. If a real PDF has per-page drift
+   (rare, but possible with hand-assembled PnP sheets), you'll need to
+   spot check a few more pages, or split the affected range into its own
+   layout (or profile).
 7. QA everything at once:
    ```bash
    python extract.py --profile your_deck --contact-sheet
    ```
    Writes `preview/contact_sheet.png` with every exported front (in
    order) plus the back, so you can scan the whole deck before importing.
+
+   **Known limitation:** the contact sheet resizes every thumbnail to the
+   same box, sized from the first image's aspect ratio. For a
+   single-layout deck (or several layouts sharing one card aspect ratio)
+   this is invisible. A profile whose layouts use genuinely different
+   card aspect ratios (e.g. square "boss cards" mixed with standard
+   portrait cards) will see those thumbnails visibly stretched or
+   squashed in the contact sheet, even though the actual exported PNGs in
+   `output/` are correct and unaffected -- only the QA sheet's rendering
+   is off. Fixing this (e.g. per-image aspect-preserving thumbnails) is
+   deferred; `contact_sheet.py` is unchanged in this milestone.
 
 ## Interactive calibration (`--calibrate`)
 
@@ -361,11 +470,12 @@ the crop/export pipeline. It only ever prints a suggestion.
 repeat), but two more targeted commands help once you're down to small
 adjustments or a single problem card:
 
-- **`--overlay`** renders one page — by default `first_front_page` — with
-  every crop rectangle drawn over it (same blue/red convention as
-  `--preview`) and writes it to `preview/calibration_overlay.png`. Pass
-  `--page` to check a different page instead, most usefully the deck's
-  `back_page`:
+- **`--overlay`** renders one page — by default the first page of the
+  first layout — with every crop rectangle drawn over it (same blue/red
+  convention as `--preview`) and writes it to
+  `preview/calibration_overlay.png`. Pass `--page` to check a different
+  page instead, most usefully the deck's `back_page`, or any other
+  layout's pages in a multi-layout profile:
 
   ```bash
   python extract.py --profile solo_cards --overlay
@@ -375,7 +485,9 @@ adjustments or a single problem card:
   This is the same overlay `--preview` writes, just without also having
   to re-crop and rebuild a contact sheet — use it when you only want to
   re-check rectangle placement, especially for the back page, which
-  `--preview` doesn't cover.
+  `--preview` doesn't cover. `--page` with a page that belongs to neither
+  a layout nor `back_page` fails with a clear "not assigned" error rather
+  than guessing which grid to use.
 
 - **`--inspect CARD_NUM`** exports one card at high zoom, with the raw
   cell (blue) and trimmed crop (red) boundaries drawn and a margin of
@@ -405,7 +517,7 @@ python extract.py --profile solo_cards --contact-sheet
 # → preview/contact_sheet.png
 
 python extract.py --profile solo_cards --overlay [--page N]
-# → preview/calibration_overlay.png (defaults to first_front_page)
+# → preview/calibration_overlay.png (defaults to the first layout's first page)
 
 python extract.py --profile solo_cards --inspect CARD_NUM
 # → preview/inspect_card{CARD_NUM:03d}.png
@@ -414,10 +526,11 @@ python extract.py --profile solo_cards --measure --card r0c0:X1,Y1,X2,Y2 [--card
 # → prints a suggested left/top/card_width/card_height/gap_x/gap_y patch; writes nothing
 ```
 
-All front cards are guaranteed to come out at identical pixel dimensions
-(the crop math rounds card size once and reuses it for every cell, so
-per-card rounding drift can't sneak in a 1px difference — a real bug
-caught while building this).
+All front cards **within one layout** are guaranteed to come out at
+identical pixel dimensions (the crop math rounds card size once and
+reuses it for every cell, so per-card rounding drift can't sneak in a 1px
+difference — a real bug caught while building this). Different layouts
+in the same profile may use different card sizes.
 
 `--export` finishes with a plain-language summary — how many card fronts
 and backs were produced, their pixel size, where the files landed, and
@@ -458,5 +571,10 @@ these additive rather than disruptive:
   (both would consume `CardCropper` output — see `exporter.py`)
 - GUI (CustomTkinter), interactive calibration mode, drag-and-drop PDFs
 - Multiple saved deck profiles browsed/selected from a UI
-- Per-page grid overrides (for hand-assembled PnP sheets with real drift
-  between pages, beyond the front/back split already supported)
+- Explicit non-contiguous page lists per layout (today's workaround: two
+  layout entries with identical geometry — see "The front grid" above)
+- Aspect-ratio-aware contact sheet thumbnails, for profiles whose
+  layouts mix card aspect ratios (see "Known limitation" under
+  "Calibrating a new deck")
+- Multiple backs, group-aware output filenames, and mixed card sizes
+  within a single page remain out of scope, independent of `layouts`

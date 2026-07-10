@@ -33,6 +33,10 @@ these in order; each one is also covered in more depth further down.
 5. **Skim `profiles/solo_cards.json`** and re-read README's "How the
    grid math works" if the `left`/`top`/`trim_*` fields don't
    immediately make sense — this is the part that's easiest to forget.
+   `solo_cards.json` uses the legacy flat-field form; see README
+   "Profiles" for the `layouts`-list form a multi-grid deck would use
+   instead, and `DeckProfile.layouts` (always populated, either way) is
+   what downstream code actually reads.
 6. **Run a sanity-check command** against the sample deck to see
    DeckForge actually do something before you start changing code:
    ```powershell
@@ -315,7 +319,7 @@ DeckForge/
 ├── output/                    # --export writes front_NNN.png / back.png here
 ├── preview/                    # --preview/--overlay/--inspect/--contact-sheet write here
 ├── src/deckforge/
-│   ├── profile.py             # DeckProfile: schema, JSON loading, validation
+│   ├── profile.py             # DeckProfile: schema, JSON loading, validation (layouts list + legacy normalization -- see README "Profiles")
 │   ├── pdf_renderer.py         # PyMuPDF page → Pillow image (only file that imports fitz)
 │   ├── geometry.py             # Pure grid math: cell box → trimmed box → pixels (no I/O)
 │   ├── cropper.py              # CardCropper: renders + geometry → cropped card images
