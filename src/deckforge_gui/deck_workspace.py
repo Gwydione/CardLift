@@ -39,6 +39,7 @@ from .theme import (
     FONT_CAPTION,
     FONT_H1,
     TEXT_BODY,
+    TEXT_CAPTION_MUTED,
     TEXT_HEADING,
     lerp,
     responsive_t,
@@ -149,6 +150,7 @@ class DeckWorkspace(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"background: {BG_WORKSPACE};")
 
         self._outer = QVBoxLayout(self)
@@ -199,7 +201,7 @@ class DeckWorkspace(QWidget):
 
         self._or_text = QLabel("or")
         self._or_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._or_text.setStyleSheet("color: #9891b0; background: transparent;")
+        self._or_text.setStyleSheet(f"color: {TEXT_CAPTION_MUTED}; background: transparent;")
         self._zone_layout.addWidget(self._or_text)
 
         self._choose_btn = QPushButton(_DEFAULT_BUTTON_TEXT)
@@ -211,7 +213,7 @@ class DeckWorkspace(QWidget):
 
         self._reassurance = QLabel("\U0001F512 Your original PDF will not be modified.")
         self._reassurance.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._reassurance.setStyleSheet("color: #8b85a8; background: transparent;")
+        self._reassurance.setStyleSheet(f"color: {TEXT_CAPTION_MUTED}; background: transparent;")
         self._outer.addWidget(self._reassurance)
 
         self._error_label = QLabel("")
@@ -278,14 +280,16 @@ class DeckWorkspace(QWidget):
             f"font-size: {secondary_font}px; color: {TEXT_BODY}; background: transparent;"
         )
         caption_font = scale(_CAPTION_FONT)
-        self._or_text.setStyleSheet(f"font-size: {caption_font}px; color: #9891b0; background: transparent;")
+        self._or_text.setStyleSheet(
+            f"font-size: {caption_font}px; color: {TEXT_CAPTION_MUTED}; background: transparent;"
+        )
 
         button_font = scale(_BUTTON_FONT)
         button_padding = round(lerp(11, 14, t))
         self._choose_btn.setStyleSheet(_choose_button_style(button_font, button_padding))
 
         self._reassurance.setStyleSheet(
-            f"font-size: {caption_font}px; color: #8b85a8; background: transparent;"
+            f"font-size: {caption_font}px; color: {TEXT_CAPTION_MUTED}; background: transparent;"
         )
 
         self._error_label.setMaximumWidth(scale(_REASSURANCE_MAX_WIDTH))

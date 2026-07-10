@@ -1,0 +1,6 @@
+Before implementing this milestone, review:
+
+README.md
+DEVELOPER.md
+ENGINEERING_STANDARDS.md
+Everything in docs/ui/

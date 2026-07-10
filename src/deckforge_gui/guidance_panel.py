@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -38,6 +38,7 @@ class GuidancePanel(QWidget):
         super().__init__(parent)
         self.state = state
         self.setObjectName("guidancePanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#guidancePanel {{ background: {BG_GUIDANCE}; }}")
 
         outer = QVBoxLayout(self)

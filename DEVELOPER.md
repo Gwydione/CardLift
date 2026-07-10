@@ -469,9 +469,8 @@ Before implementing GUI changes, review the following:
 
 - README.md
 - DEVELOPER.md
-- docs/ui/DESIGN_PRINCIPLES.md
-- docs/ui/UI_DECISIONS.md
-- UI mockups in docs/ui/
+- ENGINEERING_STANDARDS.md
+- Everything in docs/ui/
 
 The mockups are design specifications, not pixel-perfect implementation
 requirements.

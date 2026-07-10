@@ -28,7 +28,7 @@ from .calibrate_toolbar import CalibrateToolbar
 from .guidance_panel import GuidancePanel
 from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
-from .theme import ACCENT, BG_TOPBAR, BORDER_CARD, FONT_BODY_SM, TEXT_BODY, TEXT_NAV
+from .theme import ACCENT, BG_TOPBAR, BG_WORKSPACE, BORDER_CARD, FONT_BODY_SM, TEXT_BODY, TEXT_NAV
 from .workspaces import build_workspaces
 
 SIDEBAR_WIDTH = 220
@@ -43,6 +43,7 @@ class TopBar(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("topBar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#topBar {{ background: {BG_TOPBAR}; }}")
         self.setFixedHeight(48)
 
@@ -104,7 +105,10 @@ class MainWindow(QMainWindow):
 
         self.calibrate_toolbar = CalibrateToolbar(self.state)
         self.calibrate_toolbar.pan_toggled.connect(self._on_pan_toggled)
-        self.toolbar_stack.addWidget(QWidget())  # index 0: no toolbar for this step
+        no_toolbar = QWidget()  # index 0: no toolbar for this step
+        no_toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        no_toolbar.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.toolbar_stack.addWidget(no_toolbar)
         self.toolbar_stack.addWidget(self.calibrate_toolbar)  # index 1: calibrate
 
         self.workspace_stack = QStackedWidget()

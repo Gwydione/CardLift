@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .app_state import AppState, STEP_LABELS, WorkflowStep
@@ -79,6 +79,7 @@ class Sidebar(QWidget):
         super().__init__(parent)
         self.state = state
         self.setObjectName("sidebar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#sidebar {{ background: {BG_SIDEBAR}; }}" + _LEAF_STYLE)
 
         layout = QVBoxLayout(self)

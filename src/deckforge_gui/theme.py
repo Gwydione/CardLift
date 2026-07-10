@@ -32,6 +32,11 @@ BG_CARD = "#ffffff"
 BORDER_CARD = "#e3e0f0"
 TEXT_HEADING = "#211d33"
 TEXT_BODY = "#6b6580"
+# Tertiary/caption tone on BG_WORKSPACE -- one step lighter than TEXT_BODY
+# while still clearing the 4.5:1 AA contrast floor at caption sizes, so
+# de-emphasized copy (dividers, reassurance notes) stays legible instead
+# of fading into the workspace background.
+TEXT_CAPTION_MUTED = "#726b8a"
 
 ERROR_TEXT = "#b3261e"
 
