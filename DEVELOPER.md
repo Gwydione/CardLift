@@ -289,6 +289,16 @@ How we expect Claude Code to be used on this project:
   changes that keep that experience simple and visual over ones that
   add power at the cost of clarity.
 
+## Design Philosophy
+
+When improving DeckForge:
+
+- Observe user friction first.
+- Describe the problem, not the solution.
+- Ask Claude Code to think like a first-time user.
+- Review the proposed improvements before implementation.
+- Test the workflow again.
+
 ## Maintaining This Document
 
 Whenever new commands, workflows, or development practices are added to
