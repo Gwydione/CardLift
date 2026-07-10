@@ -192,7 +192,12 @@ def main(argv: list[str] | None = None) -> int:
             from .calibrate_ui import run_calibration
 
             page_image, page_num, is_back = exporter.render_calibration_page(args.page)
-            print(f"Opening calibration window for page {page_num}...")
+            print(f"Opening calibration window for page {page_num} of profiles/{args.profile}.json.")
+            print(
+                "Click two corners of a card, then follow the on-screen steps. "
+                "Nothing is saved automatically -- you'll copy the suggested "
+                "values into the profile JSON yourself at the end."
+            )
             run_calibration(
                 profile=profile, profile_name=args.profile,
                 page_image=page_image, page_num=page_num, is_back=is_back,

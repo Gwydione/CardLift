@@ -198,13 +198,21 @@ class CalibrationWindow(tk.Tk):
 
         self.title(f"DeckForge Calibration -- {profile_name} (page {page_num})")
         self._build_widgets(display_size)
-        self._set_status("Click the UPPER-LEFT corner of a card (assumed r0c0).")
+        self._set_step(
+            "Step 1 of 3 -- Mark a card",
+            "Click the UPPER-LEFT corner of a card (assumed r0c0, the grid's "
+            "top-left card). DeckForge uses this pair of clicks to work out "
+            "that card's size and position.",
+        )
 
     # -- layout -----------------------------------------------------
 
     def _build_widgets(self, display_size: tuple[int, int]) -> None:
-        self.status_label = tk.Label(self, text="", font=("Segoe UI", 11, "bold"), anchor="w")
-        self.status_label.pack(fill="x", padx=8, pady=(8, 4))
+        self.step_label = tk.Label(self, text="", font=("Segoe UI", 10, "bold"), fg="#2a7de1", anchor="w")
+        self.step_label.pack(fill="x", padx=8, pady=(8, 0))
+
+        self.status_label = tk.Label(self, text="", font=("Segoe UI", 11), anchor="w", wraplength=MAX_DISPLAY_WIDTH)
+        self.status_label.pack(fill="x", padx=8, pady=(0, 4))
 
         self.canvas = tk.Canvas(self, width=display_size[0], height=display_size[1], cursor="crosshair")
         self.canvas.pack(padx=8, pady=4)
@@ -229,6 +237,15 @@ class CalibrationWindow(tk.Tk):
         tk.Button(button_frame, text="Reset", command=self._reset).pack(side="left", padx=4)
         tk.Button(button_frame, text="Quit", command=self.destroy).pack(side="right")
 
+        self.hint_label = tk.Label(
+            self, anchor="w", font=("Segoe UI", 9), fg="#555555",
+            text=(
+                f"Nothing here is saved automatically -- profiles/{self.profile_name}.json "
+                f"only changes once you copy the values below into it by hand."
+            ),
+        )
+        self.hint_label.pack(fill="x", padx=8, pady=(0, 2))
+
         self.result_text = tk.Text(self, height=11, font=("Consolas", 9), state="disabled", wrap="none")
         self.result_text.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
@@ -243,7 +260,10 @@ class CalibrationWindow(tk.Tk):
         if self.pending_click is None:
             self.pending_click = (orig_x, orig_y)
             self.pending_canvas_ids.append(self._draw_marker(event.x, event.y))
-            self._set_status("Click the LOWER-RIGHT corner of the same card.")
+            self._set_step(
+                "Step 1 of 3 -- Mark a card",
+                "Now click the LOWER-RIGHT corner of that same card.",
+            )
             return
 
         x1, y1, x2, y2 = normalize_box(
@@ -343,7 +363,13 @@ class CalibrationWindow(tk.Tk):
             self._show_second_card_suggestions()
         else:
             self.finish_button.configure(state="disabled")
-            self._set_status("Both cards measured. Read the suggested patch below.")
+            self.canvas.configure(cursor="arrow")
+            self._set_step(
+                "Step 3 of 3 -- Apply the values",
+                "Done -- card size and spacing measured. Copy the patch below "
+                "into profiles/{}.json, re-run --preview to check it, then "
+                "close this window.".format(self.profile_name),
+            )
 
     def _show_second_card_suggestions(self) -> None:
         """Highlights where a horizontal/vertical neighbor card is likely
@@ -367,16 +393,19 @@ class CalibrationWindow(tk.Tk):
             offers.append("the highlighted card below (vertical spacing)")
 
         self.finish_button.configure(state="normal")
+        step_title = "Step 2 of 3 -- Add spacing (optional)"
         if offers:
-            self._set_status(
-                "Card size determined. If you'd like DeckForge to also work out "
-                "the spacing between cards, click " + " or ".join(offers) +
-                ". Otherwise, click Finish.",
+            self._set_step(
+                step_title,
+                "Card size captured. Click " + " or ".join(offers) +
+                " to also measure the gap between cards, or click Finish "
+                "if you don't need that.",
             )
         else:
-            self._set_status(
-                "Card size determined. To also work out spacing between cards, "
-                "click another visible card. Otherwise, click Finish.",
+            self._set_step(
+                step_title,
+                "Card size captured. Click another visible card to measure "
+                "the gap between cards, or click Finish if you don't need that.",
             )
 
     def _draw_suggestion(self, box: PixelBox, label: str) -> None:
@@ -397,9 +426,12 @@ class CalibrationWindow(tk.Tk):
     def _finish_without_second_card(self) -> None:
         self._clear_suggestions()
         self.finish_button.configure(state="disabled")
-        self._set_status(
-            "Done -- using card size only, no gap spacing. Read the suggested "
-            "patch below, or Reset to remeasure.",
+        self.canvas.configure(cursor="arrow")
+        self._set_step(
+            "Step 3 of 3 -- Apply the values",
+            "Done -- using card size only, no gap spacing. Copy the patch "
+            "below into profiles/{}.json, re-run --preview to check it, "
+            "then close this window. (Reset to remeasure instead.)".format(self.profile_name),
         )
 
     def _copy_result(self) -> None:
@@ -407,6 +439,9 @@ class CalibrationWindow(tk.Tk):
         self.clipboard_clear()
         self.clipboard_append(text)
         self.update()
+        original_text = self.copy_button.cget("text")
+        self.copy_button.configure(text="Copied!")
+        self.after(1200, lambda: self.copy_button.configure(text=original_text))
 
     def _reset(self) -> None:
         self._clear_pending()
@@ -414,13 +449,20 @@ class CalibrationWindow(tk.Tk):
         self.measurements = []
         self.finish_button.configure(state="disabled")
         self.copy_button.configure(state="disabled")
+        self.canvas.configure(cursor="crosshair")
         self.result_text.configure(state="normal")
         self.result_text.delete("1.0", "end")
         self.result_text.configure(state="disabled")
-        self._set_status("Click the UPPER-LEFT corner of a card (assumed r0c0).")
+        self._set_step(
+            "Step 1 of 3 -- Mark a card",
+            "Click the UPPER-LEFT corner of a card (assumed r0c0, the grid's "
+            "top-left card). DeckForge uses this pair of clicks to work out "
+            "that card's size and position.",
+        )
 
-    def _set_status(self, text: str) -> None:
-        self.status_label.configure(text=text)
+    def _set_step(self, step: str, instruction: str) -> None:
+        self.step_label.configure(text=step)
+        self.status_label.configure(text=instruction)
 
 
 def run_calibration(

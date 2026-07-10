@@ -128,6 +128,11 @@ Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
 
 ## Calibrating a new deck
 
+New to DeckForge? Start with `--calibrate` (below) instead — it walks you
+through the same measurements interactively, one click at a time, with no
+pixel-reading by hand. The steps below are the fully manual fallback (also
+useful once you understand the fields and just want to nudge a value).
+
 1. Drop the PDF in `sample_decks/`, create `profiles/your_deck.json` with
    your best-guess numbers (or zeros to start).
 2. Run:
@@ -177,6 +182,37 @@ Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
    ```
    Writes `preview/contact_sheet.png` with every exported front (in
    order) plus the back, so you can scan the whole deck before importing.
+
+## Interactive calibration (`--calibrate`)
+
+The fastest way to calibrate a new deck: click on the rendered page instead
+of reading pixel coordinates off an image viewer. Run:
+
+```bash
+python extract.py --profile your_deck --calibrate
+```
+
+This opens a window showing the deck's first front page (pass `--page N`
+for a different page, e.g. to calibrate the back grid) and walks you
+through three steps:
+
+1. **Mark a card.** Click a card's upper-left corner, then its
+   lower-right corner. DeckForge assumes this first card is `r0c0` (the
+   grid's top-left card).
+2. **Add spacing (optional).** Once one card is measured, DeckForge
+   highlights where a neighboring card is likely to be — click it to also
+   work out the gap between cards, or click **Finish** to skip straight to
+   step 3 with card size only.
+3. **Apply the values.** The window shows the same old-value → new-value
+   patch `--measure` prints (see below), plus a **Copy patch to clipboard**
+   button. Paste the values you want into `profiles/your_deck.json` by
+   hand, then run `--preview` to check them against the real crop — just
+   like the manual workflow above, `--calibrate` never writes to the
+   profile file itself.
+
+Use **Reset** at any point to clear both measured corners and start over
+on the same page. The status line above the image always says what to
+click next and why; the window is done once it says "Step 3 of 3."
 
 ## Measuring a new deck fast (`--measure`)
 
