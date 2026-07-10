@@ -217,16 +217,18 @@ through three steps:
    highlights where a neighboring card is likely to be — click it to also
    work out the gap between cards, or click **Finish** to skip straight to
    step 3 with card size only.
-3. **Apply the values.** The window shows the same old-value → new-value
-   patch `--measure` prints (see below), plus a **Copy patch to clipboard**
-   button. Paste the values you want into `profiles/your_deck.json` by
-   hand, then run `--preview` to check them against the real crop — just
-   like the manual workflow above, `--calibrate` never writes to the
-   profile file itself.
+3. **Finish up.** The window confirms calibration is complete and gives
+   you a **Copy Calibration Settings** button. Paste the values into
+   `profiles/your_deck.json` by hand, then run `--preview` to check them
+   against the real crop — just like the manual workflow above,
+   `--calibrate` never writes to the profile file itself. The same
+   old-value → new-value patch `--measure` prints (see below) is there
+   too, tucked behind a **Technical Details (Optional)** toggle for
+   anyone who wants to see the raw numbers.
 
-Use **Reset** at any point to clear both measured corners and start over
-on the same page. The status line above the image always says what to
-click next and why; the window is done once it says "Step 3 of 3."
+Use **Start Over** at any point to clear both measured corners and start
+over on the same page. The status line above the image always says what
+to click next and why; the window is done once it says "Step 3 of 3."
 
 ## Measuring a new deck fast (`--measure`)
 

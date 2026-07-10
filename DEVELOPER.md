@@ -147,12 +147,13 @@ python extract.py --profile solo_cards --calibrate --page 8
 
 Opens an interactive window on the rendered page: click a card's
 upper-left then lower-right corner (and optionally a neighboring card,
-to derive gap too), and it shows the same old→new patch that `--measure`
-prints, with a "Copy patch to clipboard" button. **This is the
-recommended starting point for calibrating a brand-new deck** — no
-pixel-reading by hand. It never writes to the profile itself; you paste
-the values in yourself. Use it instead of `--measure` unless you're
-scripting or already have pixel coordinates from another tool.
+to derive gap too), and it shows a "Copy Calibration Settings" button
+plus, tucked behind an optional "Technical Details" toggle, the same
+old→new patch that `--measure` prints. **This is the recommended
+starting point for calibrating a brand-new deck** — no pixel-reading by
+hand. It never writes to the profile itself; you paste the values in
+yourself. Use it instead of `--measure` unless you're scripting or
+already have pixel coordinates from another tool.
 
 ### `--measure`
 

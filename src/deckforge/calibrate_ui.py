@@ -194,15 +194,16 @@ class CalibrationWindow(tk.Tk):
         self.measurements: list[CardMeasurement] = []
         self.pending_click: Optional[tuple[float, float]] = None
         self.pending_canvas_ids: list[int] = []
+        self.measurement_canvas_ids: list[int] = []
         self.suggestion_canvas_ids: list[int] = []
+        self.details_expanded = False
 
         self.title(f"DeckForge Calibration -- {profile_name} (page {page_num})")
         self._build_widgets(display_size)
         self._set_step(
             "Step 1 of 3 -- Mark a card",
-            "Click the UPPER-LEFT corner of a card (assumed r0c0, the grid's "
-            "top-left card). DeckForge uses this pair of clicks to work out "
-            "that card's size and position.",
+            "Click the UPPER-LEFT corner of a card. DeckForge uses this pair "
+            "of clicks to work out that card's size and position.",
         )
 
     # -- layout -----------------------------------------------------
@@ -223,31 +224,38 @@ class CalibrationWindow(tk.Tk):
         button_frame.pack(fill="x", padx=8, pady=4)
 
         self.finish_button = tk.Button(
-            button_frame, text="Finish (skip spacing)",
+            button_frame, text="Finish with one card",
             command=self._finish_without_second_card, state="disabled",
         )
         self.finish_button.pack(side="left")
 
         self.copy_button = tk.Button(
-            button_frame, text="Copy patch to clipboard",
+            button_frame, text="Copy Calibration Settings",
             command=self._copy_result, state="disabled",
         )
         self.copy_button.pack(side="left", padx=4)
 
-        tk.Button(button_frame, text="Reset", command=self._reset).pack(side="left", padx=4)
-        tk.Button(button_frame, text="Quit", command=self.destroy).pack(side="right")
+        tk.Button(button_frame, text="Start Over", command=self._reset).pack(side="left", padx=4)
 
         self.hint_label = tk.Label(
             self, anchor="w", font=("Segoe UI", 9), fg="#555555",
             text=(
                 f"Nothing here is saved automatically -- profiles/{self.profile_name}.json "
-                f"only changes once you copy the values below into it by hand."
+                f"only changes once you copy your calibration settings into it by hand."
             ),
         )
         self.hint_label.pack(fill="x", padx=8, pady=(0, 2))
 
+        # Hidden until the first measurement produces something to show --
+        # measurement pixels and the raw JSON patch are useful, but they're
+        # implementation detail a first-time user shouldn't have to look at.
+        self.details_toggle = tk.Button(
+            self, text="Technical Details (Optional) ▼", command=self._toggle_details,
+            relief="flat", bd=0, anchor="w", font=("Segoe UI", 9), fg="#2a7de1",
+            activeforeground="#2a7de1", cursor="hand2",
+        )
+
         self.result_text = tk.Text(self, height=11, font=("Consolas", 9), state="disabled", wrap="none")
-        self.result_text.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
     # -- click handling -----------------------------------------------------
 
@@ -260,8 +268,12 @@ class CalibrationWindow(tk.Tk):
         if self.pending_click is None:
             self.pending_click = (orig_x, orig_y)
             self.pending_canvas_ids.append(self._draw_marker(event.x, event.y))
+            step_title = (
+                "Step 1 of 3 -- Mark a card" if not self.measurements
+                else "Step 2 of 3 -- Improve accuracy (optional)"
+            )
             self._set_step(
-                "Step 1 of 3 -- Mark a card",
+                step_title,
                 "Now click the LOWER-RIGHT corner of that same card.",
             )
             return
@@ -293,6 +305,10 @@ class CalibrationWindow(tk.Tk):
                 return
 
         self.measurements.append(CardMeasurement(row=row, col=col, box=second_box))
+        # Ownership of these corner markers/rectangle passes from "pending"
+        # to "measured" -- keep their canvas ids tracked so Start Over can
+        # still remove them, instead of dropping the list and leaking them.
+        self.measurement_canvas_ids.extend(self.pending_canvas_ids)
         self.pending_click = None
         self.pending_canvas_ids = []
         self._clear_suggestions()
@@ -358,6 +374,10 @@ class CalibrationWindow(tk.Tk):
         self.result_text.insert("1.0", text)
         self.result_text.configure(state="disabled")
         self.copy_button.configure(state="normal")
+        if not self.details_toggle.winfo_ismapped():
+            self.details_toggle.pack(fill="x", padx=8, pady=(4, 0))
+        if self.details_expanded:
+            self.result_text.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         if len(self.measurements) == 1:
             self._show_second_card_suggestions()
@@ -365,57 +385,66 @@ class CalibrationWindow(tk.Tk):
             self.finish_button.configure(state="disabled")
             self.canvas.configure(cursor="arrow")
             self._set_step(
-                "Step 3 of 3 -- Apply the values",
-                "Done -- card size and spacing measured. Copy the patch below "
-                "into profiles/{}.json, re-run --preview to check it, then "
-                "close this window.".format(self.profile_name),
+                "Step 3 of 3 -- Finish up",
+                "Calibration complete.\n"
+                "Copy your calibration settings, then run --preview to check them.",
             )
 
     def _show_second_card_suggestions(self) -> None:
-        """Highlights where a horizontal/vertical neighbor card is likely
-        to be so the user can click it for gap spacing without needing to
-        understand the grid math -- or click Finish to skip it."""
+        """Highlights likely-adjacent cards as obviously clickable hotspots
+        so the user can optionally measure a second card for a more
+        accurate calibration -- entirely in terms of "click this card for
+        better accuracy", never rows, columns, or gap spacing."""
         first = self.measurements[0]
         card_width = first.box.x2 - first.box.x1
         card_height = first.box.y2 - first.box.y1
         gap_x = self.fallback_gap_x * self.profile.render_scale
         gap_y = self.fallback_gap_y * self.profile.render_scale
 
-        offers = []
+        any_offered = False
         right_box = predicted_neighbor_box(first.box, card_width, card_height, gap_x, gap_y, "right")
         if right_box.x2 <= self.page_image.width and right_box.y2 <= self.page_image.height:
-            self._draw_suggestion(right_box, "Click for horizontal spacing")
-            offers.append("the highlighted card to the right (horizontal spacing)")
+            self._draw_suggestion(right_box)
+            any_offered = True
 
         below_box = predicted_neighbor_box(first.box, card_width, card_height, gap_x, gap_y, "below")
         if below_box.x2 <= self.page_image.width and below_box.y2 <= self.page_image.height:
-            self._draw_suggestion(below_box, "Click for vertical spacing")
-            offers.append("the highlighted card below (vertical spacing)")
+            self._draw_suggestion(below_box)
+            any_offered = True
 
         self.finish_button.configure(state="normal")
-        step_title = "Step 2 of 3 -- Add spacing (optional)"
-        if offers:
+        step_title = "Step 2 of 3 -- Improve accuracy (optional)"
+        if any_offered:
             self._set_step(
                 step_title,
-                "Card size captured. Click " + " or ".join(offers) +
-                " to also measure the gap between cards, or click Finish "
-                "if you don't need that.",
+                "For a more accurate calibration, measure a highlighted card "
+                "too: click its UPPER-LEFT corner, then its LOWER-RIGHT "
+                "corner -- or Finish with one card if this is enough.",
             )
         else:
             self._set_step(
                 step_title,
-                "Card size captured. Click another visible card to measure "
-                "the gap between cards, or click Finish if you don't need that.",
+                "For a more accurate calibration, measure another visible "
+                "card the same way: click its UPPER-LEFT corner, then its "
+                "LOWER-RIGHT corner -- or Finish with one card if this is "
+                "enough.",
             )
 
-    def _draw_suggestion(self, box: PixelBox, label: str) -> None:
+    def _draw_suggestion(self, box: PixelBox) -> None:
+        """Draws a highlighted card as an obviously clickable hotspot: a
+        solid marker-style color wash over the whole card face, like a
+        highlighter pen, with only a thin solid edge. A dashed outline
+        reads as "trace this line"; a solid fill over the card reads as
+        "this card". No text is drawn on the image -- the instruction
+        lives in the status label above the canvas instead, where it's
+        legible and impossible to miss."""
         x1, y1, x2, y2 = (box.x1 * self.scale, box.y1 * self.scale, box.x2 * self.scale, box.y2 * self.scale)
         self.suggestion_canvas_ids.append(
-            self.canvas.create_rectangle(x1, y1, x2, y2, outline="#2a7de1", width=2, dash=(5, 3))
-        )
-        text_y = y1 - 10 if y1 > 20 else y2 + 12
-        self.suggestion_canvas_ids.append(
-            self.canvas.create_text((x1 + x2) / 2, text_y, text=label, fill="#2a7de1", font=("Segoe UI", 9, "bold"))
+            self.canvas.create_rectangle(
+                x1, y1, x2, y2,
+                outline="#2a7de1", width=1,
+                fill="#2a7de1", stipple="gray50",
+            )
         )
 
     def _clear_suggestions(self) -> None:
@@ -423,15 +452,19 @@ class CalibrationWindow(tk.Tk):
             self.canvas.delete(item_id)
         self.suggestion_canvas_ids = []
 
+    def _clear_measurement_markers(self) -> None:
+        for item_id in self.measurement_canvas_ids:
+            self.canvas.delete(item_id)
+        self.measurement_canvas_ids = []
+
     def _finish_without_second_card(self) -> None:
         self._clear_suggestions()
         self.finish_button.configure(state="disabled")
         self.canvas.configure(cursor="arrow")
         self._set_step(
-            "Step 3 of 3 -- Apply the values",
-            "Done -- using card size only, no gap spacing. Copy the patch "
-            "below into profiles/{}.json, re-run --preview to check it, "
-            "then close this window. (Reset to remeasure instead.)".format(self.profile_name),
+            "Step 3 of 3 -- Finish up",
+            "Calibration complete using one card.\n"
+            "Copy your calibration settings, then run --preview to check them.",
         )
 
     def _copy_result(self) -> None:
@@ -443,9 +476,19 @@ class CalibrationWindow(tk.Tk):
         self.copy_button.configure(text="Copied!")
         self.after(1200, lambda: self.copy_button.configure(text=original_text))
 
+    def _toggle_details(self) -> None:
+        self.details_expanded = not self.details_expanded
+        if self.details_expanded:
+            self.result_text.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+            self.details_toggle.configure(text="Technical Details (Optional) ▲")
+        else:
+            self.result_text.pack_forget()
+            self.details_toggle.configure(text="Technical Details (Optional) ▼")
+
     def _reset(self) -> None:
         self._clear_pending()
         self._clear_suggestions()
+        self._clear_measurement_markers()
         self.measurements = []
         self.finish_button.configure(state="disabled")
         self.copy_button.configure(state="disabled")
@@ -453,11 +496,14 @@ class CalibrationWindow(tk.Tk):
         self.result_text.configure(state="normal")
         self.result_text.delete("1.0", "end")
         self.result_text.configure(state="disabled")
+        self.result_text.pack_forget()
+        self.details_expanded = False
+        self.details_toggle.configure(text="Technical Details (Optional) ▼")
+        self.details_toggle.pack_forget()
         self._set_step(
             "Step 1 of 3 -- Mark a card",
-            "Click the UPPER-LEFT corner of a card (assumed r0c0, the grid's "
-            "top-left card). DeckForge uses this pair of clicks to work out "
-            "that card's size and position.",
+            "Click the UPPER-LEFT corner of a card. DeckForge uses this pair "
+            "of clicks to work out that card's size and position.",
         )
 
     def _set_step(self, step: str, instruction: str) -> None:
