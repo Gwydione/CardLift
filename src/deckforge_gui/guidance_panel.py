@@ -13,9 +13,20 @@ from PySide6.QtWidgets import (
 )
 
 from .app_state import AppState
+from .theme import (
+    BG_GUIDANCE,
+    FONT_BODY_SM,
+    FONT_CAPTION,
+    FONT_H2,
+    TEXT_NAV,
+    TEXT_NAV_HEADER,
+    TEXT_NAV_MUTED,
+)
 
-COLLAPSED_WIDTH = 28
-EXPANDED_WIDTH = 260
+COLLAPSED_WIDTH = 30
+EXPANDED_WIDTH = 280
+
+_GLYPH_BUTTON_STYLE = f"color: {TEXT_NAV}; font-size: 14px; font-weight: 700;"
 
 
 class GuidancePanel(QWidget):
@@ -27,12 +38,13 @@ class GuidancePanel(QWidget):
         super().__init__(parent)
         self.state = state
         self.setObjectName("guidancePanel")
-        self.setStyleSheet("#guidancePanel { background: #20242c; }")
+        self.setStyleSheet(f"#guidancePanel {{ background: {BG_GUIDANCE}; }}")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
         self._stack = QStackedWidget()
+        self._stack.setStyleSheet(f"background: {BG_GUIDANCE};")
         outer.addWidget(self._stack)
 
         self._full_page = self._build_full_page()
@@ -45,13 +57,14 @@ class GuidancePanel(QWidget):
     def _build_full_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(10)
 
         header_row = QHBoxLayout()
         title = QLabel("Guidance")
         title.setStyleSheet(
-            "font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #7f8794;"
+            f"font-size: {FONT_CAPTION}px; font-weight: 700; letter-spacing: 1px;"
+            f" color: {TEXT_NAV_HEADER};"
         )
         header_row.addWidget(title)
         header_row.addStretch(1)
@@ -60,18 +73,21 @@ class GuidancePanel(QWidget):
         collapse_btn.setText("»")
         collapse_btn.setToolTip("Hide guidance panel")
         collapse_btn.setAutoRaise(True)
+        collapse_btn.setStyleSheet(_GLYPH_BUTTON_STYLE)
         collapse_btn.clicked.connect(lambda: self.collapse_toggled.emit(True))
         header_row.addWidget(collapse_btn)
         layout.addLayout(header_row)
 
         self._headline = QLabel()
         self._headline.setWordWrap(True)
-        self._headline.setStyleSheet("font-size: 14px; font-weight: 600; color: #e4e7ec;")
+        self._headline.setStyleSheet(
+            f"font-size: {FONT_H2}px; font-weight: 700; color: {TEXT_NAV};"
+        )
         layout.addWidget(self._headline)
 
         self._body = QLabel()
         self._body.setWordWrap(True)
-        self._body.setStyleSheet("font-size: 12px; color: #b4bac5;")
+        self._body.setStyleSheet(f"font-size: {FONT_BODY_SM}px; color: {TEXT_NAV_MUTED};")
         layout.addWidget(self._body)
 
         layout.addStretch(1)
@@ -86,6 +102,7 @@ class GuidancePanel(QWidget):
         expand_btn.setText("«")
         expand_btn.setToolTip("Show guidance panel")
         expand_btn.setAutoRaise(True)
+        expand_btn.setStyleSheet(_GLYPH_BUTTON_STYLE)
         expand_btn.clicked.connect(lambda: self.collapse_toggled.emit(False))
         layout.addWidget(expand_btn)
         layout.addStretch(1)

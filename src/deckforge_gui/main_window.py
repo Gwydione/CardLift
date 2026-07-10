@@ -1,13 +1,15 @@
 """Application-frame shell: top bar, sidebar, context toolbar, workspace,
 guidance panel, status bar.
 
-This milestone only wires the shell together against AppState. No engine
-calls -- see app_state.py for the pure navigation/state model this window
-reads from and dispatches into. A future controller/session layer replaces
-how AppState gets mutated, not how these widgets talk to it.
+Wires the shell together against two plain-Python models: app_state.py
+(navigation/pan/guidance-collapse) and session.py (the loaded PDF). Neither
+imports PySide6 -- this file and the workspace widgets are the only layer
+that knows about Qt.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent, QResizeEvent
@@ -24,10 +26,12 @@ from PySide6.QtWidgets import (
 from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
 from .calibrate_toolbar import CalibrateToolbar
 from .guidance_panel import GuidancePanel
+from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
+from .theme import ACCENT, BG_TOPBAR, BORDER_CARD, FONT_BODY_SM, TEXT_BODY, TEXT_NAV
 from .workspaces import build_workspaces
 
-SIDEBAR_WIDTH = 200
+SIDEBAR_WIDTH = 220
 GUIDANCE_MIN_WINDOW_WIDTH = 860
 _NO_TOOLBAR_INDEX = 0
 _CALIBRATE_TOOLBAR_INDEX = 1
@@ -39,14 +43,14 @@ class TopBar(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("topBar")
-        self.setStyleSheet("#topBar { background: #181b21; }")
-        self.setFixedHeight(44)
+        self.setStyleSheet(f"#topBar {{ background: {BG_TOPBAR}; }}")
+        self.setFixedHeight(48)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 0, 8, 0)
+        layout.setContentsMargins(18, 0, 10, 0)
 
         brand = QLabel("DeckForge")
-        brand.setStyleSheet("font-size: 15px; font-weight: 600; color: #e4e7ec;")
+        brand.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {ACCENT};")
         layout.addWidget(brand)
         layout.addStretch(1)
 
@@ -54,6 +58,7 @@ class TopBar(QWidget):
         overflow.setText("⋮")
         overflow.setToolTip("Settings")
         overflow.setAutoRaise(True)
+        overflow.setStyleSheet(f"color: {TEXT_NAV}; font-size: 16px;")
         layout.addWidget(overflow)
 
 
@@ -65,6 +70,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(720, 480)
 
         self.state = AppState()
+        self.session = DeckSession()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -93,7 +99,7 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(center, 1)
 
         self.toolbar_stack = QStackedWidget()
-        self.toolbar_stack.setFixedHeight(38)
+        self.toolbar_stack.setFixedHeight(44)
         center_layout.addWidget(self.toolbar_stack)
 
         self.calibrate_toolbar = CalibrateToolbar(self.state)
@@ -108,11 +114,22 @@ class MainWindow(QMainWindow):
         for step in WORKFLOW_ORDER:
             self.workspace_stack.addWidget(self.workspaces[step])
 
+        self.deck_workspace = self.workspaces[WorkflowStep.DECK]
+        self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
+
         self.guidance_panel = GuidancePanel(self.state)
         self.guidance_panel.collapse_toggled.connect(self._on_guidance_collapse_toggled)
         body_layout.addWidget(self.guidance_panel)
 
         self.status_bar = self.statusBar()
+        self.status_bar.setContentsMargins(18, 2, 18, 2)
+        self.status_bar.setStyleSheet(
+            f"QStatusBar {{ background: white; border-top: 1px solid {BORDER_CARD};"
+            f" color: {TEXT_BODY}; font-size: {FONT_BODY_SM - 1}px; }}"
+        )
+        self._deck_status_label = QLabel()
+        self.status_bar.addPermanentWidget(self._deck_status_label)
+        self._update_deck_status_label()
 
         self._apply_step(WorkflowStep.DECK)
         self._update_guidance_visibility()
@@ -120,6 +137,22 @@ class MainWindow(QMainWindow):
     def _on_step_selected(self, step: WorkflowStep) -> None:
         self.state.select_step(step)
         self._apply_step(step)
+
+    def _on_pdf_chosen(self, path: Path) -> None:
+        try:
+            self.session.load_pdf(path)
+        except DeckLoadError as exc:
+            self.deck_workspace.show_error(str(exc))
+            return
+        self._update_deck_status_label()
+        self._on_step_selected(WorkflowStep.FIND_CARDS)
+
+    def _update_deck_status_label(self) -> None:
+        if self.session.is_loaded:
+            text = f"{self.session.filename}  •  {self.session.page_count} pages"
+        else:
+            text = "No PDF loaded"
+        self._deck_status_label.setText(text)
 
     def _on_pan_toggled(self, active: bool) -> None:
         self.state.set_pan_mode(active)
@@ -132,6 +165,9 @@ class MainWindow(QMainWindow):
     def _apply_step(self, step: WorkflowStep) -> None:
         self.sidebar.refresh()
         self.workspace_stack.setCurrentIndex(WORKFLOW_ORDER.index(step))
+
+        if step is WorkflowStep.DECK:
+            self.deck_workspace.set_loaded(self.session.filename, self.session.page_count)
 
         is_calibrate = step in CALIBRATE_STEPS
         self.toolbar_stack.setCurrentIndex(

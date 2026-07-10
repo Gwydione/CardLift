@@ -38,8 +38,8 @@ class CalibrateToolbar(QWidget):
         self.setStyleSheet(_TOOLBAR_STYLE)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 6, 14, 6)
+        layout.setSpacing(8)
 
         self._fit_btn = QPushButton("Fit")
         self._zoom_out_btn = QPushButton("−")

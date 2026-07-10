@@ -70,7 +70,7 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
 }
 
 STATUS: dict[WorkflowStep, str] = {
-    WorkflowStep.DECK: "No deck loaded yet.",
+    WorkflowStep.DECK: "Ready — Open a PDF to begin.",
     WorkflowStep.FIND_CARDS: "Ready — locate the card grid.",
     WorkflowStep.CALIBRATE_CARDS: "Ready — Click the upper-left corner of a card.",
     WorkflowStep.CALIBRATE_BACK: "Ready — Click the upper-left corner of the back design.",

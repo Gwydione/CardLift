@@ -11,7 +11,7 @@ bleed, and cut-line placement, and a wrong automatic guess silently
 produces bad crops. A profile you calibrated once by eye is trustworthy
 and reproducible. Automatic calibration is a plausible future addition
 (see "Future work" below) — the architecture is split so that a future
-auto-calibrator only needs to *produce* a profile; nothing else changes.
+auto-calibrator only needs to _produce_ a profile; nothing else changes.
 
 ## Where to start
 
@@ -72,7 +72,7 @@ independently replaceable:
   need to replace (feed it different numbers), without touching cropping,
   rendering, or export logic at all.
 - **cropper.py** and **exporter.py** are the only files that know about
-  the *shape* of a deck (rows/cols, front pages, back page). A future
+  the _shape_ of a deck (rows/cols, front pages, back page). A future
   Tabletop Simulator exporter would reuse `CardCropper` output and just
   package it differently — it wouldn't need to re-derive any grid math.
 
@@ -130,12 +130,12 @@ edge-to-edge.
 Every deck gets its own JSON file in `profiles/`. Required fields, common
 to every profile regardless of which front-grid form it uses (below):
 
-| Field | Meaning |
-|---|---|
-| `pdf_file` | Filename to look for in `sample_decks/` (or the project root) |
-| `back_page` | 1-indexed page containing the card back(s) |
-| `trim_left/right/top/bottom` | Inward crop, in points (see "Trim scope" below for what this governs) |
-| `render_scale` | Points-to-pixels multiplier for output resolution (e.g. `4` ≈ 288 DPI) |
+| Field                        | Meaning                                                                |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `pdf_file`                   | Filename to look for in `sample_decks/` (or the project root)          |
+| `back_page`                  | 1-indexed page containing the card back(s)                             |
+| `trim_left/right/top/bottom` | Inward crop, in points (see "Trim scope" below for what this governs)  |
+| `render_scale`               | Points-to-pixels multiplier for output resolution (e.g. `4` ≈ 288 DPI) |
 
 Optional: `back_left`, `back_top`, `back_card_width`, `back_card_height`,
 `back_gap_x`, `back_gap_y` (see "Front/back grids can differ" below).
@@ -148,13 +148,13 @@ not both:
 **Legacy flat fields** (what every profile used before multi-layout
 support, and still the simplest choice for a single-grid deck):
 
-| Field | Meaning |
-|---|---|
+| Field                                 | Meaning                                                 |
+| ------------------------------------- | ------------------------------------------------------- |
 | `first_front_page`, `last_front_page` | 1-indexed, contiguous page range containing card fronts |
-| `rows`, `cols` | Grid size per page |
-| `left`, `top` | Top-left corner of card (row 0, col 0), in points |
-| `card_width`, `card_height` | Size of one card cell, in points |
-| `gap_x`, `gap_y` | Space between cells, in points (0 = edge-to-edge) |
+| `rows`, `cols`                        | Grid size per page                                      |
+| `left`, `top`                         | Top-left corner of card (row 0, col 0), in points       |
+| `card_width`, `card_height`           | Size of one card cell, in points                        |
+| `gap_x`, `gap_y`                      | Space between cells, in points (0 = edge-to-edge)       |
 
 **`layouts`** -- a list of one or more grids, each tied to its own
 contiguous page range, for a deck that has more than one card shape/size
@@ -225,7 +225,7 @@ means (a grid of card fronts). Since the back isn't a layout, its trim
 still needs to come from somewhere:
 
 - **Legacy profiles** (no `layouts`): the top-level `trim_left/right/top/
-  bottom` fields govern **both** the (single, normalized) front layout
+bottom` fields govern **both** the (single, normalized) front layout
   and the back page, exactly as before multi-layout support existed.
 - **`layouts` profiles**: each layout owns its own front trim, so the
   top-level `trim_left/right/top/bottom` fields apply to the **back page
@@ -262,14 +262,14 @@ useful once you understand the fields and just want to nudge a value).
 3. Open `calibration_overlay.png` and adjust the profile based on what
    you see:
 
-   | Symptom | Fix |
-   |---|---|
-   | Blue grid systematically off in one direction | Adjust `left` / `top` |
-   | Blue grid spacing drifts card-by-card (fine at col 0, off by col 2) | Adjust `card_width` / `card_height` |
-   | Cards overlap, or grid is too tight | Increase `gap_x` / `gap_y` |
-   | Red crop cuts into art on the left/right/top/bottom | Increase the matching `trim_*` |
-   | Red crop includes a sliver of the neighboring card | Increase the matching `trim_*` |
-   | Output looks blurry | Increase `render_scale` (e.g. `4` → `6`) |
+   | Symptom                                                             | Fix                                      |
+   | ------------------------------------------------------------------- | ---------------------------------------- |
+   | Blue grid systematically off in one direction                       | Adjust `left` / `top`                    |
+   | Blue grid spacing drifts card-by-card (fine at col 0, off by col 2) | Adjust `card_width` / `card_height`      |
+   | Cards overlap, or grid is too tight                                 | Increase `gap_x` / `gap_y`               |
+   | Red crop cuts into art on the left/right/top/bottom                 | Increase the matching `trim_*`           |
+   | Red crop includes a sliver of the neighboring card                  | Increase the matching `trim_*`           |
+   | Output looks blurry                                                 | Increase `render_scale` (e.g. `4` → `6`) |
 
 4. Re-run `--preview` after every change until the red boxes sit exactly
    on the edges you want, with no art clipped and no neighboring card
@@ -289,9 +289,11 @@ useful once you understand the fields and just want to nudge a value).
    spot check a few more pages, or split the affected range into its own
    layout (or profile).
 7. QA everything at once:
+
    ```bash
    python extract.py --profile your_deck --contact-sheet
    ```
+
    Writes `preview/contact_sheet.png` with every exported front (in
    order) plus the back, so you can scan the whole deck before importing.
 
@@ -415,7 +417,7 @@ the crop/export pipeline. It only ever prints a suggestion.
    ```
    and open `preview/calibration_overlay.png` in any image viewer that
    shows pixel coordinates on hover (e.g. GIMP, Photoshop, `ImageMagick
-   display`, or your OS's default viewer if it has a coordinate readout).
+display`, or your OS's default viewer if it has a coordinate readout).
 2. Hover the top-left and bottom-right corners of one card's visible
    cell and note their pixel coordinates.
 3. Run:
@@ -569,7 +571,7 @@ these additive rather than disruptive:
   profile does)
 - PlayingCards.io deck package export, Tabletop Simulator export
   (both would consume `CardCropper` output — see `exporter.py`)
-- GUI (CustomTkinter), interactive calibration mode, drag-and-drop PDFs
+- GUI (PySide6 desktop application), interactive calibration mode, drag-and-drop PDFs
 - Multiple saved deck profiles browsed/selected from a UI
 - Explicit non-contiguous page lists per layout (today's workaround: two
   layout entries with identical geometry — see "The front grid" above)

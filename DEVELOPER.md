@@ -3,8 +3,8 @@
 This document exists so that you (or anyone else) can come back to
 DeckForge after weeks away and be productive again in five minutes,
 without having to re-derive how the project is organized or how to run
-it. If you're looking for *what DeckForge is* and *how the calibration
-model works conceptually*, see [README.md](README.md) — this file is
+it. If you're looking for _what DeckForge is_ and _how the calibration
+model works conceptually_, see [README.md](README.md) — this file is
 about the mechanics of working on the code.
 
 ## First Five Minutes
@@ -97,15 +97,12 @@ pytest
 works from the project root with no extra flags. Run it now, before
 touching anything, to confirm your environment is healthy.
 
-**GUI shell prototype (Phase II)**
+**GUI (Phase II)**
 
-A PySide6 desktop application-frame prototype lives in
-`src/deckforge_gui/`, separate from the CLI/engine package. It does not
-call the extraction engine yet — this milestone only validates the
-window shell (sidebar, top bar, context toolbar, workspace, guidance
-panel, status bar) and its resizing behavior. The Tkinter `--calibrate`
-window in `src/deckforge/calibrate_ui.py` is unaffected and still the
-real calibration tool.
+A PySide6 desktop application lives in `src/deckforge_gui/`, separate
+from the CLI/engine package. The Tkinter `--calibrate` window in
+`src/deckforge/calibrate_ui.py` is unaffected and still the real
+calibration tool.
 
 ```powershell
 pip install -r requirements-gui.txt
@@ -113,9 +110,46 @@ python gui_app.py
 ```
 
 `requirements-gui.txt` layers PySide6 on top of `requirements.txt`, kept
-separate so CLI-only installs don't need a GUI toolkit. `app_state.py`
-holds all navigation/state logic with no PySide6 import, so it's unit
-tested directly (`tests/test_app_state.py`) without opening a window.
+separate so CLI-only installs don't need a GUI toolkit.
+
+Two plain-Python models back the widgets, both free of any PySide6
+import so they're unit tested directly without opening a window:
+
+- `app_state.py` — navigation/pan/guidance-collapse state
+  (`tests/test_app_state.py`).
+- `session.py` — the loaded PDF (`DeckSession`/`DeckLoadError`;
+  `tests/test_session.py`). It reuses the engine's `PDFRenderer` (open +
+  `page_count`) rather than re-implementing PDF validation — its only
+  job is turning a rejected file into a friendly `DeckLoadError` at the
+  GUI boundary.
+
+**Welcome Experience milestone.** The first real workflow: launch → open
+a PDF on the Deck page (drag-and-drop onto the dashed drop zone, or the
+"Choose PDF" button) → DeckForge reads the page count via `PDFRenderer`
+→ the Deck step is marked complete and the app auto-advances to Find
+Cards. `deck_workspace.py` (`DeckWorkspace`) owns the drop
+zone/click-to-browse/error-display UI but never decides whether a file
+is a valid PDF -- that's `DeckSession.load_pdf`'s job; `main_window.py`
+wires the two together. `theme.py` centralizes the color palette (dark
+navigation chrome, light PDF workspace, purple accent) so widgets don't
+each hardcode hex values. Find Cards, Calibrate, Review Cards, and
+Export are still placeholders -- this milestone only wires the Deck →
+Find Cards step.
+
+**Responsive Deck workspace.** `DeckWorkspace` no longer fixes the drop
+zone, margins, and type scale to constant pixel sizes -- at moderate
+window sizes the page looks the same as before, but on a large monitor the
+drop zone, heading, and whitespace all grow instead of leaving the page
+looking like a small dialog stranded in a mostly-empty workspace (see
+DESIGN_PRINCIPLES.md's "The PDF is the workspace"). `_apply_responsive_metrics`
+recomputes every scaled size from a single `t` (`theme.responsive_t()`,
+0 at `_COMPACT_WIDTH` and below, 1 at `_SPACIOUS_WIDTH` and above) on
+every `resizeEvent`/`showEvent`, so growth is continuous rather than a
+hard breakpoint jump; each metric's minimum matches the old fixed value,
+so nothing changes below `_COMPACT_WIDTH`. `theme.lerp()`/`clamp()`/
+`responsive_t()` are generic enough that a future workspace needing the
+same "scale with available width" behavior can reuse them instead of
+duplicating the math.
 
 ## Common Commands
 
@@ -203,7 +237,7 @@ decision point for whether a left press pans or clicks — it accounts for
 persistent Pan mode (the button), temporary Spacebar hold, and the
 always-pan middle button. `CalibrationWindow._pan_mode` is only turned off
 by clicking Pan again or Escape (`pan_mode_after_escape()`); losing focus
-or releasing Spacebar clears *temporary* pan state only
+or releasing Spacebar clears _temporary_ pan state only
 (`cleared_temporary_pan_state()`), leaving a deliberately-selected Pan
 mode alone. Pan mode changes only how the page is viewed, never a
 calibration value — clicking Pan on/off, panning, or zooming never
@@ -220,7 +254,7 @@ canvas (x, y) or `None`) and are deliberately **not** added to
 `self._overlay_ids`, so `_redraw_overlays()` never deletes them; instead
 `_raise_crosshair()` runs after every image/overlay redraw to keep them
 on top of newly (re)created items. `crosshair_display_position()` and
-`coordinate_readout_position()` (for the small "X 1234  Y 5678" readout
+`coordinate_readout_position()` (for the small "X 1234 Y 5678" readout
 next to the zoom percentage, in rendered-image pixels) both fold in
 `pan_active()` — true for persistent Pan mode, a temporary Spacebar hold,
 or an active pan drag — so every caller (pointer motion, leaving the
@@ -236,7 +270,7 @@ existing style. Like the rest of this section, none of it touches
 **Responsive viewport.** The canvas is laid out with Tkinter grid
 row/column weights so it expands to fill whatever space the window is
 given, instead of being capped at a fixed pixel size — `MAX_DISPLAY_WIDTH`
-/ `MAX_DISPLAY_HEIGHT` now only seed the window's *initial* size. The
+/ `MAX_DISPLAY_HEIGHT` now only seed the window's _initial_ size. The
 canvas's `<Configure>` event (fired on resize/maximize) is debounced
 (`RESIZE_DEBOUNCE_MS`) and ignores degenerate sizes below
 `MIN_VIEWPORT_DIM`, so a window-border drag doesn't repeatedly re-crop the
@@ -288,7 +322,7 @@ python extract.py --profile solo_cards --contact-sheet
 
 Builds one tiled, labeled QA image from everything currently in
 `output/` (every exported front, in order, plus the back). Use this
-right after `--export` to eyeball the *entire* deck at once before
+right after `--export` to eyeball the _entire_ deck at once before
 importing it anywhere — catches things a single-card inspect would
 miss, like one page's grid drifting relative to the others.
 
@@ -317,7 +351,7 @@ miss, like one page's grid drifting relative to the others.
   images) you don't want committed.
 - **`git commit`** — commit once a change is a coherent, working unit
   (a passing test suite, a working command). Write a message that says
-  *why*, not just *what* — the diff already shows what changed.
+  _why_, not just _what_ — the diff already shows what changed.
 - **`git log --oneline`** — use this to reorient yourself at the start
   of a session, or to check whether a change you're about to make
   duplicates something already done. This project's existing log
@@ -350,13 +384,16 @@ DeckForge/
 │   ├── measure.py               # --measure: pixel coords → suggested profile patch (no rendering)
 │   ├── calibrate_ui.py          # --calibrate: interactive click-to-measure window
 │   └── cli.py                   # argparse wiring — the only file that knows about CLI flags
-├── src/deckforge_gui/            # PySide6 desktop shell (Phase II prototype, no engine calls yet)
+├── src/deckforge_gui/            # PySide6 desktop app (Phase II)
 │   ├── app_state.py              # Pure navigation/state model — no PySide6 import, unit tested directly
+│   ├── session.py                # Pure DeckSession/DeckLoadError model — loaded PDF, via engine's PDFRenderer
+│   ├── theme.py                  # Shared color palette (dark nav chrome, light PDF workspace, purple accent)
 │   ├── main_window.py            # MainWindow: assembles top bar/sidebar/toolbar/workspace/guidance/status bar
 │   ├── sidebar.py                # Fixed-width workflow sidebar
 │   ├── guidance_panel.py         # Collapsible right-hand guidance panel
 │   ├── calibrate_toolbar.py      # Fit/Zoom/Pan toolbar shown above the Calibrate workspace
-│   └── workspaces.py             # Placeholder central workspace per workflow step
+│   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
+│   └── workspaces.py             # Central workspace per workflow step (placeholders past Deck)
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 
@@ -425,6 +462,25 @@ How we expect Claude Code to be used on this project:
   visual rather than requiring someone to read PDF point math. Favor
   changes that keep that experience simple and visual over ones that
   add power at the cost of clarity.
+
+## Phase II GUI Development
+
+Before implementing GUI changes, review the following:
+
+- README.md
+- DEVELOPER.md
+- docs/ui/DESIGN_PRINCIPLES.md
+- docs/ui/UI_DECISIONS.md
+- UI mockups in docs/ui/
+
+The mockups are design specifications, not pixel-perfect implementation
+requirements.
+
+When implementation constraints require compromise, preserve the workflow,
+information hierarchy, and overall user experience over exact appearance.
+
+The purpose of the GUI is to make the engine approachable for tabletop
+gamers, not to expose implementation details.
 
 ## Design Philosophy
 

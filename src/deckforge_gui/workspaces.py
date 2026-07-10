@@ -13,27 +13,37 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from .app_state import AppState, WorkflowStep
+from .deck_workspace import DeckWorkspace
+from .theme import BG_WORKSPACE, FONT_BODY, FONT_BODY_SM, FONT_H1, TEXT_BODY, TEXT_HEADING
 
 
 class PlaceholderWorkspace(QWidget):
-    """Static title + subtitle, centered. Used for every non-calibrate step."""
+    """Static title + subtitle, centered. Used for every step without a
+    real workspace yet."""
 
     def __init__(self, title: str, subtitle: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setStyleSheet(f"background: {BG_WORKSPACE};")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 32, 32, 32)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
         heading = QLabel(title)
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        heading.setStyleSheet("font-size: 22px; font-weight: 600; color: #d5d9e0;")
+        heading.setStyleSheet(
+            f"font-size: {FONT_H1}px; font-weight: 700; color: {TEXT_HEADING};"
+            " background: transparent;"
+        )
         layout.addWidget(heading)
 
         subtitle_label = QLabel(subtitle)
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle_label.setWordWrap(True)
-        subtitle_label.setMaximumWidth(420)
-        subtitle_label.setStyleSheet("font-size: 13px; color: #7f8794;")
+        subtitle_label.setMaximumWidth(480)
+        subtitle_label.setStyleSheet(
+            f"font-size: {FONT_BODY}px; color: {TEXT_BODY}; background: transparent;"
+        )
         layout.addWidget(subtitle_label)
 
     def set_pan_active(self, active: bool) -> None:
@@ -47,25 +57,29 @@ class CalibrateWorkspace(QWidget):
         super().__init__(parent)
         self.state = state
         self._dragging = False
+        self.setStyleSheet(f"background: {BG_WORKSPACE};")
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 32, 32, 32)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         self._page = QLabel("Page preview\n(placeholder)")
         self._page.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._page.setFixedSize(420, 580)
+        self._page.setFixedSize(460, 630)
         self._page.setStyleSheet(
             "background: #2a2f3a; border: 1px solid #444b59;"
-            " color: #6b7280; font-size: 13px;"
+            f" color: #6b7280; font-size: {FONT_BODY_SM}px;"
         )
         layout.addWidget(self._page, 0, Qt.AlignmentFlag.AlignCenter)
 
         caption = QLabel(subtitle)
         caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         caption.setWordWrap(True)
-        caption.setMaximumWidth(420)
-        caption.setStyleSheet("font-size: 12px; color: #7f8794;")
+        caption.setMaximumWidth(460)
+        caption.setStyleSheet(
+            f"font-size: {FONT_BODY_SM}px; color: #7f8794; background: transparent;"
+        )
         layout.addWidget(caption)
 
     def set_pan_active(self, active: bool) -> None:
@@ -90,9 +104,7 @@ class CalibrateWorkspace(QWidget):
 def build_workspaces(state: AppState) -> dict[WorkflowStep, QWidget]:
     """One workspace instance per workflow step, in WORKFLOW_ORDER."""
     return {
-        WorkflowStep.DECK: PlaceholderWorkspace(
-            "Deck", "Bring in a print-and-play PDF to start a new deck."
-        ),
+        WorkflowStep.DECK: DeckWorkspace(),
         WorkflowStep.FIND_CARDS: PlaceholderWorkspace(
             "Find Cards", "DeckForge will help you point out where the cards are."
         ),
