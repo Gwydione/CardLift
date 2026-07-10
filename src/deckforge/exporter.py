@@ -170,6 +170,23 @@ class DeckExporter:
         overlay_img.save(overlay_path)
         return overlay_path
 
+    # -- calibrate ------------------------------------------------------
+
+    def render_calibration_page(self, page_num: Optional[int] = None) -> tuple[Image.Image, int, bool]:
+        """Renders one raw page (default: first_front_page) at the
+        profile's render_scale, for --calibrate to display and let the
+        user click on. Unlike overlay(), no crop rectangles are drawn --
+        the calibration window draws its own from live clicks. Returns
+        (page_image, resolved page_num, is_back)."""
+        if page_num is None:
+            page_num = self.profile.first_front_page
+        is_back = page_num == self.profile.back_page
+
+        with PDFRenderer(self._find_pdf()) as renderer:
+            page_image = renderer.render_page(page_num, self.profile.render_scale)
+
+        return page_image, page_num, is_back
+
     # -- inspect ------------------------------------------------------
 
     def inspect(self, card_number: int) -> Path:

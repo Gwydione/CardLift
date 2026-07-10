@@ -69,11 +69,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
              "render, crop, or modify the profile -- combine with one or "
              "two --card options.",
     )
+    mode.add_argument(
+        "--calibrate", action="store_true",
+        help="Open a small interactive window showing the rendered page: "
+             "click a card's upper-left then lower-right corner and it "
+             "prints the same suggested patch as --measure, without "
+             "having to read pixel coordinates by hand. Does not modify "
+             "the profile -- combine with --page to calibrate a different "
+             "page (e.g. back_page).",
+    )
     parser.add_argument(
         "--page", type=int, default=None,
-        help="Page number to use with --overlay or --measure (default: "
-             "the profile's first_front_page). Only valid together with "
-             "--overlay or --measure.",
+        help="Page number to use with --overlay, --measure, or "
+             "--calibrate (default: the profile's first_front_page). "
+             "Only valid together with one of those.",
     )
     parser.add_argument(
         "--card", action="append", default=[], metavar="rRcC:X1,Y1,X2,Y2",
@@ -91,8 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    if args.page is not None and not (args.overlay or args.measure):
-        parser.error("--page is only valid together with --overlay or --measure")
+    if args.page is not None and not (args.overlay or args.measure or args.calibrate):
+        parser.error("--page is only valid together with --overlay, --measure, or --calibrate")
     if args.card and not args.measure:
         parser.error("--card is only valid together with --measure")
     if args.measure and not args.card:
@@ -177,6 +186,16 @@ def main(argv: list[str] | None = None) -> int:
                 f"\nThis is a suggestion only -- profiles/{args.profile}.json "
                 f"was NOT modified. Copy the values you want into the JSON "
                 f"by hand, then re-run --preview or --overlay to check them."
+            )
+
+        elif args.calibrate:
+            from .calibrate_ui import run_calibration
+
+            page_image, page_num, is_back = exporter.render_calibration_page(args.page)
+            print(f"Opening calibration window for page {page_num}...")
+            run_calibration(
+                profile=profile, profile_name=args.profile,
+                page_image=page_image, page_num=page_num, is_back=is_back,
             )
 
     except (ProfileError, PDFRenderError, ExportError, GeometryError, MeasureError) as e:
