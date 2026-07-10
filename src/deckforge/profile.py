@@ -158,7 +158,10 @@ def load_profile(name: str, profiles_dir: Path) -> DeckProfile:
         raise ProfileError(f"profile '{name}' not found at {path}")
 
     with open(path, "r") as f:
-        raw = json.load(f)
+        try:
+            raw = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ProfileError(f"profile '{name}' is not valid JSON: {e}") from e
 
     missing = [k for k in REQUIRED_KEYS if k not in raw]
     if missing:

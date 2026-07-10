@@ -261,6 +261,38 @@ export target) should only ever touch one or two files. See README's
 "Why split this way" for the reasoning — read it before restructuring
 anything in `src/deckforge/`.
 
+## CLI Output Conventions (`cli.py`)
+
+`cli.py` carries two presentation conventions on top of parsing args —
+both are UI-only and don't touch `exporter.py`/`geometry.py`/etc.:
+
+- **"Next:" nudges.** Every successful command ends with a line
+  suggesting the next command in the calibrate → preview → export →
+  contact-sheet chain (e.g. `--preview` suggests `--export` once the
+  overlay looks right). If you add a new mode flag, give it one too —
+  say what a first-time user would naturally do with the output.
+- **`friendly_error()`.** Every raised `ProfileError` / `PDFRenderError`
+  / `ExportError` / `GeometryError` / `MeasureError` is caught in
+  `main()` and passed through `friendly_error()`, which matches on
+  substrings of the exception's existing message to prepend a plain-
+  language cause + "Next step:", then prints the original message
+  underneath as `Details:`. This means the underlying modules never
+  need to know about presentation — they just keep raising the same
+  clear, specific messages they already do — but it also means
+  `friendly_error()`'s substring matches can go stale if you reword an
+  exception message without checking `friendly_error()`'s branches for
+  it (see `cli.py`'s docstring on that function). Anything not matched
+  falls back to a generic sentence rather than erroring.
+  `except Exception` in `main()` is the last resort for truly
+  unanticipated failures (a bug, a corrupt PDF) — it prints a short
+  notice plus the full traceback under `Details:`, so nothing surfaces
+  as a bare, unexplained crash.
+- **`format_export_summary()`.** `--export`'s completion message (card/
+  back counts, pixel size, output location, and a suggested next step)
+  is built from the list of files `DeckExporter.export()` already
+  returns — no export logic changed to support this, it's pure
+  after-the-fact description.
+
 ## Claude Code Workflow
 
 How we expect Claude Code to be used on this project:

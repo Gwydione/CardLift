@@ -85,6 +85,12 @@ class TestLoadProfile:
         with pytest.raises(ProfileError):
             load_profile("my_deck", tmp_path)
 
+    def test_malformed_json_raises_profile_error(self, tmp_path: Path) -> None:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "my_deck.json").write_text('{"rows": 2, "cols": 2,}')  # trailing comma
+        with pytest.raises(ProfileError, match="not valid JSON"):
+            load_profile("my_deck", tmp_path)
+
     def test_pdf_file_is_optional(self, tmp_path: Path) -> None:
         data = base_profile_dict()
         del data["pdf_file"]

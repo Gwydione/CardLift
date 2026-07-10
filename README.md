@@ -13,6 +13,20 @@ and reproducible. Automatic calibration is a plausible future addition
 (see "Future work" below) — the architecture is split so that a future
 auto-calibrator only needs to *produce* a profile; nothing else changes.
 
+## Where to start
+
+New to DeckForge? Run:
+
+```bash
+python extract.py --profile your_deck --calibrate
+```
+
+Every command prints what to run next once it finishes, so following that
+trail — `--calibrate` → `--preview` → `--export` → `--contact-sheet` — is
+enough to go from a blank profile to an imported deck without reading the
+rest of this file. Everything below is the reference for when you want
+more detail on a specific step.
+
 ## Requirements
 
 - Python 3.10+ (3.12 recommended)
@@ -347,6 +361,24 @@ All front cards are guaranteed to come out at identical pixel dimensions
 (the crop math rounds card size once and reuses it for every cell, so
 per-card rounding drift can't sneak in a 1px difference — a real bug
 caught while building this).
+
+`--export` finishes with a plain-language summary — how many card fronts
+and backs were produced, their pixel size, where the files landed, and
+that they're ready to import into platforms like PlayingCards.io or
+Tabletop Simulator — followed by a suggestion to run `--contact-sheet` as
+a final visual check.
+
+## If something goes wrong
+
+Every error DeckForge can anticipate (a missing profile, invalid JSON, a
+PDF that isn't where the profile says, trim values that collapse a card
+to nothing, a malformed `--card` spec, …) prints a one- or two-line
+plain-language explanation of the likely cause and what to try next,
+followed by `Details:` with the underlying technical message — keep
+reading past the first lines if you need the exact value or field name.
+Anything DeckForge doesn't have a specific explanation for (a bug, or an
+unusual PDF) still exits cleanly with a short notice and the full
+technical detail, instead of a raw crash.
 
 ## Included sample deck
 

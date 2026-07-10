@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 from .exporter import DeckExporter, DeckForgePaths, ExportError
@@ -23,9 +24,188 @@ from .measure import (
 from .pdf_renderer import PDFRenderError
 from .profile import ProfileError, load_profile
 
+NEW_USER_HINT = (
+    "New to DeckForge? Start with:\n"
+    "  python extract.py --profile <name> --calibrate\n"
+    "It walks you through calibrating a deck step by step, and each "
+    "command tells you what to run next."
+)
+
+
+class DeckForgeArgParser(argparse.ArgumentParser):
+    """Adds a "start here" hint to the one error a first-time user is
+    most likely to hit: running the tool without picking a mode flag
+    (--preview/--export/etc.) at all. Everything else falls back to
+    argparse's normal error() behavior."""
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        extra = f"\n{NEW_USER_HINT}\n" if "one of the arguments" in message and "required" in message else ""
+        self.exit(2, f"{self.prog}: error: {message}\n{extra}")
+
+
+def format_export_summary(written: list[Path], output_dir: Path) -> str:
+    """Formats the --export completion message: what was produced, where
+    it landed, and what a first-time user would naturally do with it
+    next. Kept separate from DeckExporter.export() itself so the export
+    logic stays free of presentation concerns -- this only describes
+    files that already exist."""
+    front_paths = [p for p in written if p.name.startswith("front_")]
+    back_paths = [p for p in written if p.name == "back.png"]
+
+    size_note = ""
+    if front_paths:
+        try:
+            from PIL import Image
+            with Image.open(front_paths[0]) as im:
+                size_note = f" at {im.width}x{im.height}px each"
+        except Exception:
+            pass
+
+    parts = []
+    if front_paths:
+        plural = "s" if len(front_paths) != 1 else ""
+        parts.append(f"{len(front_paths)} card front{plural}{size_note}")
+    if back_paths:
+        parts.append("1 back design")
+    produced = " and ".join(parts) if parts else "no files"
+
+    lines = [f"Export complete: {produced}.", f"Files are in {output_dir}/:"]
+    shown = written[:3]
+    for p in shown:
+        lines.append(f"  {p.name}")
+    if len(written) > len(shown):
+        lines.append(f"  ... and {len(written) - len(shown)} more")
+
+    lines.append(
+        "\nThese PNGs are ready to use as a custom deck in tabletop "
+        "platforms such as PlayingCards.io or Tabletop Simulator -- most "
+        "accept a folder of individual card face images plus one shared "
+        "back image."
+    )
+    lines.append(
+        "\nNext: run --contact-sheet for one image showing every card at "
+        "a glance -- a quick way to catch a mistake before importing."
+    )
+    return "\n".join(lines)
+
+
+def friendly_error(e: Exception) -> str:
+    """Prepends a plain-language cause and suggested next step to a
+    caught DeckForge exception, keeping the original technical message
+    underneath as "Details:" for debugging. Matches on substrings of the
+    existing exception messages rather than introducing new error codes,
+    so this stays in sync with profile.py/pdf_renderer.py/exporter.py/
+    geometry.py/measure.py without those modules needing to know about
+    presentation at all."""
+    detail = str(e)
+
+    if isinstance(e, ProfileError):
+        if "not found at" in detail:
+            explanation = (
+                "DeckForge can't find that profile. Likely cause: no "
+                "profiles/<name>.json file exists yet, or --profile is "
+                "misspelled.\nNext step: create the profile JSON (see "
+                "README 'Calibrating a new deck') or check the spelling."
+            )
+        elif "is not valid JSON" in detail:
+            explanation = (
+                "DeckForge couldn't read that profile file because it "
+                "isn't valid JSON -- likely a typo such as a missing "
+                "comma, quote, or brace.\nNext step: open the file and "
+                "compare its structure against profiles/solo_cards.json."
+            )
+        elif "missing required keys" in detail:
+            explanation = (
+                "This profile is missing information DeckForge needs "
+                "before it can find your cards.\nNext step: add the "
+                "listed fields (see README 'Profiles' for what each one "
+                "means)."
+            )
+        elif "unrecognized keys" in detail:
+            explanation = (
+                "This profile has a field name DeckForge doesn't "
+                "recognize -- likely a typo.\nNext step: check the field "
+                "name against README 'Profiles', or prefix it with '_' if "
+                "it's meant as a comment."
+            )
+        elif "hasn't been" in detail or "positive point values" in detail:
+            explanation = (
+                "This profile hasn't been calibrated yet -- card_width/"
+                "card_height are still 0.\nNext step: run --calibrate (or "
+                "--measure) to get real values, then --preview to check "
+                "them."
+            )
+        else:
+            explanation = "DeckForge couldn't load this profile."
+
+    elif isinstance(e, PDFRenderError):
+        if "out of range" in detail:
+            explanation = (
+                "That page doesn't exist in this PDF.\nNext step: check "
+                "first_front_page/last_front_page/back_page in the "
+                "profile (or --page) against the PDF's actual page count."
+            )
+        elif "not found" in detail:
+            explanation = (
+                "DeckForge can't find the source PDF for this deck.\n"
+                "Next step: place the PDF in sample_decks/ (or the "
+                "project root) using the filename given by 'pdf_file' in "
+                "the profile."
+            )
+        else:
+            explanation = "DeckForge had a problem reading the PDF."
+
+    elif isinstance(e, ExportError):
+        if "no 'pdf_file' set" in detail:
+            explanation = (
+                "This profile doesn't say which PDF to open.\nNext step: "
+                'add "pdf_file": "your-deck.pdf" to the profile JSON.'
+            )
+        elif "could not find" in detail:
+            explanation = (
+                "DeckForge can't find the PDF named in this profile.\n"
+                "Next step: place it in sample_decks/ (or the project "
+                "root)."
+            )
+        elif "out of range" in detail:
+            explanation = (
+                "That card number doesn't exist in this deck.\nNext "
+                "step: pick a number within the range shown below."
+            )
+        elif "identical dimensions" in detail:
+            explanation = (
+                "Something is inconsistent in the grid geometry -- cards "
+                "are coming out different sizes.\nNext step: re-check "
+                "rows/cols/card_width/card_height/gap_x/gap_y in the "
+                "profile with --overlay."
+            )
+        else:
+            explanation = "DeckForge couldn't complete the export."
+
+    elif isinstance(e, GeometryError):
+        explanation = (
+            "The trim values leave nothing to crop for at least one "
+            "card.\nNext step: reduce trim_left/trim_right/trim_top/"
+            "trim_bottom in the profile."
+        )
+
+    elif isinstance(e, MeasureError):
+        explanation = (
+            "DeckForge couldn't understand one of the --card "
+            "measurements.\nNext step: check the format against the "
+            "README 'Measuring a new deck fast' example "
+            "(rNcN:x1,y1,x2,y2)."
+        )
+
+    else:
+        explanation = "DeckForge couldn't complete that command."
+
+    return f"{explanation}\n\nDetails: {detail}"
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = DeckForgeArgParser(
         prog="extract.py",
         description="DeckForge: extract card images from a print-and-play PDF using a manual calibration profile.",
     )
@@ -125,14 +305,24 @@ def main(argv: list[str] | None = None) -> int:
                 "red boxes land exactly on card edges (see README 'Calibrating "
                 "a new deck').".format(args.profile)
             )
+            print(
+                "\nNext: once the red boxes look right, run --export to "
+                "produce the full deck of image files."
+            )
 
         elif args.export:
             written = exporter.export()
-            print(f"Exported {len(written)} files to {paths.output_dir}/")
+            print(format_export_summary(written, paths.output_dir))
 
         elif args.contact_sheet:
             sheet_path = exporter.contact_sheet()
             print(f"Wrote {sheet_path}")
+            print(
+                "\nOpen it to check every card at a glance -- this is the "
+                "fastest way to catch a page that drifted relative to the "
+                "others. If it all looks right, the deck in output/ is ready "
+                "to import."
+            )
 
         elif args.overlay:
             overlay_path = exporter.overlay(args.page)
@@ -142,6 +332,10 @@ def main(argv: list[str] | None = None) -> int:
                 "and re-run until the red boxes land exactly on card edges "
                 "(see README 'Calibrating a new deck').".format(args.profile)
             )
+            print(
+                "\nNext: once this page looks right, run --preview to check "
+                "the front grid too (if you haven't already), then --export."
+            )
 
         elif args.inspect is not None:
             inspect_path = exporter.inspect(args.inspect)
@@ -149,6 +343,11 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "\nblue = raw cell, red = saved crop. Anything outside the "
                 "red box is excluded from the export."
+            )
+            print(
+                "\nNext: adjust trim_left/trim_right/trim_top/trim_bottom in "
+                "profiles/{}.json if needed, then re-run --preview to confirm "
+                "the change across the whole page.".format(args.profile)
             )
 
         elif args.measure:
@@ -204,7 +403,17 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     except (ProfileError, PDFRenderError, ExportError, GeometryError, MeasureError) as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {friendly_error(e)}", file=sys.stderr)
+        return 1
+    except Exception:
+        print(
+            "ERROR: DeckForge hit a problem it doesn't have a specific "
+            "explanation for. This is likely a bug, or an unusual PDF -- "
+            "if it keeps happening, please report it with the details "
+            "below.\n\n"
+            f"Details:\n{traceback.format_exc()}",
+            file=sys.stderr,
+        )
         return 1
 
     return 0
