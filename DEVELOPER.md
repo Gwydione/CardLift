@@ -97,6 +97,26 @@ pytest
 works from the project root with no extra flags. Run it now, before
 touching anything, to confirm your environment is healthy.
 
+**GUI shell prototype (Phase II)**
+
+A PySide6 desktop application-frame prototype lives in
+`src/deckforge_gui/`, separate from the CLI/engine package. It does not
+call the extraction engine yet — this milestone only validates the
+window shell (sidebar, top bar, context toolbar, workspace, guidance
+panel, status bar) and its resizing behavior. The Tkinter `--calibrate`
+window in `src/deckforge/calibrate_ui.py` is unaffected and still the
+real calibration tool.
+
+```powershell
+pip install -r requirements-gui.txt
+python gui_app.py
+```
+
+`requirements-gui.txt` layers PySide6 on top of `requirements.txt`, kept
+separate so CLI-only installs don't need a GUI toolkit. `app_state.py`
+holds all navigation/state logic with no PySide6 import, so it's unit
+tested directly (`tests/test_app_state.py`) without opening a window.
+
 ## Common Commands
 
 All commands go through `extract.py` and require `--profile <name>`
@@ -309,8 +329,10 @@ miss, like one page's grid drifting relative to the others.
 ```
 DeckForge/
 ├── extract.py              # CLI entry point — thin, delegates to src/deckforge
+├── gui_app.py               # GUI entry point — thin, delegates to src/deckforge_gui (Phase II prototype)
 ├── requirements.txt         # Runtime dependencies
 ├── requirements-dev.txt     # Runtime + test dependencies (pytest)
+├── requirements-gui.txt     # Runtime + PySide6, for the GUI shell prototype
 ├── pyproject.toml           # pytest config (test paths, src layout)
 ├── README.md                 # Product/conceptual docs: what DeckForge is, grid math, calibration model
 ├── DEVELOPER.md              # This file — day-to-day mechanics of working on the repo
@@ -328,6 +350,13 @@ DeckForge/
 │   ├── measure.py               # --measure: pixel coords → suggested profile patch (no rendering)
 │   ├── calibrate_ui.py          # --calibrate: interactive click-to-measure window
 │   └── cli.py                   # argparse wiring — the only file that knows about CLI flags
+├── src/deckforge_gui/            # PySide6 desktop shell (Phase II prototype, no engine calls yet)
+│   ├── app_state.py              # Pure navigation/state model — no PySide6 import, unit tested directly
+│   ├── main_window.py            # MainWindow: assembles top bar/sidebar/toolbar/workspace/guidance/status bar
+│   ├── sidebar.py                # Fixed-width workflow sidebar
+│   ├── guidance_panel.py         # Collapsible right-hand guidance panel
+│   ├── calibrate_toolbar.py      # Fit/Zoom/Pan toolbar shown above the Calibrate workspace
+│   └── workspaces.py             # Placeholder central workspace per workflow step
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 
