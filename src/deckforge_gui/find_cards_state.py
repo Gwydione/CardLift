@@ -26,6 +26,19 @@ distinguished from "haven't decided yet" (CORE_CONCEPTS.md), that answer is
 tracked explicitly via back_confirmed_none rather than inferred from the
 absence of a Back-role page. See should_prompt_shared_back() for how/when
 the GUI is expected to ask for that explicit answer.
+
+THREE STATES, ONE METHOD
+------------------------
+Downstream consumers (Calibrate) need to distinguish three, and only three,
+possibilities: a page is assigned, the user explicitly confirmed there is
+none, or the question is still unresolved. shared_back_status() returns a
+single SharedBackStatus rather than making callers combine back_page() and
+back_confirmed_none themselves -- an earlier version of this module exposed
+just the two independent facts, and Calibrate ended up treating "no page
+assigned" (which is true for both CONFIRMED_NONE and UNRESOLVED) as if it
+always meant CONFIRMED_NONE. Any code that needs to branch on this decision
+should match on the enum, not re-derive it from back_page()/
+back_confirmed_none directly.
 """
 
 from __future__ import annotations
@@ -37,6 +50,15 @@ from enum import Enum
 class PageRole(Enum):
     FRONT = "front"
     BACK = "back"
+
+
+class SharedBackStatus(Enum):
+    """The Deck's Shared Back decision, as one tri-state fact instead of
+    two independently-checked booleans. See "THREE STATES, ONE METHOD"
+    above and shared_back_status()."""
+    UNRESOLVED = "unresolved"
+    ASSIGNED = "assigned"
+    CONFIRMED_NONE = "confirmed_none"
 
 
 @dataclass
@@ -110,11 +132,23 @@ class FindCardsState:
         self.back_confirmed_none = True
         self.continue_attempted = False
 
+    def shared_back_status(self) -> SharedBackStatus:
+        """The single authoritative answer to "what does this Deck's
+        Shared Back look like right now" -- ASSIGNED, CONFIRMED_NONE, or
+        UNRESOLVED. Callers (Calibrate included) should branch on this
+        instead of checking back_page()/back_confirmed_none separately."""
+        if self.back_page() is not None:
+            return SharedBackStatus.ASSIGNED
+        if self.back_confirmed_none:
+            return SharedBackStatus.CONFIRMED_NONE
+        return SharedBackStatus.UNRESOLVED
+
     def shared_back_resolved(self) -> bool:
         """True once the Shared Back question has a real answer -- a page,
         or an explicit "none" -- as opposed to simply not having been
-        addressed yet."""
-        return self.back_page() is not None or self.back_confirmed_none
+        addressed yet. A convenience wrapper around shared_back_status()
+        for callers that only need a yes/no (e.g. gating Continue)."""
+        return self.shared_back_status() is not SharedBackStatus.UNRESOLVED
 
     def note_continue_attempted(self) -> None:
         """Called when the user tries to leave (Continue) while the Shared
@@ -162,7 +196,11 @@ def find_cards_status_text(state: FindCardsState, page_count: int) -> str:
     shows, condensed to one line. See FindCardsWorkspace._refresh_deck_
     summary() for the richer in-workspace rendering, including the inline
     "Confirm there's no Shared Back" action this plain text doesn't need
-    to represent."""
+    to represent. The "not yet decided" wording matches that in-workspace
+    label exactly (rather than the two surfaces drifting independently) and
+    reflects SharedBackStatus.UNRESOLVED regardless of whether the inline
+    confirm action happens to be showing yet -- that's a separate, timing-
+    only concern (should_prompt_shared_back()), not a different fact."""
     if not page_count:
         return "Ready — open a PDF to begin."
     front_count = state.front_page_count()
@@ -171,13 +209,11 @@ def find_cards_status_text(state: FindCardsState, page_count: int) -> str:
     noun = "page" if front_count == 1 else "pages"
     front_clause = f"{front_count} front {noun} marked"
 
-    back_page = state.back_page()
-    if back_page is not None:
-        back_clause = f"Shared Back: page {back_page}"
-    elif state.back_confirmed_none:
+    status = state.shared_back_status()
+    if status is SharedBackStatus.ASSIGNED:
+        back_clause = f"Shared Back: page {state.back_page()}"
+    elif status is SharedBackStatus.CONFIRMED_NONE:
         back_clause = "Shared Back: none"
-    elif state.should_prompt_shared_back(page_count):
-        back_clause = "Shared Back: not yet decided"
     else:
-        back_clause = "Shared Back: not yet"
+        back_clause = "Shared Back: not yet decided"
     return f"{front_clause}. {back_clause}."

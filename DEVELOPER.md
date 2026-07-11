@@ -136,9 +136,9 @@ zone/click-to-browse/error-display UI but never decides whether a file
 is a valid PDF -- that's `DeckSession.load_pdf`'s job; `main_window.py`
 wires the two together. `theme.py` centralizes the color palette (dark
 navigation chrome, light PDF workspace, purple accent) so widgets don't
-each hardcode hex values. Find Cards, Calibrate, Review Cards, and
+each hardcode hex values. Select Card Pages, Calibrate, Review Cards, and
 Export are still placeholders -- this milestone only wires the Deck →
-Find Cards step.
+Select Card Pages step.
 
 **Responsive Deck workspace.** `DeckWorkspace` no longer fixes the drop
 zone, margins, and type scale to constant pixel sizes -- at moderate
@@ -155,51 +155,101 @@ so nothing changes below `_COMPACT_WIDTH`. `theme.lerp()`/`clamp()`/
 same "scale with available width" behavior can reuse them instead of
 duplicating the math.
 
-**Find Cards milestone.** The documented workflow order is Deck -> Find
-Cards -> Calibrate -> Review Cards -> Export (docs/ui/UI*DECISIONS.md),
-so Find Cards runs \_before* any calibration profile exists. It is
-deliberately a coarse, page-level scoping step, not detection or
-calibration: there is no automatic card-detection algorithm anywhere in
-DeckForge (README's MVP is manual-calibration-only), and Calibrate's own
-two-corner-click flow (the CLI's `--calibrate`, via
-`measure.derive_geometry()`) already owns deriving precise card geometry
-later -- redoing that work here would just be duplication.
+**Select Card Pages milestone.** (Originally shipped as "Find Cards"; see
+"Select Card Pages redesign" below for why it was renamed and reworked.)
+The documented workflow order is Deck -> Select Card Pages -> Calibrate ->
+Review Cards -> Export (docs/ui/UI_DECISIONS.md), so this step runs
+_before_ any calibration profile exists. It is deliberately a coarse,
+page-level scoping step, not detection or calibration: there is no
+automatic card-detection algorithm anywhere in DeckForge (README's MVP is
+manual-calibration-only), and Calibrate's own two-corner-click flow (the
+CLI's `--calibrate`, via `measure.derive_geometry()`) already owns
+deriving precise card geometry later -- redoing that work here would just
+be duplication.
 
 `find_cards_state.py` is the pure-Python model (no PySide6 import, unit
 tested in `tests/test_find_cards_state.py`, same pattern as
-`app_state.py`/`session.py`): `FindCardsState` holds at most one
-`PageMarker` per page, storing it in **PDF points** -- the same canonical
-page coordinate space `profile.py`/`geometry.py` already use everywhere --
-rather than rendered-image or widget pixels, so a marker stays correct
-across a window resize or a future zoom/pan change. A point, not a
-rectangle: Calibrate will re-derive the actual card box from scratch via
-its own corner clicks, so a coarser region here would add nothing
-Calibrate can't already produce more precisely itself.
+`app_state.py`/`session.py`): `FindCardsState` assigns each page at most
+one `PageRole` (`FRONT` or `BACK`) -- a page's *semantics*, not a click
+location or a coordinate. The state that matters is purely "what is this
+whole page," so a page either has a role or it doesn't; Calibrate later
+re-derives the actual card box from scratch via its own corner clicks, so
+storing any location here would add nothing Calibrate can't already
+produce more precisely itself.
 
 `find_cards_workspace.py` (`FindCardsWorkspace`) renders the current page
 via the engine's `PDFRenderer` at a fixed `PREVIEW_RENDER_SCALE` (no
 profile/render_scale exists yet at this point in the workflow), fits it to
-the canvas without upscaling, and lets the user click to place/replace
-that page's marker. `FindCardsView` is the pure (no Qt-widget-instance
-dependency) coordinate transform between PDF points and widget pixels,
-recomputed on every paint -- unit tested directly in
-`tests/test_find_cards_workspace.py`, including that the same stored point
-lands on the same relative spot on the page at any widget size. Page
-navigation (Previous/Next) and "Clear this page" are local to the
-workspace; there is no app-wide Start Over feature yet for Find Cards
-state to participate in. Loading a (new or replacement) PDF via
-`MainWindow._on_pdf_chosen` clears any previous markers, since a marker's
-page number has no relationship to the same page number in a different
-PDF.
+the canvas without upscaling, and exposes two per-page toggle buttons
+("Mark as Front" / "Set as Shared Back") plus a role badge drawn on the
+canvas -- there is no click-to-mark on the page image itself. `FindCardsView`
+is the pure (no Qt-widget-instance dependency) fit/center transform between
+the rendered image and widget pixels, recomputed on every paint -- unit
+tested directly in `tests/test_find_cards_workspace.py`. Page navigation
+(Previous/Next) is local to the workspace; there is no app-wide Start Over
+feature yet for Select Card Pages state to participate in. Loading a (new
+or replacement) PDF via `MainWindow._on_pdf_chosen` clears any previous
+role assignments, since a page's role has no relationship to the same page
+number in a different PDF.
 
 Out of scope for this milestone, deferred to later ones: inferring
-rows/cols or precise crop geometry from a marker, selecting/moving/
-resizing individual card rectangles (Edit Cards is a separate, later
-concern), and any app-wide reset/Start Over feature.
+rows/cols or precise crop geometry from a page (Calibrate's job),
+selecting/moving/resizing individual card rectangles (Edit Cards is a
+separate, later concern), and any app-wide reset/Start Over feature.
+
+**Select Card Pages redesign: PageRole and SharedBackStatus.** The
+original Find Cards milestone stored a clicked `(x, y)` point per marked
+page (`PageMarker`); once Calibrate's own click-to-measure flow existed,
+it became clear the point's *location* never carried any meaning --
+Calibrate always re-measures from scratch. The step was renamed Select
+Card Pages and reworked to assign each page an explicit `PageRole`
+(`FRONT` or `BACK`) instead, via "Mark as Front"/"Set as Shared Back"
+toggle buttons rather than a click anywhere on the page. A page can hold
+at most one role -- assigning Shared Back to a page overwrites whatever
+role it had, and moves the Shared Back role off any other page that held
+it (`FindCardsState.set_role()`), so "a page cannot be both Front and
+Shared Back" is enforced by construction rather than by convention.
+
+Because "this Deck has no Shared Back" is a valid, common answer that
+must stay distinguishable from "haven't decided yet" (CORE_CONCEPTS.md),
+`FindCardsState.shared_back_status()` returns a three-way
+`SharedBackStatus` (`ASSIGNED` / `CONFIRMED_NONE` / `UNRESOLVED`) rather
+than exposing "is some page currently assigned" as a bare boolean. An
+early version of the Shared Back Calibrate step *did* collapse those into
+a boolean (`has_back_page`), which meant "the user hasn't decided yet" and
+"the user confirmed there's no Shared Back" were indistinguishable
+downstream -- reachable in practice because `AppState.is_reached` never
+regresses: once Calibrate > Shared Back has been visited once, its
+sidebar entry stays enabled even after the user goes back to Select Card
+Pages and un-assigns the Shared Back page, leaving it genuinely
+unresolved. Calibrate would then silently display "this deck has no
+Shared Back" and allow Continue, without the user ever confirming that.
+The fix threads `SharedBackStatus` itself through
+`calibrate_guidance_text()`/`calibrate_status_text()` and
+`CalibrateWorkspace._update_continue_footer()` so all three states are
+handled explicitly: `ASSIGNED` shows and calibrates that page normally;
+`CONFIRMED_NONE` shows the "nothing to calibrate" state and permits
+Continue; `UNRESOLVED` shows neither of those, blocks Continue, and
+surfaces a "‹ Back to Select Card Pages" button
+(`back_to_select_cards_clicked`) so the user has an explicit route back to
+where the decision belongs, rather than Calibrate guessing on their
+behalf. See `tests/test_calibrate_state.py`'s
+`TestUnresolvedSharedBackReachedViaSidebar` for the regression test
+covering that navigation path. The Deck Summary (in
+`find_cards_workspace.py`) and the bottom status bar
+(`find_cards_status_text()`) both read `shared_back_status()` and use the
+same "Shared Back: not yet decided." wording for `UNRESOLVED`, rather than
+two different phrasings drifting independently -- `should_prompt_shared_
+back()` still separately decides *when* to reveal the inline "Confirm
+there's no Shared Back" action (reaching the PDF's last page, or a
+blocked Continue attempt), which is a timing question layered on top of,
+not a substitute for, the underlying `SharedBackStatus` fact.
 
 **Calibrate milestone.** The first milestone where precise geometry is
-established: two-corner-click measurement of one representative "Cards"
-(front) page plus a freely-navigated "Shared Back" page, reusing the
+established: two-corner-click measurement of one representative Fronts
+page plus the single page Select Card Pages assigns as Shared Back
+(see "Select Card Pages redesign" above -- Shared Back page navigation
+has changed since this milestone first shipped), reusing the
 CLI's calibration math (`measure.derive_geometry()`, the same
 inverse-geometry solver `--calibrate`/`--measure` use) and click
 semantics (corner normalization, auto-inferred neighbor cell, optional
@@ -218,7 +268,7 @@ but as directly-testable data. Measurements are stored in **PDF points**
 is reconstructed only for the moment `derive_geometry()` needs it
 (`point * render_scale`, a lossless round trip, not a re-measurement).
 
-**Shared Back is single-card only.** Cards supports an optional second-
+**Shared Back is single-card only.** Fronts supports an optional second-
 card measurement to derive `gap_x`/`gap_y` for a printed grid, but Shared
 Back is one representative card's rectangle, not a grid -- there's no
 neighboring back to space against. `CalibrationTarget.allows_second_
@@ -231,7 +281,7 @@ earlier hides them for free rather than needing a step-specific branch in
 `calibrate_workspace.py`. `calibrate_guidance_text()`/
 `calibrate_status_text()`'s completion copy for Shared Back names the
 representative page and states the result will be applied as the shared
-back for every selected front-card page, mirroring how Cards' completion
+back for every selected front page, mirroring how Fronts' completion
 copy names its scope (see "Presenting one shared geometry" below).
 
 Deliberately **not** reused from the CLI: the "copy suggested patch,
@@ -242,22 +292,28 @@ geometry is instead held directly in `CalibrateState` -- a future
 profile-building milestone reads from it rather than the user retyping
 numbers. Relatedly, `CalibrateState` never constructs a `profile.
 CardLayout` (rows/cols and page-range enumeration stay out of scope, same
-as Find Cards) -- it only holds the `GridGeometry`-shaped subset a future
-milestone would combine with rows/cols to build one.
+as Select Card Pages) -- it only holds the `GridGeometry`-shaped subset a
+future milestone would combine with rows/cols to build one.
 
-Cards and Shared Back have different page-navigation sources:
-`CalibrateWorkspace._navigable_pages()` restricts Cards to
-`find_cards_state.marked_pages()` (one shared geometry is assumed to
-apply to every marked page) but lets Shared Back page through the whole
-PDF freely, defaulting to the last page (the common convention for a
-shared back), since no earlier step identifies which page it is.
+Fronts and Shared Back have different page-navigation sources, both read
+from `find_cards_state.py` rather than either rediscovering page meaning:
+`CalibrateWorkspace._navigable_pages()` restricts Fronts to
+`find_cards_state.front_pages()` (one shared geometry is assumed to apply
+to every Front Page) and restricts Shared Back to the single page
+`find_cards_state.back_page()` names, if any -- an empty list (no page to
+show at all) when Shared Back is `CONFIRMED_NONE` or still `UNRESOLVED`.
+Calibrate never searches the PDF for a plausible back page itself; an
+earlier revision guessed the PDF's last page as a fallback when none had
+been identified yet, which was removed once Select Card Pages made an
+explicit assignment mandatory -- see "Select Card Pages redesign" above.
 Leaving a page mid-measurement (a pending click, or one measurement not
 yet finished) discards that in-progress state -- it only makes sense on
-the page it was clicked on. `CalibrateState.cards_is_stale()` is a
-pull-based check (not a signal) comparing `calibrated_page_num` against
-Find Cards' current markers, run by `MainWindow` whenever the user
-navigates into the Cards step, so unmarking the page a calibration came
-from resets it without coupling the two state classes together.
+the page it was clicked on. `CalibrateState.cards_is_stale()`/
+`back_is_stale()` are pull-based checks (not signals) comparing each
+target's `calibrated_page_num` against Select Card Pages' current role
+assignments, run by `MainWindow` whenever the user navigates into the
+corresponding step, so changing a page's role resets any calibration that
+depended on it without coupling the two state classes together.
 
 `view_transform.py` is a straight port of `calibrate_ui.py`'s
 `ViewTransform` (and its pure sibling functions -- `wheel_direction`,
@@ -280,24 +336,25 @@ state-aware (pending corner / one card measured / calibrated) instead of
 introducing a step counter. The underlying state machine is identical;
 only the presentation differs.
 
-**Presenting one shared geometry, not per-page calibration.** Cards
-calibration produces a single geometry from one representative marked
-page, applied to every page Find Cards selected -- but early wording
-("Calibrated.", "Page 3 (2 of 6 marked)") read as though each page still
-needed its own calibration, especially with page navigation still
+**Presenting one shared geometry, not per-page calibration.** Fronts
+calibration produces a single geometry from one representative Front
+Page, applied to every page Select Card Pages marked Front -- but early
+wording ("Calibrated.", "Page 3 (2 of 6 marked)") read as though each page
+still needed its own calibration, especially with page navigation still
 available afterward. `calibrate_guidance_text()`/`calibrate_status_text()`
-now take a `marked_page_count` (threaded from `FindCardsState` through
+take a `front_page_count` (threaded from `FindCardsState` through
 `CalibrateWorkspace`, `GuidancePanel`, and `MainWindow._status_text()`) so
 the completion message names the representative page and states that the
-result applies to all selected front-card pages. Separately,
+result applies to all selected front pages. Separately,
 `CalibrateWorkspace._page_label_text()` grounds page navigation in the
 original PDF's numbering ("PDF page 3 of 8") as the primary line, with the
-front-card-relative position ("Front card page 2 of 6") as a visually
+front-page-relative position ("Front page 2 of 6") as a visually
 lighter secondary line -- rather than replacing PDF page numbers with a
-filtered sequence, which made pages excluded by Find Cards (e.g. the
-shared back) feel like they'd been dropped rather than simply out of
+filtered sequence, which made pages excluded from Select Card Pages (e.g.
+the shared back) feel like they'd been dropped rather than simply out of
 scope for this step. Shared Back keeps just the PDF-page line, since it
-navigates the whole PDF rather than a marked subset.
+navigates only its single assigned page rather than the Front Pages
+subset.
 
 ## Common Commands
 
@@ -544,8 +601,8 @@ DeckForge/
 │   ├── calibrate_workspace.py    # Calibrate page (Cards/Shared Back): PDF canvas, click handling, zoom/pan, overlays
 │   ├── view_transform.py         # Ported ViewTransform + pure zoom/pan/fit math (from calibrate_ui.py), shared GUI infra
 │   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
-│   ├── find_cards_state.py       # Pure FindCardsState/PageMarker model -- coarse per-page markers, in PDF points
-│   ├── find_cards_workspace.py   # Find Cards page: PDF page-by-page preview + marker placement
+│   ├── find_cards_state.py       # Pure FindCardsState/PageRole/SharedBackStatus model -- per-page Front/Back roles
+│   ├── find_cards_workspace.py   # Select Card Pages workspace: PDF page-by-page preview + role toggle buttons
 │   └── workspaces.py             # Central workspace per workflow step (placeholders past Calibrate)
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```

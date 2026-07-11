@@ -13,7 +13,7 @@ development remains consistent.
 The primary workflow is:
 
 1.  Deck
-2.  Find Cards
+2.  Select Card Pages
 3.  Calibrate
 4.  Review Cards
 5.  Export
@@ -28,9 +28,9 @@ internal architecture.
 ## Navigation
 
 - Deck
-- Find Cards
+- Select Card Pages
 - Calibrate
-  - Cards
+  - Fronts
   - Shared Back
 - Review Cards
 - Export
@@ -128,7 +128,7 @@ Prefer user-oriented language.
 
 Examples:
 
-- Find Cards
+- Select Card Pages
 - Review Cards
 - Show DeckForge the first card
 

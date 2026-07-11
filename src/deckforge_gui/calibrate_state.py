@@ -1,6 +1,5 @@
 """Calibrate state -- precise per-card geometry, derived from two-corner
-clicks on one representative page each for "Cards" (front) and "Shared
-Back".
+clicks on one representative page each for "Fronts" and "Shared Back".
 
 Deliberately free of any PySide6 import, same rationale as app_state.py/
 session.py/find_cards_state.py: this is the controller/session layer the
@@ -48,9 +47,16 @@ assumed to share one card grid: `cards` holds a single CalibrationTarget,
 calibrated from whichever one Front Page the user chooses to click on (see
 calibrate_workspace.py's page navigation, restricted to Front Pages for
 that step). `back` is calibrated on the single page Select Card Pages
-identified as the Shared Back -- Calibrate never searches for it, only
-measures it; if no page was identified (an explicit "no shared back"
-Deck), the Shared Back step has nothing to calibrate at all.
+assigned as the Shared Back -- Calibrate never searches for it, only
+measures it.
+
+Absence of an assigned page is not, by itself, "no Shared Back": Select
+Card Pages distinguishes CONFIRMED_NONE (an explicit answer) from
+UNRESOLVED (not decided yet) via find_cards_state.SharedBackStatus, and
+Calibrate must preserve that distinction rather than treating both as
+"nothing to calibrate." See calibrate_guidance_text()/calibrate_status_text()
+below and CalibrateWorkspace._update_continue_footer(), which is exactly
+where an earlier revision collapsed the two.
 """
 
 from __future__ import annotations
@@ -62,6 +68,7 @@ from typing import TYPE_CHECKING, Optional, Sequence
 from deckforge.measure import CardMeasurement, MeasureError, PixelBox, derive_geometry
 
 from .app_state import GUIDANCE, STATUS, WorkflowStep
+from .find_cards_state import SharedBackStatus
 
 if TYPE_CHECKING:
     from .find_cards_state import FindCardsState
@@ -69,7 +76,7 @@ if TYPE_CHECKING:
 # Points-to-pixels scale pages are rendered at for Calibrate. Independent
 # of any profile (none exists yet at this point in the workflow, same
 # reasoning as find_cards_workspace.PREVIEW_RENDER_SCALE) -- chosen higher
-# than Find Cards' since precise corner placement benefits from a sharper
+# than Select Card Pages' since precise corner placement benefits from a sharper
 # source image to zoom into.
 CALIBRATE_RENDER_SCALE = 4.0
 
@@ -347,14 +354,26 @@ class CalibrateState:
 
 
 def calibrate_guidance_text(
-    step: WorkflowStep, target: CalibrationTarget, front_page_count: int = 0, has_back_page: bool = True,
+    step: WorkflowStep,
+    target: CalibrationTarget,
+    front_page_count: int = 0,
+    shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
 ) -> tuple[str, str]:
-    if step is WorkflowStep.CALIBRATE_BACK and not has_back_page:
+    if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
+        if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
+            return (
+                "This deck has no Shared Back.",
+                "Select Card Pages recorded that this deck has no Shared Back "
+                "— there's nothing to calibrate here. Continue to Review Cards "
+                "whenever you're ready.",
+            )
+        # UNRESOLVED -- Calibrate must not guess or default to "none"; the
+        # decision belongs to Select Card Pages.
         return (
-            "This deck has no Shared Back.",
-            "Select Card Pages recorded that this deck has no Shared Back "
-            "— there's nothing to calibrate here. Continue to Review Cards "
-            "whenever you're ready.",
+            "Shared Back hasn't been decided yet.",
+            "Go back to Select Card Pages and either choose a Shared Back "
+            "page or confirm this deck has none — Calibrate can't continue "
+            "until that's decided.",
         )
     subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
     if target.is_complete:
@@ -390,10 +409,15 @@ def calibrate_guidance_text(
 
 
 def calibrate_status_text(
-    step: WorkflowStep, target: CalibrationTarget, front_page_count: int = 0, has_back_page: bool = True,
+    step: WorkflowStep,
+    target: CalibrationTarget,
+    front_page_count: int = 0,
+    shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
 ) -> str:
-    if step is WorkflowStep.CALIBRATE_BACK and not has_back_page:
-        return "This deck has no Shared Back — nothing to calibrate. Continue to Review Cards."
+    if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
+        if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
+            return "This deck has no Shared Back — nothing to calibrate. Continue to Review Cards."
+        return "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
     subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:

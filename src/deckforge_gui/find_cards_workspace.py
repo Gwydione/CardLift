@@ -40,7 +40,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from deckforge.pdf_renderer import PDFRenderer
 
-from .find_cards_state import FindCardsState, PageRole
+from .find_cards_state import FindCardsState, PageRole, SharedBackStatus
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -259,6 +259,10 @@ class FindCardsWorkspace(QWidget):
     """
 
     continue_clicked = Signal()
+    state_changed = Signal()  # Any role/Shared-Back-decision change -- lets
+    # MainWindow keep the status bar and guidance panel in sync without
+    # them re-deriving FindCardsState changes themselves. Mirrors
+    # CalibrateWorkspace.calibration_changed.
 
     def __init__(self, state: FindCardsState, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -425,15 +429,18 @@ class FindCardsWorkspace(QWidget):
         self.state.toggle_front(self.state.current_page)
         self._canvas.update()
         self._refresh()
+        self.state_changed.emit()
 
     def _on_back_toggled(self) -> None:
         self.state.toggle_back(self.state.current_page)
         self._canvas.update()
         self._refresh()
+        self.state_changed.emit()
 
     def _on_confirm_no_back(self) -> None:
         self.state.confirm_no_shared_back()
         self._refresh()
+        self.state_changed.emit()
 
     def _on_continue_clicked(self) -> None:
         if self.state.front_page_count() == 0:
@@ -483,19 +490,21 @@ class FindCardsWorkspace(QWidget):
             noun = "page" if front_count == 1 else "pages"
             self._front_summary_label.setText(f"{front_count} Front {noun} selected.")
 
-        back_page = self.state.back_page()
-        if back_page is not None:
-            self._back_summary_label.setText(f"Shared Back: page {back_page}.")
+        status = self.state.shared_back_status()
+        if status is SharedBackStatus.ASSIGNED:
+            self._back_summary_label.setText(f"Shared Back: page {self.state.back_page()}.")
             self._confirm_no_back_btn.setVisible(False)
-        elif self.state.back_confirmed_none:
+        elif status is SharedBackStatus.CONFIRMED_NONE:
             self._back_summary_label.setText("Shared Back: none.")
             self._confirm_no_back_btn.setVisible(False)
-        elif self.state.should_prompt_shared_back(self._page_count):
-            self._back_summary_label.setText("Shared Back: not yet selected.")
-            self._confirm_no_back_btn.setVisible(True)
         else:
-            self._back_summary_label.setText("Shared Back: not yet.")
-            self._confirm_no_back_btn.setVisible(False)
+            # UNRESOLVED -- same wording as find_cards_status_text()'s
+            # status-bar line regardless of whether the inline confirm
+            # action below happens to be showing yet; that visibility is a
+            # separate timing concern (should_prompt_shared_back()), not a
+            # different fact about the Deck.
+            self._back_summary_label.setText("Shared Back: not yet decided.")
+            self._confirm_no_back_btn.setVisible(self.state.should_prompt_shared_back(self._page_count))
 
     def set_pan_active(self, active: bool) -> None:
         """No-op: Select Card Pages has no pan mode -- it's not a

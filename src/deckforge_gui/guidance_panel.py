@@ -146,6 +146,6 @@ class GuidancePanel(QWidget):
                 step,
                 self.calibrate_state.target_for(step),
                 self.find_cards_state.front_page_count(),
-                has_back_page=self.find_cards_state.back_page() is not None,
+                self.find_cards_state.shared_back_status(),
             )
         return self.state.guidance_text()

@@ -130,10 +130,12 @@ class MainWindow(QMainWindow):
         self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
         self.find_cards_workspace = self.workspaces[WorkflowStep.FIND_CARDS]
         self.find_cards_workspace.continue_clicked.connect(self._on_find_cards_continue)
+        self.find_cards_workspace.state_changed.connect(self._on_find_cards_state_changed)
         self.calibrate_cards_workspace = self.workspaces[WorkflowStep.CALIBRATE_CARDS]
         self.calibrate_cards_workspace.continue_clicked.connect(self._on_cards_continue)
         self.calibrate_back_workspace = self.workspaces[WorkflowStep.CALIBRATE_BACK]
         self.calibrate_back_workspace.continue_clicked.connect(self._on_back_continue)
+        self.calibrate_back_workspace.back_to_select_cards_clicked.connect(self._on_back_to_select_cards)
         for calibrate_workspace in (self.calibrate_cards_workspace, self.calibrate_back_workspace):
             calibrate_workspace.zoom_changed.connect(self.calibrate_toolbar.set_zoom_percent)
             calibrate_workspace.calibration_changed.connect(self._on_calibration_changed)
@@ -185,6 +187,9 @@ class MainWindow(QMainWindow):
     def _on_back_continue(self) -> None:
         self._on_step_selected(WorkflowStep.REVIEW_CARDS)
 
+    def _on_back_to_select_cards(self) -> None:
+        self._on_step_selected(WorkflowStep.FIND_CARDS)
+
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:
             text = f"{self.session.filename}  •  {self.session.page_count} pages"
@@ -209,6 +214,10 @@ class MainWindow(QMainWindow):
         return self.workspaces[self.state.current_step]
 
     def _on_calibration_changed(self) -> None:
+        self.guidance_panel.refresh()
+        self._refresh_current_workspace()
+
+    def _on_find_cards_state_changed(self) -> None:
         self.guidance_panel.refresh()
         self._refresh_current_workspace()
 
@@ -258,7 +267,7 @@ class MainWindow(QMainWindow):
                 step,
                 self.calibrate_state.target_for(step),
                 self.find_cards_state.front_page_count(),
-                has_back_page=self.find_cards_state.back_page() is not None,
+                self.find_cards_state.shared_back_status(),
             )
         return self.state.status_text()
 

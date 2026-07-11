@@ -1,4 +1,4 @@
-from deckforge_gui.app_state import GUIDANCE, STATUS, WorkflowStep
+from deckforge_gui.app_state import GUIDANCE, STATUS, AppState, WorkflowStep
 from deckforge_gui.calibrate_state import (
     CalibrateState,
     ClickOutcome,
@@ -8,7 +8,7 @@ from deckforge_gui.calibrate_state import (
     normalize_box,
     predicted_neighbor_box,
 )
-from deckforge_gui.find_cards_state import FindCardsState, PageRole
+from deckforge_gui.find_cards_state import FindCardsState, PageRole, SharedBackStatus
 
 CARDS = WorkflowStep.CALIBRATE_CARDS
 BACK = WorkflowStep.CALIBRATE_BACK
@@ -384,22 +384,110 @@ class TestGuidanceAndStatusText:
         assert "shared back" in status.lower()
 
 
-class TestBackSkippedGuidanceAndStatus:
-    """has_back_page=False represents a Deck where Select Card Pages
-    recorded an explicit "no Shared Back" -- Calibrate has nothing to
+class TestBackConfirmedNoneGuidanceAndStatus:
+    """SharedBackStatus.CONFIRMED_NONE represents a Deck where Select Card
+    Pages recorded an explicit "no Shared Back" -- Calibrate has nothing to
     measure and should say so rather than prompting for a corner click."""
 
     def test_guidance_explains_there_is_nothing_to_calibrate(self) -> None:
         state = CalibrateState()
-        headline, body = calibrate_guidance_text(BACK, state.back, has_back_page=False)
+        headline, body = calibrate_guidance_text(
+            BACK, state.back, shared_back_status=SharedBackStatus.CONFIRMED_NONE,
+        )
         assert headline == "This deck has no Shared Back."
         assert "Review Cards" in body
 
     def test_status_explains_there_is_nothing_to_calibrate(self) -> None:
         state = CalibrateState()
-        status = calibrate_status_text(BACK, state.back, has_back_page=False)
+        status = calibrate_status_text(BACK, state.back, shared_back_status=SharedBackStatus.CONFIRMED_NONE)
         assert "no Shared Back" in status
 
-    def test_has_back_page_is_ignored_for_the_cards_step(self) -> None:
+    def test_shared_back_status_is_ignored_for_the_cards_step(self) -> None:
         state = CalibrateState()
-        assert calibrate_guidance_text(CARDS, state.cards, has_back_page=False) == GUIDANCE[CARDS]
+        assert (
+            calibrate_guidance_text(CARDS, state.cards, shared_back_status=SharedBackStatus.CONFIRMED_NONE)
+            == GUIDANCE[CARDS]
+        )
+
+
+class TestBackUnresolvedGuidanceAndStatus:
+    """SharedBackStatus.UNRESOLVED must never be treated like
+    CONFIRMED_NONE -- Calibrate has not been told there's no Shared Back,
+    only that nothing is currently assigned, and those are different
+    facts (see calibrate_state.py's "ONE SHARED LAYOUT" docstring)."""
+
+    def test_guidance_does_not_claim_there_is_no_shared_back(self) -> None:
+        state = CalibrateState()
+        headline, body = calibrate_guidance_text(
+            BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED,
+        )
+        assert headline != "This deck has no Shared Back."
+        assert "hasn't been decided" in headline
+        assert "Select Card Pages" in body
+
+    def test_status_points_back_to_select_card_pages_not_review_cards(self) -> None:
+        state = CalibrateState()
+        status = calibrate_status_text(BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED)
+        assert status == "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
+        assert "Review Cards" not in status
+
+    def test_shared_back_status_is_ignored_for_the_cards_step(self) -> None:
+        state = CalibrateState()
+        assert (
+            calibrate_guidance_text(CARDS, state.cards, shared_back_status=SharedBackStatus.UNRESOLVED)
+            == GUIDANCE[CARDS]
+        )
+
+
+class TestUnresolvedSharedBackReachedViaSidebar:
+    """Regression test for a real navigation path, not just an edge case:
+    AppState.is_reached is a one-way ratchet (furthest_step only grows), so
+    once Calibrate > Shared Back has been visited, the sidebar entry for it
+    stays enabled even after the user goes back to Select Card Pages and
+    un-assigns the Shared Back page -- leaving the decision genuinely
+    unresolved rather than confirmed-none. Calibrate must not silently
+    treat "no page currently assigned" as "no Shared Back" in that case."""
+
+    def test_sidebar_still_permits_reentry_after_the_back_page_is_cleared(self) -> None:
+        app_state = AppState()
+        app_state.select_step(WorkflowStep.FIND_CARDS)
+        app_state.select_step(WorkflowStep.CALIBRATE_CARDS)
+        app_state.select_step(WorkflowStep.CALIBRATE_BACK)
+        app_state.select_step(WorkflowStep.REVIEW_CARDS)
+
+        # The user goes back to Select Card Pages -- is_reached for every
+        # earlier step (including Shared Back) does not regress.
+        app_state.select_step(WorkflowStep.FIND_CARDS)
+        assert app_state.is_reached(WorkflowStep.CALIBRATE_BACK) is True
+
+        find_cards = FindCardsState()
+        find_cards.toggle_front(2)
+        find_cards.toggle_back(8)
+        assert find_cards.shared_back_status() is SharedBackStatus.ASSIGNED
+
+        calibrate = CalibrateState()
+        calibrate.back.page_num = 8
+        calibrate.record_click(BACK, 0.0, 0.0)
+        calibrate.record_click(BACK, 100.0, 100.0)
+        assert calibrate.back.is_complete is True
+
+        # The user un-assigns the back page (e.g. realizing it's the wrong
+        # page) without reassigning it or confirming "no Shared Back" --
+        # genuinely unresolved, not confirmed-none.
+        find_cards.toggle_back(8)
+        assert find_cards.shared_back_status() is SharedBackStatus.UNRESOLVED
+
+        # The user clicks "Shared Back" directly in the sidebar (still
+        # enabled per is_reached above). MainWindow._apply_step would
+        # detect the now-stale calibration and reset it before the step is
+        # shown -- exercised here directly against CalibrateState.
+        assert calibrate.back_is_stale(find_cards) is True
+        calibrate.back.reset()
+
+        headline, _ = calibrate_guidance_text(
+            BACK, calibrate.back, shared_back_status=find_cards.shared_back_status(),
+        )
+        assert headline != "This deck has no Shared Back."
+
+        status = calibrate_status_text(BACK, calibrate.back, shared_back_status=find_cards.shared_back_status())
+        assert status == "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."

@@ -1,5 +1,5 @@
 """Calibrate workspace: precise two-corner-click card geometry, for
-either the "Cards" (front) or "Shared Back" workflow step.
+either the "Fronts" or "Shared Back" workflow step.
 
 One CalibrateWorkspace instance backs each step (see workspaces.py),
 sharing the same CalibrateState -- they differ only in which
@@ -7,8 +7,15 @@ CalibrationTarget they read/write and where their page list comes from:
 Fronts is restricted to the Front Pages Select Card Pages assigned
 (find_cards_state), Shared Back opens directly on the single page Select
 Card Pages assigned as the Shared Back -- Calibrate never searches for it.
-If no page was assigned (an explicit "no Shared Back" Deck), the Shared
-Back step has no page to show at all and is treated as already complete.
+
+The Shared Back step must show one of three distinct states, per
+find_cards_state.SharedBackStatus, never conflating the last two:
+ASSIGNED (show and calibrate that page normally), CONFIRMED_NONE (an
+explicit "no Shared Back" Deck -- nothing to calibrate, treated as already
+complete), or UNRESOLVED (the question hasn't been answered in Select Card
+Pages yet -- Calibrate must not guess, must not offer Continue, and must
+point the user back to Select Card Pages rather than silently behaving
+like CONFIRMED_NONE). See _update_continue_footer().
 
 Reuses the CLI's calibration math and click semantics (calibrate_state.py
 -- record_click/normalize_box/infer_second_cell, all ported/adapted from
@@ -50,7 +57,7 @@ from .calibrate_state import (
     calibrate_status_text,
     predicted_neighbor_box,
 )
-from .find_cards_state import FindCardsState
+from .find_cards_state import FindCardsState, SharedBackStatus
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -297,6 +304,7 @@ class CalibrateWorkspace(QWidget):
     calibration_changed = Signal()
     zoom_changed = Signal(int)  # percent
     continue_clicked = Signal()  # Cards only -- see _build_continue_footer
+    back_to_select_cards_clicked = Signal()  # Shared Back, UNRESOLVED only
 
     def __init__(
         self,
@@ -376,6 +384,17 @@ class CalibrateWorkspace(QWidget):
         outer.addWidget(self._status_label)
 
         footer = QHBoxLayout()
+        # Only ever shown for the Shared Back step's UNRESOLVED state -- the
+        # explicit route back to Select Card Pages so the user can resolve
+        # the Deck's Shared Back decision there, rather than Calibrate
+        # guessing or defaulting to "none" on their behalf.
+        self._back_to_select_btn = QPushButton("‹ Back to Select Card Pages")
+        self._back_to_select_btn.setAutoDefault(False)
+        self._back_to_select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_to_select_btn.setStyleSheet(_CONTROL_BUTTON_STYLE)
+        self._back_to_select_btn.setVisible(False)
+        self._back_to_select_btn.clicked.connect(self.back_to_select_cards_clicked.emit)
+        footer.addWidget(self._back_to_select_btn)
         footer.addStretch(1)
         self._continue_btn = QPushButton("")
         self._continue_btn.setAutoDefault(False)
@@ -618,19 +637,22 @@ class CalibrateWorkspace(QWidget):
         self._update_continue_footer(target)
 
         front_page_count = self.find_cards_state.front_page_count()
-        has_back_page = self.find_cards_state.back_page() is not None
+        shared_back_status = self.find_cards_state.shared_back_status()
 
         if not navigable:
-            self._page_label.setText("No pages available")
+            if self._is_back_step and shared_back_status is SharedBackStatus.UNRESOLVED:
+                self._page_label.setText("Shared Back not yet decided")
+            else:
+                self._page_label.setText("No pages available")
             if self._is_back_step:
-                _, body = calibrate_guidance_text(self.target_step, target, front_page_count, has_back_page=False)
+                _, body = calibrate_guidance_text(self.target_step, target, front_page_count, shared_back_status)
             else:
                 body = "Go back to Select Card Pages and mark at least one Front Page."
             self._status_label.setText(body)
             return
 
         self._page_label.setText(self._page_label_text(target, index, navigable))
-        _, body = calibrate_guidance_text(self.target_step, target, front_page_count, has_back_page)
+        _, body = calibrate_guidance_text(self.target_step, target, front_page_count, shared_back_status)
         self._status_label.setText(body)
 
     def _update_continue_footer(self, target: CalibrationTarget) -> None:
@@ -639,18 +661,37 @@ class CalibrateWorkspace(QWidget):
 
         if self._is_back_step:
             self._continue_btn.setText("Continue to Review Cards ›")
-            skipped = self.find_cards_state.back_page() is None
-            complete = skipped or target.is_complete
-            self._continue_btn.setEnabled(complete)
-            self._completion_banner.setVisible(complete)
-            if not complete:
+            status = self.find_cards_state.shared_back_status()
+            self._back_to_select_btn.setVisible(status is SharedBackStatus.UNRESOLVED)
+
+            if status is SharedBackStatus.UNRESOLVED:
+                # Calibrate must not make or infer this decision -- no
+                # Continue, no "nothing to calibrate" messaging, just a
+                # clear route back to where the decision belongs.
+                self._continue_btn.setEnabled(False)
+                self._completion_banner.setVisible(True)
+                self._completion_banner.setText(self._banner_html(
+                    "Shared Back hasn't been decided",
+                    "Go back to Select Card Pages to choose a Shared Back "
+                    "page or confirm this deck has none.",
+                    complete=False,
+                ))
                 return
-            if skipped:
+
+            if status is SharedBackStatus.CONFIRMED_NONE:
+                self._continue_btn.setEnabled(True)
+                self._completion_banner.setVisible(True)
                 self._completion_banner.setText(self._banner_html(
                     "No Shared Back needed",
                     "This deck has no Shared Back — continue whenever you're ready.",
                 ))
-            else:
+                return
+
+            # ASSIGNED
+            complete = target.is_complete
+            self._continue_btn.setEnabled(complete)
+            self._completion_banner.setVisible(complete)
+            if complete:
                 self._completion_banner.setText(self._banner_html(
                     "Shared Back calibration complete",
                     f"Applied as the shared back for all {front_page_count} front {noun}. "
@@ -658,6 +699,7 @@ class CalibrateWorkspace(QWidget):
                 ))
             return
 
+        self._back_to_select_btn.setVisible(False)
         complete = target.is_complete
         self._continue_btn.setText("Continue to Shared Back ›")
         self._continue_btn.setEnabled(complete)
@@ -670,11 +712,12 @@ class CalibrateWorkspace(QWidget):
             ))
 
     @staticmethod
-    def _banner_html(title: str, body: str) -> str:
+    def _banner_html(title: str, body: str, *, complete: bool = True) -> str:
+        prefix = "✓ " if complete else ""
         return (
             '<div style="text-align:center;">'
             f'<div style="color:{TEXT_HEADING}; font-weight:700; font-size:{FONT_BODY_SM}px;">'
-            f"✓ {title}</div>"
+            f"{prefix}{title}</div>"
             f'<div style="color:{TEXT_CAPTION_MUTED}; font-weight:400; font-size:{FONT_CAPTION}px;'
             ' margin-top:2px;">'
             f"{body}</div>"
@@ -684,13 +727,13 @@ class CalibrateWorkspace(QWidget):
     def _page_label_text(self, target: CalibrationTarget, index: int, navigable: list[int]) -> str:
         """Grounds the reader in the original PDF's page numbers first --
         the ones on their mental model of the document -- with the
-        front-card-relative position as a secondary, lighter-weight line,
+        front-page-relative position as a secondary, lighter-weight line,
         rather than replacing PDF numbering with a filtered sequence (see
         DEVELOPER.md "Calibrate milestone")."""
         pdf_line = f"PDF page {target.page_num} of {self._page_count}"
         if self.target_step is not WorkflowStep.CALIBRATE_CARDS:
             return pdf_line
-        front_line = f"Front card page {index + 1} of {len(navigable)}"
+        front_line = f"Front page {index + 1} of {len(navigable)}"
         return (
             '<div style="text-align:center;">'
             f'<div style="color:{TEXT_HEADING}; font-weight:600; font-size:{FONT_BODY_SM}px;">{pdf_line}</div>'

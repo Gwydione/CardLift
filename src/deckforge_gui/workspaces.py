@@ -1,6 +1,6 @@
 """Central workspaces, one per workflow step.
 
-Deck, Find Cards, and Calibrate (Cards/Shared Back) are real, PDF-driven
+Deck, Select Card Pages, and Calibrate (Fronts/Shared Back) are real, PDF-driven
 workspaces. Review Cards and Export remain placeholders for a later
 milestone.
 """

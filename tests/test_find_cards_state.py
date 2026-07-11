@@ -1,4 +1,9 @@
-from deckforge_gui.find_cards_state import FindCardsState, PageRole, find_cards_status_text
+from deckforge_gui.find_cards_state import (
+    FindCardsState,
+    PageRole,
+    SharedBackStatus,
+    find_cards_status_text,
+)
 
 
 def test_default_state_has_no_roles():
@@ -136,6 +141,42 @@ class TestToggleBack:
         assert state.back_page() == 8
         assert state.role_for_page(5) is None
 
+    def test_toggling_back_on_a_front_page_replaces_its_role(self) -> None:
+        """The mirror of TestToggleFront's
+        test_toggling_front_on_a_back_page_replaces_its_role -- the same
+        mutual-exclusivity invariant ("a page cannot be both Front and
+        Shared Back") must hold in both assignment directions."""
+        state = FindCardsState()
+        state.toggle_front(3)
+        state.toggle_back(3)
+        assert state.role_for_page(3) is PageRole.BACK
+        assert state.front_pages() == []
+
+
+class TestSharedBackStatus:
+    def test_unresolved_before_any_decision(self) -> None:
+        state = FindCardsState()
+        assert state.shared_back_status() is SharedBackStatus.UNRESOLVED
+
+    def test_assigned_once_a_back_page_is_set(self) -> None:
+        state = FindCardsState()
+        state.toggle_back(8)
+        assert state.shared_back_status() is SharedBackStatus.ASSIGNED
+
+    def test_confirmed_none_once_explicitly_confirmed(self) -> None:
+        state = FindCardsState()
+        state.confirm_no_shared_back()
+        assert state.shared_back_status() is SharedBackStatus.CONFIRMED_NONE
+
+    def test_clearing_the_assigned_back_page_returns_to_unresolved_not_confirmed_none(self) -> None:
+        """The exact scenario the previous boolean-only model got wrong:
+        removing an assigned back page must land back on UNRESOLVED, never
+        silently become equivalent to CONFIRMED_NONE."""
+        state = FindCardsState()
+        state.toggle_back(8)
+        state.toggle_back(8)
+        assert state.shared_back_status() is SharedBackStatus.UNRESOLVED
+
 
 class TestSharedBackResolution:
     def test_unresolved_before_any_decision(self) -> None:
@@ -217,17 +258,23 @@ class TestFindCardsStatusText:
         text = find_cards_status_text(state, page_count=10)
         assert "mark at least one" in text.lower()
 
-    def test_front_pages_marked_back_not_yet_decided(self) -> None:
+    def test_front_pages_marked_back_unresolved(self) -> None:
         state = FindCardsState()
         state.toggle_front(2)
         text = find_cards_status_text(state, page_count=10)
         assert "1 front page marked" in text
-        assert "Shared Back: not yet." in text
+        assert "Shared Back: not yet decided." in text
 
-    def test_back_prompt_state_is_reflected(self) -> None:
+    def test_unresolved_wording_does_not_depend_on_prompt_timing(self) -> None:
+        """The Deck Summary's inline confirm CTA appears only once
+        should_prompt_shared_back() is true, but that's a separate timing
+        concern from the underlying fact -- the status text says "not yet
+        decided" for SharedBackStatus.UNRESOLVED regardless of whether the
+        last page has been reached yet (see find_cards_workspace.py's
+        _refresh_deck_summary(), which uses the same wording)."""
         state = FindCardsState()
         state.toggle_front(2)
-        state.note_page_viewed(10)
+        state.note_page_viewed(10)  # would also trigger should_prompt_shared_back
         text = find_cards_status_text(state, page_count=10)
         assert "Shared Back: not yet decided." in text
 

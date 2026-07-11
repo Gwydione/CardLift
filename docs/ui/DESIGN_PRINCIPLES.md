@@ -136,7 +136,7 @@ Avoid unnecessary technical terminology.
 
 Prefer user-oriented language such as:
 
-- Find Cards
+- Select Card Pages
 - Review Cards
 - Show DeckForge the first card
 
