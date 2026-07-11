@@ -1,33 +1,29 @@
-"""Find Cards workspace: page-by-page coarse card-grid scoping.
+"""Select Card Pages workspace: page-by-page semantic classification.
 
-The user pages through the loaded PDF and, for each page that has a card
-grid on it, clicks roughly where that grid begins -- one point marker per
-page (see find_cards_state.py for why a point, not a rectangle: Calibrate's
-own two-corner-click flow re-derives the precise card box later, so a
-coarse region here would add nothing Calibrate can't already do more
-precisely itself).
+The user pages through the loaded PDF and, for each page, says what it is:
+a Front Page, the Shared Back, or neither (the default -- most pages, e.g.
+instructions or reference material, need no marking at all). See
+find_cards_state.py for why this is a page-level role rather than a
+clicked point: the state that matters is "what is this whole page," and a
+stored coordinate previously implied a click's location mattered when it
+never did.
 
 COORDINATE SPACES
 ------------------
-Three coordinate spaces are in play, same layering calibrate_ui.py uses for
-the CLI's --calibrate window:
+Two coordinate spaces are in play (one fewer than before -- there is no
+longer a click to convert):
 
-1. PDF points (1/72", zoom 1.0) -- what FindCardsState stores. Stable
-   forever, regardless of window size or render scale.
-2. Rendered-image pixels -- the page rasterized at the fixed
+1. Rendered-image pixels -- the page rasterized at the fixed
    PREVIEW_RENDER_SCALE via the engine's PDFRenderer. Independent of any
    profile (none exists yet at this point in the workflow).
-3. Widget pixels -- the rendered image fit (never upscaled) and centered
+2. Widget pixels -- the rendered image fit (never upscaled) and centered
    inside whatever size the canvas widget currently is.
 
-FindCardsView.point_to_widget()/widget_to_point() convert directly between
-(1) and (3) in one step (folding the render scale and the fit/center
-transform together), recomputed on every paint so a marker placed at any
-window size, then viewed after a resize, is still exactly where it was
-clicked. Business logic (state transitions) lives entirely in
-FindCardsState; this module only turns paint/mouse events into calls
-against it and a FindCardsView, per ENGINEERING_STANDARDS's "avoid business
-logic in Qt widgets."
+FindCardsView.image_rect() still does this fit/center transform, recomputed
+on every paint, since the canvas still needs to know where to draw the page
+image and its role badge. Business logic (role assignment, the Shared Back
+decision) lives entirely in FindCardsState; this module only turns button
+clicks into calls against it and renders the result.
 """
 
 from __future__ import annotations
@@ -38,13 +34,13 @@ from typing import Optional
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from deckforge.pdf_renderer import PDFRenderer
 
-from .find_cards_state import FindCardsState, PageMarker
+from .find_cards_state import FindCardsState, PageRole
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -58,13 +54,16 @@ from .theme import (
     TEXT_HEADING,
 )
 
-# Fixed points-to-pixels scale for rasterizing pages in Find Cards. There is
-# no calibration profile yet at this point in the workflow (Calibrate comes
-# after Find Cards -- see docs/ui/UI_DECISIONS.md "Workflow"), so this is
-# just a resolution high enough to look sharp once fit to a large window.
+# Fixed points-to-pixels scale for rasterizing pages in Select Card Pages.
+# There is no calibration profile yet at this point in the workflow
+# (Calibrate comes after -- see docs/ui/UI_DECISIONS.md "Workflow"), so
+# this is just a resolution high enough to look sharp once fit to a large
+# window.
 PREVIEW_RENDER_SCALE = 2.0
 
-MARKER_RADIUS = 7.0
+_BADGE_MARGIN = 10.0
+_BADGE_PAD_X = 10.0
+_BADGE_PAD_Y = 5.0
 
 _CONTROL_BUTTON_STYLE = f"""
 QPushButton {{
@@ -81,10 +80,10 @@ QPushButton:disabled {{ color: {TEXT_CAPTION_MUTED}; background: {BG_WORKSPACE};
 """
 
 # Filled/accent variant for the one primary action on this page -- moving on
-# to Calibrate once at least one page is marked. Every other control here
-# (page nav, clear) is secondary/outlined via _CONTROL_BUTTON_STYLE above;
-# this is the only forward-progressing action, so it reads as the obvious
-# next step rather than blending in with paging controls.
+# to Calibrate once at least one page is marked as a Front Page. Every other
+# control here (page nav) is secondary/outlined via _CONTROL_BUTTON_STYLE
+# above; this is the only forward-progressing action, so it reads as the
+# obvious next step rather than blending in with paging controls.
 _PRIMARY_BUTTON_STYLE = f"""
 QPushButton {{
     padding: 8px 18px;
@@ -100,6 +99,56 @@ QPushButton:pressed {{ background: {ACCENT_PRESSED}; }}
 QPushButton:disabled {{ background: #cfc9e8; color: #f4f2fb; }}
 """
 
+# "Mark as Front" -- the primary per-page control, used on every front page
+# (many times a session), so it gets the same filled-accent-when-active
+# weight as a primary action.
+_FRONT_TOGGLE_STYLE = f"""
+QPushButton {{
+    padding: 10px 20px;
+    border: 1px solid {BORDER_CARD};
+    border-radius: 6px;
+    background: {BG_CARD};
+    color: {TEXT_HEADING};
+    font-size: {FONT_BODY_SM}px;
+    font-weight: 600;
+}}
+QPushButton:hover {{ background: #f1effa; border-color: {ACCENT}; }}
+QPushButton:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: white; }}
+"""
+
+# "Set as Shared Back" -- a secondary control, used at most once a session,
+# so it stays visually lighter even when active (outline, not a fill) --
+# it should never compete with the Front toggle for attention.
+_BACK_TOGGLE_STYLE = f"""
+QPushButton {{
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: {TEXT_CAPTION_MUTED};
+    font-size: {FONT_BODY_SM}px;
+}}
+QPushButton:hover {{ color: {TEXT_HEADING}; background: #f1effa; }}
+QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; font-weight: 600; background: #f1effa; }}
+"""
+
+# The inline "Confirm there's no Shared Back" action -- appears only inside
+# the Deck Summary's Shared Back line, only once should_prompt_shared_back()
+# is true. Link-styled rather than a boxed button so it reads as part of
+# the summary sentence, not a new competing control.
+_LINK_BUTTON_STYLE = f"""
+QPushButton {{
+    border: none;
+    background: transparent;
+    color: {ACCENT};
+    font-size: {FONT_CAPTION}px;
+    font-weight: 600;
+    text-decoration: underline;
+    padding: 0px;
+}}
+QPushButton:hover {{ color: {ACCENT_HOVER}; }}
+"""
+
 
 def fit_scale(image_w: float, image_h: float, max_w: float, max_h: float) -> float:
     """Scale factor to fit an image within (max_w, max_h) without
@@ -112,25 +161,17 @@ def fit_scale(image_w: float, image_h: float, max_w: float, max_h: float) -> flo
 
 @dataclass(frozen=True)
 class FindCardsView:
-    """Maps PDF points directly to widget pixels and back, for the current
-    page's rendered image displayed in the canvas. `render_scale` is the
-    fixed points-to-pixels scale the page was rasterized at;
-    `display_scale` additionally fits that rendered image into the widget
-    without upscaling; `offset_x`/`offset_y` center the (possibly
-    letterboxed) image within the widget."""
+    """Maps PDF-page pixels to widget pixels, for the current page's
+    rendered image displayed in the canvas. `render_scale` is the fixed
+    points-to-pixels scale the page was rasterized at; `display_scale`
+    additionally fits that rendered image into the widget without
+    upscaling; `offset_x`/`offset_y` center the (possibly letterboxed)
+    image within the widget."""
 
     render_scale: float
     display_scale: float
     offset_x: float
     offset_y: float
-
-    def point_to_widget(self, x_pt: float, y_pt: float) -> tuple[float, float]:
-        scale = self.render_scale * self.display_scale
-        return (x_pt * scale + self.offset_x, y_pt * scale + self.offset_y)
-
-    def widget_to_point(self, wx: float, wy: float) -> tuple[float, float]:
-        scale = self.render_scale * self.display_scale
-        return ((wx - self.offset_x) / scale, (wy - self.offset_y) / scale)
 
     def image_rect(self, image_w: float, image_h: float) -> tuple[float, float, float, float]:
         """The (x, y, width, height) the rendered image occupies inside
@@ -148,16 +189,15 @@ class FindCardsView:
 
 
 class _PageCanvas(QWidget):
-    """Just the page image and its marker. Painting and click handling are
-    scoped to this widget alone so they never interfere with the
-    surrounding page-navigation controls."""
+    """Just the page image and its role badge. No click handling -- a
+    page's role is set via the toggle buttons below the canvas, never by
+    where on the page the user clicks."""
 
     def __init__(self, workspace: "FindCardsWorkspace") -> None:
         super().__init__(workspace)
         self._workspace = workspace
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px;")
-        self.setCursor(Qt.CursorShape.CrossCursor)
         self.setMinimumSize(160, 160)
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -166,41 +206,40 @@ class _PageCanvas(QWidget):
         try:
             pixmap = self._workspace.current_pixmap()
             if pixmap is None or pixmap.isNull():
-                self._workspace.set_view(None)
                 return
 
             view = FindCardsView.fitting(
                 pixmap.width(), pixmap.height(), self.width(), self.height(), PREVIEW_RENDER_SCALE,
             )
-            self._workspace.set_view(view)
-
             x, y, w, h = view.image_rect(pixmap.width(), pixmap.height())
             painter.drawPixmap(QRectF(x, y, w, h), pixmap, QRectF(0, 0, pixmap.width(), pixmap.height()))
 
-            marker = self._workspace.current_marker()
-            if marker is not None:
-                wx, wy = view.point_to_widget(marker.x, marker.y)
-                painter.setPen(QPen(QColor(ACCENT), 2))
-                painter.setBrush(QColor(ACCENT))
-                painter.drawEllipse(QPointF(wx, wy), MARKER_RADIUS, MARKER_RADIUS)
+            role = self._workspace.current_role()
+            if role is not None:
+                self._draw_role_badge(painter, x, y, role)
         finally:
             painter.end()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
-        view = self._workspace.current_view()
-        pixmap = self._workspace.current_pixmap()
-        if view is None or pixmap is None:
-            return
+    def _draw_role_badge(self, painter: QPainter, image_x: float, image_y: float, role: PageRole) -> None:
+        text = "FRONT" if role is PageRole.FRONT else "SHARED BACK"
+        filled = role is PageRole.FRONT
 
-        wx, wy = event.position().x(), event.position().y()
-        x, y, w, h = view.image_rect(pixmap.width(), pixmap.height())
-        if not (x <= wx <= x + w and y <= wy <= y + h):
-            return  # click landed in the letterboxed margin, not the page
+        font = QFont(painter.font())
+        font.setPixelSize(FONT_CAPTION)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        text_w, text_h = metrics.horizontalAdvance(text), metrics.height()
 
-        x_pt, y_pt = view.widget_to_point(wx, wy)
-        self._workspace.place_marker(x_pt, y_pt)
+        badge = QRectF(
+            image_x + _BADGE_MARGIN, image_y + _BADGE_MARGIN,
+            text_w + _BADGE_PAD_X * 2, text_h + _BADGE_PAD_Y * 2,
+        )
+        painter.setPen(QPen(QColor(ACCENT), 1.5))
+        painter.setBrush(QColor(ACCENT) if filled else QColor(BG_CARD))
+        painter.drawRoundedRect(badge, 5, 5)
+        painter.setPen(QColor("white") if filled else QColor(ACCENT))
+        painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -208,13 +247,15 @@ class _PageCanvas(QWidget):
 
 
 class FindCardsWorkspace(QWidget):
-    """Central Find Cards page: navigate the loaded PDF page by page and
-    mark, per page, roughly where a card grid begins.
+    """Central Select Card Pages workspace: navigate the loaded PDF page by
+    page and, for each page, mark it as a Front Page, the Shared Back, or
+    leave it unmarked.
 
     Owns a PDFRenderer for the currently loaded PDF (opened once in
     set_pdf(), not reopened per page turn) and reuses it purely for
     rendering -- no detection or geometry logic lives here or in the
-    engine; that's Calibrate's job in a later milestone.
+    engine; that's Calibrate's job in a later step, consuming the roles
+    assigned here rather than rediscovering pages.
     """
 
     continue_clicked = Signal()
@@ -225,7 +266,6 @@ class FindCardsWorkspace(QWidget):
         self._renderer: Optional[PDFRenderer] = None
         self._page_count = 0
         self._pixmap: Optional[QPixmap] = None
-        self._view: Optional[FindCardsView] = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"background: {BG_WORKSPACE};")
@@ -234,13 +274,13 @@ class FindCardsWorkspace(QWidget):
         outer.setContentsMargins(24, 20, 24, 20)
         outer.setSpacing(10)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
+        # -- page navigation --------------------------------------------
+        nav = QHBoxLayout()
+        nav.setSpacing(8)
 
         self._prev_btn = QPushButton("‹ Previous page")
         self._next_btn = QPushButton("Next page ›")
-        self._clear_btn = QPushButton("Clear this page")
-        for button in (self._prev_btn, self._next_btn, self._clear_btn):
+        for button in (self._prev_btn, self._next_btn):
             button.setAutoDefault(False)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(_CONTROL_BUTTON_STYLE)
@@ -251,22 +291,68 @@ class FindCardsWorkspace(QWidget):
             f"color: {TEXT_HEADING}; font-size: {FONT_BODY_SM}px; font-weight: 600; background: transparent;"
         )
 
-        controls.addWidget(self._prev_btn)
-        controls.addWidget(self._page_label, 1)
-        controls.addWidget(self._next_btn)
-        controls.addSpacing(16)
-        controls.addWidget(self._clear_btn)
-        outer.addLayout(controls)
+        nav.addWidget(self._prev_btn)
+        nav.addWidget(self._page_label, 1)
+        nav.addWidget(self._next_btn)
+        outer.addLayout(nav)
+
+        # -- per-page role controls ---------------------------------------
+        roles = QHBoxLayout()
+        roles.setSpacing(10)
+        roles.addStretch(1)
+
+        self._front_btn = QPushButton("Mark as Front")
+        self._front_btn.setCheckable(True)
+        self._front_btn.setAutoDefault(False)
+        self._front_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._front_btn.setStyleSheet(_FRONT_TOGGLE_STYLE)
+
+        self._back_btn = QPushButton("Set as Shared Back")
+        self._back_btn.setCheckable(True)
+        self._back_btn.setAutoDefault(False)
+        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_btn.setStyleSheet(_BACK_TOGGLE_STYLE)
+
+        roles.addWidget(self._front_btn)
+        roles.addWidget(self._back_btn)
+        roles.addStretch(1)
+        outer.addLayout(roles)
 
         self._canvas = _PageCanvas(self)
         outer.addWidget(self._canvas, 1)
 
-        self._status_label = QLabel("")
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_label.setStyleSheet(
+        # -- Deck Summary: passive, except the Shared Back line's inline
+        # confirm action, shown only once should_prompt_shared_back() is
+        # true. ----------------------------------------------------------
+        summary = QVBoxLayout()
+        summary.setSpacing(2)
+
+        self._front_summary_label = QLabel("")
+        self._front_summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._front_summary_label.setStyleSheet(
             f"color: {TEXT_CAPTION_MUTED}; font-size: {FONT_CAPTION}px; background: transparent;"
         )
-        outer.addWidget(self._status_label)
+        summary.addWidget(self._front_summary_label)
+
+        back_row = QHBoxLayout()
+        back_row.setSpacing(6)
+        back_row.addStretch(1)
+
+        self._back_summary_label = QLabel("")
+        self._back_summary_label.setStyleSheet(
+            f"color: {TEXT_CAPTION_MUTED}; font-size: {FONT_CAPTION}px; background: transparent;"
+        )
+        back_row.addWidget(self._back_summary_label)
+
+        self._confirm_no_back_btn = QPushButton("Confirm there's no Shared Back")
+        self._confirm_no_back_btn.setAutoDefault(False)
+        self._confirm_no_back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._confirm_no_back_btn.setStyleSheet(_LINK_BUTTON_STYLE)
+        self._confirm_no_back_btn.setVisible(False)
+        back_row.addWidget(self._confirm_no_back_btn)
+        back_row.addStretch(1)
+        summary.addLayout(back_row)
+        outer.addLayout(summary)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
@@ -279,31 +365,22 @@ class FindCardsWorkspace(QWidget):
 
         self._prev_btn.clicked.connect(self._go_previous)
         self._next_btn.clicked.connect(self._go_next)
-        self._clear_btn.clicked.connect(self._clear_current_page)
-        self._continue_btn.clicked.connect(self.continue_clicked.emit)
+        self._front_btn.clicked.connect(self._on_front_toggled)
+        self._back_btn.clicked.connect(self._on_back_toggled)
+        self._confirm_no_back_btn.clicked.connect(self._on_confirm_no_back)
+        self._continue_btn.clicked.connect(self._on_continue_clicked)
 
-        self._update_labels()
+        self._refresh()
 
     # -- FindCardsWorkspace <-> _PageCanvas -----------------------------
 
     def current_pixmap(self) -> Optional[QPixmap]:
         return self._pixmap
 
-    def current_marker(self) -> Optional[PageMarker]:
+    def current_role(self) -> Optional[PageRole]:
         if not self._page_count:
             return None
-        return self.state.marker_for_page(self.state.current_page)
-
-    def current_view(self) -> Optional[FindCardsView]:
-        return self._view
-
-    def set_view(self, view: Optional[FindCardsView]) -> None:
-        self._view = view
-
-    def place_marker(self, x_pt: float, y_pt: float) -> None:
-        self.state.set_marker(self.state.current_page, x_pt, y_pt)
-        self._canvas.update()
-        self._update_labels()
+        return self.state.role_for_page(self.state.current_page)
 
     # -- PDF loading -----------------------------------------------------
 
@@ -326,10 +403,11 @@ class FindCardsWorkspace(QWidget):
         if self._renderer is not None and self._page_count:
             page_image: Image.Image = self._renderer.render_page(self.state.current_page, PREVIEW_RENDER_SCALE)
             self._pixmap = QPixmap.fromImage(ImageQt(page_image))
+            self.state.note_page_viewed(self.state.current_page)
         self._canvas.update()
-        self._update_labels()
+        self._refresh()
 
-    # -- navigation / clearing -------------------------------------------
+    # -- navigation --------------------------------------------------------
 
     def _go_previous(self) -> None:
         if self.state.current_page > 1:
@@ -341,12 +419,38 @@ class FindCardsWorkspace(QWidget):
             self.state.current_page += 1
             self._load_current_page()
 
-    def _clear_current_page(self) -> None:
-        self.state.clear_page(self.state.current_page)
-        self._canvas.update()
-        self._update_labels()
+    # -- role controls -------------------------------------------------------
 
-    def _update_labels(self) -> None:
+    def _on_front_toggled(self) -> None:
+        self.state.toggle_front(self.state.current_page)
+        self._canvas.update()
+        self._refresh()
+
+    def _on_back_toggled(self) -> None:
+        self.state.toggle_back(self.state.current_page)
+        self._canvas.update()
+        self._refresh()
+
+    def _on_confirm_no_back(self) -> None:
+        self.state.confirm_no_shared_back()
+        self._refresh()
+
+    def _on_continue_clicked(self) -> None:
+        if self.state.front_page_count() == 0:
+            return
+        if self.state.shared_back_resolved():
+            self.continue_clicked.emit()
+            return
+        # Shared Back is still unresolved -- this is the fallback trigger
+        # for should_prompt_shared_back(): reveal the same Deck Summary
+        # nudge reaching the last page would have shown, rather than
+        # leaving. The user clicks Continue again once resolved.
+        self.state.note_continue_attempted()
+        self._refresh()
+
+    # -- rendering -----------------------------------------------------------
+
+    def _refresh(self) -> None:
         if self._page_count:
             self._page_label.setText(f"Page {self.state.current_page} of {self._page_count}")
         else:
@@ -354,19 +458,45 @@ class FindCardsWorkspace(QWidget):
 
         self._prev_btn.setEnabled(self._page_count > 0 and self.state.current_page > 1)
         self._next_btn.setEnabled(self.state.current_page < self._page_count)
-        self._clear_btn.setEnabled(self.current_marker() is not None)
 
-        count = self.state.marked_page_count()
-        self._continue_btn.setEnabled(count > 0)
+        role = self.current_role()
+        self._front_btn.setChecked(role is PageRole.FRONT)
+        self._back_btn.setChecked(role is PageRole.BACK)
+        self._front_btn.setEnabled(self._page_count > 0)
+        self._back_btn.setEnabled(self._page_count > 0)
 
-        if self._page_count:
-            noun = "page" if count == 1 else "pages"
-            marked_text = f"{count} of {self._page_count} {noun} marked with a card grid"
-            if count == 0:
-                marked_text += " — mark at least one page to continue"
-            self._status_label.setText(marked_text)
+        front_count = self.state.front_page_count()
+        self._continue_btn.setEnabled(front_count > 0)
+
+        self._refresh_deck_summary(front_count)
+
+    def _refresh_deck_summary(self, front_count: int) -> None:
+        if not self._page_count:
+            self._front_summary_label.setText("Open a PDF on the Deck page to begin.")
+            self._back_summary_label.setText("")
+            self._confirm_no_back_btn.setVisible(False)
+            return
+
+        if front_count == 0:
+            self._front_summary_label.setText("No Front Pages selected yet — mark at least one to continue.")
         else:
-            self._status_label.setText("Open a PDF on the Deck page to begin.")
+            noun = "page" if front_count == 1 else "pages"
+            self._front_summary_label.setText(f"{front_count} Front {noun} selected.")
+
+        back_page = self.state.back_page()
+        if back_page is not None:
+            self._back_summary_label.setText(f"Shared Back: page {back_page}.")
+            self._confirm_no_back_btn.setVisible(False)
+        elif self.state.back_confirmed_none:
+            self._back_summary_label.setText("Shared Back: none.")
+            self._confirm_no_back_btn.setVisible(False)
+        elif self.state.should_prompt_shared_back(self._page_count):
+            self._back_summary_label.setText("Shared Back: not yet selected.")
+            self._confirm_no_back_btn.setVisible(True)
+        else:
+            self._back_summary_label.setText("Shared Back: not yet.")
+            self._confirm_no_back_btn.setVisible(False)
 
     def set_pan_active(self, active: bool) -> None:
-        """No-op: Find Cards has no pan mode -- it's not a Calibrate step."""
+        """No-op: Select Card Pages has no pan mode -- it's not a
+        Calibrate step."""

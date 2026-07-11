@@ -27,7 +27,7 @@ from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
 from .calibrate_state import CalibrateState, calibrate_status_text
 from .calibrate_toolbar import CalibrateToolbar
 from .calibrate_workspace import CalibrateWorkspace
-from .find_cards_state import FindCardsState
+from .find_cards_state import FindCardsState, find_cards_status_text
 from .guidance_panel import GuidancePanel
 from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
         self.calibrate_cards_workspace = self.workspaces[WorkflowStep.CALIBRATE_CARDS]
         self.calibrate_cards_workspace.continue_clicked.connect(self._on_cards_continue)
         self.calibrate_back_workspace = self.workspaces[WorkflowStep.CALIBRATE_BACK]
+        self.calibrate_back_workspace.continue_clicked.connect(self._on_back_continue)
         for calibrate_workspace in (self.calibrate_cards_workspace, self.calibrate_back_workspace):
             calibrate_workspace.zoom_changed.connect(self.calibrate_toolbar.set_zoom_percent)
             calibrate_workspace.calibration_changed.connect(self._on_calibration_changed)
@@ -181,6 +182,9 @@ class MainWindow(QMainWindow):
     def _on_cards_continue(self) -> None:
         self._on_step_selected(WorkflowStep.CALIBRATE_BACK)
 
+    def _on_back_continue(self) -> None:
+        self._on_step_selected(WorkflowStep.REVIEW_CARDS)
+
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:
             text = f"{self.session.filename}  •  {self.session.page_count} pages"
@@ -226,10 +230,15 @@ class MainWindow(QMainWindow):
         if is_calibrate:
             self.calibrate_toolbar.sync_pan_button()
             if step is WorkflowStep.CALIBRATE_CARDS and self.calibrate_state.cards_is_stale(self.find_cards_state):
-                # The page Cards was calibrated from got unmarked in Find
-                # Cards since -- the geometry no longer corresponds to a
-                # confirmed card-grid page.
+                # The page Fronts was calibrated from is no longer a Front
+                # Page in Select Card Pages since -- the geometry no longer
+                # corresponds to a confirmed front page.
                 self.calibrate_state.cards.reset()
+            if step is WorkflowStep.CALIBRATE_BACK and self.calibrate_state.back_is_stale(self.find_cards_state):
+                # The Shared Back assignment changed (reassigned to a
+                # different page, cleared, or confirmed none) since this
+                # was calibrated.
+                self.calibrate_state.back.reset()
             self.workspaces[step].on_shown()
 
         self._refresh_current_workspace()
@@ -242,9 +251,14 @@ class MainWindow(QMainWindow):
 
     def _status_text(self) -> str:
         step = self.state.current_step
+        if step is WorkflowStep.FIND_CARDS:
+            return find_cards_status_text(self.find_cards_state, self.session.page_count)
         if step in CALIBRATE_STEPS and not self.state.pan_mode:
             return calibrate_status_text(
-                step, self.calibrate_state.target_for(step), self.find_cards_state.marked_page_count()
+                step,
+                self.calibrate_state.target_for(step),
+                self.find_cards_state.front_page_count(),
+                has_back_page=self.find_cards_state.back_page() is not None,
             )
         return self.state.status_text()
 

@@ -28,36 +28,24 @@ def test_view_fitting_centers_a_letterboxed_image():
     assert view.offset_y == 0.0
 
 
-def test_point_to_widget_and_back_round_trips():
-    view = FindCardsView.fitting(image_w=1200, image_h=1600, widget_w=600, widget_h=600, render_scale=2.0)
-    x_pt, y_pt = 150.25, 300.5
-    wx, wy = view.point_to_widget(x_pt, y_pt)
-    back_x, back_y = view.widget_to_point(wx, wy)
-    assert back_x == x_pt
-    assert back_y == y_pt
+def test_image_rect_reflects_fit_scale_and_offsets():
+    view = FindCardsView.fitting(image_w=400, image_h=800, widget_w=800, widget_h=800, render_scale=2.0)
+    x, y, w, h = view.image_rect(400, 800)
+    assert (x, y) == (view.offset_x, view.offset_y)
+    assert (w, h) == (400 * view.display_scale, 800 * view.display_scale)
 
 
-def test_point_to_widget_is_stable_across_a_resize():
-    """The same stored PDF-point marker must land on the same visual spot
-    on the page relative to its content, independent of widget size --
-    resizing only changes display_scale/offsets, never the stored point."""
+def test_image_rect_is_stable_across_a_resize():
+    """A page's role badge is drawn relative to image_rect()'s origin, so
+    it must land in the same visual spot on the page regardless of widget
+    size -- resizing only changes display_scale/offsets, never where the
+    image content itself sits within its own bounds."""
     small = FindCardsView.fitting(image_w=1200, image_h=1600, widget_w=600, widget_h=800, render_scale=2.0)
     large = FindCardsView.fitting(image_w=1200, image_h=1600, widget_w=1200, widget_h=1600, render_scale=2.0)
 
-    x_pt, y_pt = 100.0, 200.0
-    small_wx, small_wy = small.point_to_widget(x_pt, y_pt)
-    large_wx, large_wy = large.point_to_widget(x_pt, y_pt)
+    small_x, small_y, small_w, small_h = small.image_rect(1200, 1600)
+    large_x, large_y, large_w, large_h = large.image_rect(1200, 1600)
 
-    # Fraction of the way across the *displayed image* should match at any
-    # widget size, even though the raw widget-pixel position differs.
-    small_frac_x = (small_wx - small.offset_x) / (1200 * small.display_scale)
-    large_frac_x = (large_wx - large.offset_x) / (1200 * large.display_scale)
-    assert round(small_frac_x, 6) == round(large_frac_x, 6)
-
-    small_frac_y = (small_wy - small.offset_y) / (1600 * small.display_scale)
-    large_frac_y = (large_wy - large.offset_y) / (1600 * large.display_scale)
-    assert round(small_frac_y, 6) == round(large_frac_y, 6)
-
-    # And converting each back through its own view recovers the same point.
-    assert small.widget_to_point(small_wx, small_wy) == (x_pt, y_pt)
-    assert large.widget_to_point(large_wx, large_wy) == (x_pt, y_pt)
+    # Both should fit exactly (no letterboxing at these proportions), just
+    # at different absolute scales.
+    assert small_w / small_h == large_w / large_h

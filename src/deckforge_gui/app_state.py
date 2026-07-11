@@ -34,8 +34,8 @@ CALIBRATE_STEPS = (WorkflowStep.CALIBRATE_CARDS, WorkflowStep.CALIBRATE_BACK)
 
 STEP_LABELS: dict[WorkflowStep, str] = {
     WorkflowStep.DECK: "Deck",
-    WorkflowStep.FIND_CARDS: "Find Cards",
-    WorkflowStep.CALIBRATE_CARDS: "Cards",
+    WorkflowStep.FIND_CARDS: "Select Card Pages",
+    WorkflowStep.CALIBRATE_CARDS: "Fronts",
     WorkflowStep.CALIBRATE_BACK: "Shared Back",
     WorkflowStep.REVIEW_CARDS: "Review Cards",
     WorkflowStep.EXPORT: "Export",
@@ -49,10 +49,11 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
     ),
     WorkflowStep.FIND_CARDS: (
         "Show DeckForge your cards.",
-        "Click anywhere on the card grid to mark this page.",
+        "Mark each page as a card front or the shared back. Most pages "
+        "(instructions, reference material) need no marking at all.",
     ),
     WorkflowStep.CALIBRATE_CARDS: (
-        "Show DeckForge the first card.",
+        "Show DeckForge a front card.",
         "Click the upper-left corner of a card.",
     ),
     WorkflowStep.CALIBRATE_BACK: (
@@ -71,7 +72,7 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
 
 STATUS: dict[WorkflowStep, str] = {
     WorkflowStep.DECK: "Ready — Open a PDF to begin.",
-    WorkflowStep.FIND_CARDS: "Ready — locate the card grid.",
+    WorkflowStep.FIND_CARDS: "Ready — mark your card fronts (and shared back, if any).",
     WorkflowStep.CALIBRATE_CARDS: "Ready — Click the upper-left corner of a card.",
     WorkflowStep.CALIBRATE_BACK: "Ready — Click the upper-left corner of the back design.",
     WorkflowStep.REVIEW_CARDS: "Ready — review your cards.",

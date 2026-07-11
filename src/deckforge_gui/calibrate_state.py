@@ -43,12 +43,14 @@ lossless round trip, not a re-measurement.
 
 ONE SHARED LAYOUT
 ------------------
-All Find-Cards-marked pages are assumed to share one card grid: `cards`
-holds a single CalibrationTarget, calibrated from whichever one marked
-page the user chooses to click on (see calibrate_workspace.py's page
-navigation, restricted to marked pages for Cards). `back` is independent
-of Find Cards entirely -- the shared back page is found by paging through
-the whole PDF, since no earlier step identifies it.
+All Front Pages (see find_cards_state.FindCardsState.front_pages()) are
+assumed to share one card grid: `cards` holds a single CalibrationTarget,
+calibrated from whichever one Front Page the user chooses to click on (see
+calibrate_workspace.py's page navigation, restricted to Front Pages for
+that step). `back` is calibrated on the single page Select Card Pages
+identified as the Shared Back -- Calibrate never searches for it, only
+measures it; if no page was identified (an explicit "no shared back"
+Deck), the Shared Back step has nothing to calibrate at all.
 """
 
 from __future__ import annotations
@@ -222,15 +224,25 @@ class CalibrateState:
         self.back.reset()
 
     def cards_is_stale(self, find_cards_state: "FindCardsState") -> bool:
-        """True if Cards was calibrated from a page that is no longer
-        marked in Find Cards (the user went back and unmarked it) --
-        the geometry no longer corresponds to a confirmed card-grid page.
-        Marking additional pages, or moving a marker's (x,y), does not
+        """True if Cards (Fronts) was calibrated from a page that is no
+        longer a Front Page in Select Card Pages (the user went back and
+        changed its role) -- the geometry no longer corresponds to a
+        confirmed front page. Marking additional front pages does not
         make an existing calibration stale."""
         page = self.cards.calibrated_page_num
         if page is None:
             return False
-        return page not in find_cards_state.marked_pages()
+        return page not in find_cards_state.front_pages()
+
+    def back_is_stale(self, find_cards_state: "FindCardsState") -> bool:
+        """True if Shared Back was calibrated from a page that is no
+        longer the Deck's assigned Shared Back page -- either the user
+        reassigned it to a different page, or cleared it entirely (back to
+        unresolved, or confirmed no shared back)."""
+        page = self.back.calibrated_page_num
+        if page is None:
+            return False
+        return page != find_cards_state.back_page()
 
     # -- click handling ---------------------------------------------------
 
@@ -335,23 +347,30 @@ class CalibrateState:
 
 
 def calibrate_guidance_text(
-    step: WorkflowStep, target: CalibrationTarget, marked_page_count: int = 0
+    step: WorkflowStep, target: CalibrationTarget, front_page_count: int = 0, has_back_page: bool = True,
 ) -> tuple[str, str]:
+    if step is WorkflowStep.CALIBRATE_BACK and not has_back_page:
+        return (
+            "This deck has no Shared Back.",
+            "Select Card Pages recorded that this deck has no Shared Back "
+            "— there's nothing to calibrate here. Continue to Review Cards "
+            "whenever you're ready.",
+        )
     subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:
             return (
-                "Cards calibration complete",
+                "Fronts calibration complete",
                 f"Calibrated using page {target.calibrated_page_num}. This "
-                f"geometry applies to all {marked_page_count} selected "
-                "front-card pages — click Start Over if you'd like to "
+                f"geometry applies to all {front_page_count} selected "
+                "front pages — click Start Over if you'd like to "
                 "remeasure it.",
             )
         return (
             "Shared Back calibration complete",
             f"Calibrated using page {target.calibrated_page_num}. This back "
             f"design will be applied as the shared back for all "
-            f"{marked_page_count} selected front-card pages — click Start "
+            f"{front_page_count} selected front pages — click Start "
             "Over if you'd like to remeasure it.",
         )
     if target.pending_point is not None:
@@ -371,19 +390,21 @@ def calibrate_guidance_text(
 
 
 def calibrate_status_text(
-    step: WorkflowStep, target: CalibrationTarget, marked_page_count: int = 0
+    step: WorkflowStep, target: CalibrationTarget, front_page_count: int = 0, has_back_page: bool = True,
 ) -> str:
+    if step is WorkflowStep.CALIBRATE_BACK and not has_back_page:
+        return "This deck has no Shared Back — nothing to calibrate. Continue to Review Cards."
     subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:
             return (
                 f"Calibrated from page {target.calibrated_page_num} — "
-                f"applies to all {marked_page_count} front-card pages. "
+                f"applies to all {front_page_count} front pages. "
                 "Click Start Over to remeasure."
             )
         return (
             f"Calibrated from page {target.calibrated_page_num} — applied "
-            f"as the shared back for all {marked_page_count} front-card "
+            f"as the shared back for all {front_page_count} front "
             "pages. Click Start Over to remeasure."
         )
     if target.pending_point is not None:

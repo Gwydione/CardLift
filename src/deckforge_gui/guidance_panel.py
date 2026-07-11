@@ -143,6 +143,9 @@ class GuidancePanel(QWidget):
         step = self.state.current_step
         if step in CALIBRATE_STEPS:
             return calibrate_guidance_text(
-                step, self.calibrate_state.target_for(step), self.find_cards_state.marked_page_count()
+                step,
+                self.calibrate_state.target_for(step),
+                self.find_cards_state.front_page_count(),
+                has_back_page=self.find_cards_state.back_page() is not None,
             )
         return self.state.guidance_text()

@@ -8,7 +8,7 @@ from deckforge_gui.calibrate_state import (
     normalize_box,
     predicted_neighbor_box,
 )
-from deckforge_gui.find_cards_state import FindCardsState
+from deckforge_gui.find_cards_state import FindCardsState, PageRole
 
 CARDS = WorkflowStep.CALIBRATE_CARDS
 BACK = WorkflowStep.CALIBRATE_BACK
@@ -254,7 +254,7 @@ class TestCardsIsStale:
         find_cards = FindCardsState()
         assert state.cards_is_stale(find_cards) is False
 
-    def test_not_stale_while_calibrated_page_still_marked(self) -> None:
+    def test_not_stale_while_calibrated_page_still_a_front_page(self) -> None:
         state = CalibrateState()
         state.cards.page_num = 3
         state.record_click(CARDS, 0.0, 0.0)
@@ -262,20 +262,20 @@ class TestCardsIsStale:
         state.finish_with_one_card(CARDS)
 
         find_cards = FindCardsState()
-        find_cards.set_marker(3, 5.0, 5.0)
+        find_cards.set_role(3, PageRole.FRONT)
         assert state.cards_is_stale(find_cards) is False
 
-    def test_stale_once_the_calibrated_page_is_unmarked(self) -> None:
+    def test_stale_once_the_calibrated_page_is_no_longer_a_front_page(self) -> None:
         state = CalibrateState()
         state.cards.page_num = 3
         state.record_click(CARDS, 0.0, 0.0)
         state.record_click(CARDS, 100.0, 100.0)
         state.finish_with_one_card(CARDS)
 
-        find_cards = FindCardsState()  # page 3 never marked (or was cleared)
+        find_cards = FindCardsState()  # page 3 never marked Front (or was cleared)
         assert state.cards_is_stale(find_cards) is True
 
-    def test_marking_a_different_page_does_not_make_cards_stale(self) -> None:
+    def test_marking_a_different_page_front_does_not_make_cards_stale(self) -> None:
         state = CalibrateState()
         state.cards.page_num = 3
         state.record_click(CARDS, 0.0, 0.0)
@@ -283,9 +283,46 @@ class TestCardsIsStale:
         state.finish_with_one_card(CARDS)
 
         find_cards = FindCardsState()
-        find_cards.set_marker(3, 5.0, 5.0)
-        find_cards.set_marker(7, 9.0, 9.0)
+        find_cards.set_role(3, PageRole.FRONT)
+        find_cards.set_role(7, PageRole.FRONT)
         assert state.cards_is_stale(find_cards) is False
+
+
+class TestBackIsStale:
+    def test_not_stale_before_any_calibration(self) -> None:
+        state = CalibrateState()
+        find_cards = FindCardsState()
+        assert state.back_is_stale(find_cards) is False
+
+    def test_not_stale_while_calibrated_page_still_the_assigned_back(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click(BACK, 0.0, 0.0)
+        state.record_click(BACK, 100.0, 100.0)
+
+        find_cards = FindCardsState()
+        find_cards.set_role(8, PageRole.BACK)
+        assert state.back_is_stale(find_cards) is False
+
+    def test_stale_once_the_shared_back_is_reassigned_to_a_different_page(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click(BACK, 0.0, 0.0)
+        state.record_click(BACK, 100.0, 100.0)
+
+        find_cards = FindCardsState()
+        find_cards.set_role(9, PageRole.BACK)  # moved off page 8
+        assert state.back_is_stale(find_cards) is True
+
+    def test_stale_once_no_shared_back_is_confirmed(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click(BACK, 0.0, 0.0)
+        state.record_click(BACK, 100.0, 100.0)
+
+        find_cards = FindCardsState()
+        find_cards.confirm_no_shared_back()
+        assert state.back_is_stale(find_cards) is True
 
 
 class TestGuidanceAndStatusText:
@@ -314,22 +351,22 @@ class TestGuidanceAndStatusText:
         state.record_click(CARDS, 0.0, 0.0)
         state.record_click(CARDS, 100.0, 100.0)
         state.finish_with_one_card(CARDS)
-        headline, body = calibrate_guidance_text(CARDS, state.cards, marked_page_count=6)
-        assert headline == "Cards calibration complete"
+        headline, body = calibrate_guidance_text(CARDS, state.cards, front_page_count=6)
+        assert headline == "Fronts calibration complete"
         assert "Start Over" in body
-        assert "Calibrated" in calibrate_status_text(CARDS, state.cards, marked_page_count=6)
+        assert "Calibrated" in calibrate_status_text(CARDS, state.cards, front_page_count=6)
 
-    def test_complete_state_reports_representative_page_and_marked_count(self) -> None:
+    def test_complete_state_reports_representative_page_and_front_count(self) -> None:
         state = CalibrateState()
         state.cards.page_num = 3
         state.record_click(CARDS, 0.0, 0.0)
         state.record_click(CARDS, 100.0, 100.0)
         state.finish_with_one_card(CARDS)
-        _, body = calibrate_guidance_text(CARDS, state.cards, marked_page_count=6)
+        _, body = calibrate_guidance_text(CARDS, state.cards, front_page_count=6)
         assert "page 3" in body
         assert "6" in body
-        assert "page 3" in calibrate_status_text(CARDS, state.cards, marked_page_count=6)
-        assert "6" in calibrate_status_text(CARDS, state.cards, marked_page_count=6)
+        assert "page 3" in calibrate_status_text(CARDS, state.cards, front_page_count=6)
+        assert "6" in calibrate_status_text(CARDS, state.cards, front_page_count=6)
 
     def test_complete_back_state_mentions_shared_back_scope(self) -> None:
         state = CalibrateState()
@@ -337,11 +374,32 @@ class TestGuidanceAndStatusText:
         state.record_click(BACK, 0.0, 0.0)
         outcome = state.record_click(BACK, 100.0, 100.0)
         assert outcome is ClickOutcome.COMPLETE  # one card is a complete Shared Back calibration
-        headline, body = calibrate_guidance_text(BACK, state.back, marked_page_count=6)
+        headline, body = calibrate_guidance_text(BACK, state.back, front_page_count=6)
         assert headline == "Shared Back calibration complete"
         assert "shared back" in body.lower()
         assert "6" in body
         assert "Start Over" in body
-        status = calibrate_status_text(BACK, state.back, marked_page_count=6)
+        status = calibrate_status_text(BACK, state.back, front_page_count=6)
         assert "Calibrated" in status
         assert "shared back" in status.lower()
+
+
+class TestBackSkippedGuidanceAndStatus:
+    """has_back_page=False represents a Deck where Select Card Pages
+    recorded an explicit "no Shared Back" -- Calibrate has nothing to
+    measure and should say so rather than prompting for a corner click."""
+
+    def test_guidance_explains_there_is_nothing_to_calibrate(self) -> None:
+        state = CalibrateState()
+        headline, body = calibrate_guidance_text(BACK, state.back, has_back_page=False)
+        assert headline == "This deck has no Shared Back."
+        assert "Review Cards" in body
+
+    def test_status_explains_there_is_nothing_to_calibrate(self) -> None:
+        state = CalibrateState()
+        status = calibrate_status_text(BACK, state.back, has_back_page=False)
+        assert "no Shared Back" in status
+
+    def test_has_back_page_is_ignored_for_the_cards_step(self) -> None:
+        state = CalibrateState()
+        assert calibrate_guidance_text(CARDS, state.cards, has_back_page=False) == GUIDANCE[CARDS]
