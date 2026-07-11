@@ -620,10 +620,10 @@ How we expect Claude Code to be used on this project:
 
 Before implementing GUI changes, review the following:
 
-- README.md
-- DEVELOPER.md
-- ENGINEERING_STANDARDS.md
-- Everything in docs/ui/
+1. Read CORE_CONCEPTS.md
+2. Read the relevant UI documents
+3. Read ENGINEERING_STANDARDS.md
+4. Read DEVELOPER.md
 
 The mockups are design specifications, not pixel-perfect implementation
 requirements.

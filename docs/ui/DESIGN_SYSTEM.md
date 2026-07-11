@@ -13,46 +13,46 @@ user-friendly, not technical.**
 
 The goal is consistency.
 
-------------------------------------------------------------------------
+---
 
 # Brand Personality
 
 DeckForge should feel:
 
--   Crafted
--   Purpose-built
--   Professional
--   User-friendly
--   Calm
--   Confident
--   Trustworthy
--   Intentional
+- Crafted
+- Purpose-built
+- Professional
+- User-friendly
+- Calm
+- Confident
+- Trustworthy
+- Intentional
 
 It should never feel:
 
--   Generic
--   Corporate
--   Overly playful
--   Cluttered
--   Experimental
--   Technical
+- Generic
+- Corporate
+- Overly playful
+- Cluttered
+- Experimental
+- Technical
 
 Users should immediately feel that DeckForge was designed specifically
 for tabletop gamers.
 
-------------------------------------------------------------------------
+---
 
 # Emotional Goals
 
 When users launch DeckForge, they should think:
 
--   I know where to start.
--   This looks polished.
--   My files are safe.
--   This seems easy.
--   This feels designed for my workflow.
+- I know where to start.
+- This looks polished.
+- My files are safe.
+- This seems easy.
+- This feels designed for my workflow.
 
-------------------------------------------------------------------------
+---
 
 # Visual Hierarchy
 
@@ -66,7 +66,13 @@ The user's attention should naturally flow:
 
 Nothing should compete with the workspace.
 
-------------------------------------------------------------------------
+---
+
+# Reference Layout
+
+The accompanying UI_REFERENCE_LAYOUT.png illustrates the intended overall layout of the Phase II application. It is intended to communicate overall composition and hierarchy rather than pixel-perfect implementation.
+
+---
 
 # Layout Philosophy
 
@@ -79,7 +85,7 @@ receive it.
 
 Whitespace should support focus, not create emptiness.
 
-------------------------------------------------------------------------
+---
 
 # Sidebar
 
@@ -87,13 +93,13 @@ The sidebar is the structural spine of the application.
 
 It is always visible and communicates:
 
--   Progress
--   Workflow
--   Orientation
+- Progress
+- Workflow
+- Orientation
 
 It should feel substantial and permanent---not decorative.
 
-------------------------------------------------------------------------
+---
 
 # Workspace
 
@@ -105,7 +111,7 @@ Users should naturally look here first.
 
 Primary actions belong here.
 
-------------------------------------------------------------------------
+---
 
 # Guidance Panel
 
@@ -119,7 +125,7 @@ It should support the workflow without competing with the workspace.
 
 It should never feel like an afterthought.
 
-------------------------------------------------------------------------
+---
 
 # Cards
 
@@ -133,7 +139,7 @@ Cards should communicate:
 
 **"You can interact with me."**
 
-------------------------------------------------------------------------
+---
 
 # Typography
 
@@ -147,7 +153,7 @@ Information should become progressively lighter in visual weight.
 The interface should remain readable from a comfortable desktop viewing
 distance.
 
-------------------------------------------------------------------------
+---
 
 # Color Philosophy
 
@@ -155,13 +161,13 @@ Color should communicate meaning before decoration.
 
 Accent colors indicate:
 
--   Primary actions
--   Current progress
--   Interactive elements
+- Primary actions
+- Current progress
+- Interactive elements
 
 Large areas of color should create structure rather than visual noise.
 
-------------------------------------------------------------------------
+---
 
 # Icons & Illustration
 
@@ -171,7 +177,7 @@ Illustrations should reinforce purpose.
 
 Neither should become decorative clutter.
 
-------------------------------------------------------------------------
+---
 
 # Interaction Design
 
@@ -184,7 +190,7 @@ Mode changes should always be visible.
 
 Users should never wonder why the interface behaves differently.
 
-------------------------------------------------------------------------
+---
 
 # Motion & Feedback
 
@@ -194,7 +200,7 @@ Transitions should reinforce continuity.
 
 Feedback should increase confidence.
 
-------------------------------------------------------------------------
+---
 
 # Whitespace
 
@@ -206,7 +212,7 @@ It should never feel accidental.
 
 Empty space should feel calm rather than unfinished.
 
-------------------------------------------------------------------------
+---
 
 # Responsive Design
 
@@ -214,38 +220,38 @@ DeckForge should feel intentionally designed at every window size.
 
 As the application grows:
 
--   The workspace expands.
--   Content breathes.
--   Layouts remain balanced.
+- The workspace expands.
+- Content breathes.
+- Layouts remain balanced.
 
 The application should never feel like a small dialog floating inside a
 large window.
 
-------------------------------------------------------------------------
+---
 
 # Things DeckForge Is Not
 
 DeckForge is not:
 
--   A fantasy game
--   A developer tool
--   A file manager
--   A ribbon application
--   A command-line interface
--   A collection of dialogs
+- A fantasy game
+- A developer tool
+- A file manager
+- A ribbon application
+- A command-line interface
+- A collection of dialogs
 
 It is a purpose-built workspace for tabletop gamers.
 
-------------------------------------------------------------------------
+---
 
 # Design Question
 
 Before changing the interface, ask:
 
--   Does this make DeckForge feel more crafted?
--   Does this make the next action clearer?
--   Does this reduce uncertainty?
--   Would a first-time user immediately understand what to do?
--   Does this strengthen DeckForge's visual identity?
+- Does this make DeckForge feel more crafted?
+- Does this make the next action clearer?
+- Does this reduce uncertainty?
+- Would a first-time user immediately understand what to do?
+- Does this strengthen DeckForge's visual identity?
 
 If not, reconsider the change.

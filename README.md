@@ -36,6 +36,25 @@ more detail on a specific step.
 pip install -r requirements.txt
 ```
 
+## Project Documentation
+
+The project documentation is organized into several categories:
+
+### Product
+
+- CORE_CONCEPTS.md
+
+### User Experience
+
+- DESIGN_PRINCIPLES.md
+- UI_DECISIONS.md
+- DESIGN_SYSTEM.md
+
+### Engineering
+
+- ENGINEERING_STANDARDS.md
+- DEVELOPER.md
+
 ## Project structure
 
 ```
