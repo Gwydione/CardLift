@@ -7,6 +7,10 @@ it. If you're looking for _what DeckForge is_ and _how the calibration
 model works conceptually_, see [README.md](README.md) — this file is
 about the mechanics of working on the code.
 
+## Security and Network Access
+
+The core DeckForge workflow is local-first and must not require network access. Do not add telemetry, uploads, update checks, licensing calls, or other outbound communication without an explicit product decision, clear user disclosure, and documentation.
+
 ## First Five Minutes
 
 The fastest path back to a working mental model after time away. Do
@@ -152,8 +156,8 @@ same "scale with available width" behavior can reuse them instead of
 duplicating the math.
 
 **Find Cards milestone.** The documented workflow order is Deck -> Find
-Cards -> Calibrate -> Review Cards -> Export (docs/ui/UI_DECISIONS.md),
-so Find Cards runs *before* any calibration profile exists. It is
+Cards -> Calibrate -> Review Cards -> Export (docs/ui/UI*DECISIONS.md),
+so Find Cards runs \_before* any calibration profile exists. It is
 deliberately a coarse, page-level scoping step, not detection or
 calibration: there is no automatic card-detection algorithm anywhere in
 DeckForge (README's MVP is manual-calibration-only), and Calibrate's own
@@ -192,6 +196,108 @@ Out of scope for this milestone, deferred to later ones: inferring
 rows/cols or precise crop geometry from a marker, selecting/moving/
 resizing individual card rectangles (Edit Cards is a separate, later
 concern), and any app-wide reset/Start Over feature.
+
+**Calibrate milestone.** The first milestone where precise geometry is
+established: two-corner-click measurement of one representative "Cards"
+(front) page plus a freely-navigated "Shared Back" page, reusing the
+CLI's calibration math (`measure.derive_geometry()`, the same
+inverse-geometry solver `--calibrate`/`--measure` use) and click
+semantics (corner normalization, auto-inferred neighbor cell, optional
+second-card gap measurement) rather than re-deriving any of it.
+
+`calibrate_state.py` is the pure-Python model (no PySide6 import, unit
+tested in `tests/test_calibrate_state.py`): `CalibrateState` holds two
+independent `CalibrationTarget`s (`cards`/`back`), each with its own
+pending click, measurements, and derived `CalibratedGeometry`.
+`record_click()` is a small state machine returning a `ClickOutcome`
+(`PENDING_SET`/`MEASUREMENT_ADDED`/`REJECTED_DEGENERATE`/
+`NEEDS_CELL_LABEL`/`COMPLETE`/`IGNORED_ALREADY_COMPLETE`) rather than
+touching Qt directly, mirroring `CalibrationWindow`'s transitions exactly
+but as directly-testable data. Measurements are stored in **PDF points**
+(not pixels, per the project's coordinate-storage rule) -- pixel space
+is reconstructed only for the moment `derive_geometry()` needs it
+(`point * render_scale`, a lossless round trip, not a re-measurement).
+
+**Shared Back is single-card only.** Cards supports an optional second-
+card measurement to derive `gap_x`/`gap_y` for a printed grid, but Shared
+Back is one representative card's rectangle, not a grid -- there's no
+neighboring back to space against. `CalibrationTarget.allows_second_
+measurement` (`True` for `cards`, `False` for `back`) is the one switch
+`record_click()` checks: when it's `False`, the target finalizes as soon
+as its single card's second corner is clicked, so Shared Back never shows
+neighbor suggestions or a "Finish with one card" button -- both are
+already gated on `not target.is_complete`, so completing one click
+earlier hides them for free rather than needing a step-specific branch in
+`calibrate_workspace.py`. `calibrate_guidance_text()`/
+`calibrate_status_text()`'s completion copy for Shared Back names the
+representative page and states the result will be applied as the shared
+back for every selected front-card page, mirroring how Cards' completion
+copy names its scope (see "Presenting one shared geometry" below).
+
+Deliberately **not** reused from the CLI: the "copy suggested patch,
+paste into profiles/\*.json by hand" model. That step exposes JSON/
+profile-normalization concepts `docs/ui/DESIGN_PRINCIPLES.md` says the
+GUI should hide, and Phase II has no profile file at all yet. Derived
+geometry is instead held directly in `CalibrateState` -- a future
+profile-building milestone reads from it rather than the user retyping
+numbers. Relatedly, `CalibrateState` never constructs a `profile.
+CardLayout` (rows/cols and page-range enumeration stay out of scope, same
+as Find Cards) -- it only holds the `GridGeometry`-shaped subset a future
+milestone would combine with rows/cols to build one.
+
+Cards and Shared Back have different page-navigation sources:
+`CalibrateWorkspace._navigable_pages()` restricts Cards to
+`find_cards_state.marked_pages()` (one shared geometry is assumed to
+apply to every marked page) but lets Shared Back page through the whole
+PDF freely, defaulting to the last page (the common convention for a
+shared back), since no earlier step identifies which page it is.
+Leaving a page mid-measurement (a pending click, or one measurement not
+yet finished) discards that in-progress state -- it only makes sense on
+the page it was clicked on. `CalibrateState.cards_is_stale()` is a
+pull-based check (not a signal) comparing `calibrated_page_num` against
+Find Cards' current markers, run by `MainWindow` whenever the user
+navigates into the Cards step, so unmarking the page a calibration came
+from resets it without coupling the two state classes together.
+
+`view_transform.py` is a straight port of `calibrate_ui.py`'s
+`ViewTransform` (and its pure sibling functions -- `wheel_direction`,
+`is_pan_gesture`, `pan_active`, `recompute_view_for_resize`) into
+`deckforge_gui`, not an import: `calibrate_ui.py` imports `tkinter` at
+module scope, so importing anything from it would make Tkinter a hard
+dependency of the PySide6 app. It's shared GUI infrastructure rather than
+Calibrate-only code, since Preview/Edit Cards will need the same
+zoom/pan/fit foundation. `CalibrateWorkspace` (`calibrate_workspace.py`)
+draws the page and every overlay (measured box, pending marker, neighbor
+suggestions, always-on guide lines) with immediate-mode `QPainter` in one
+`paintEvent`, the same pattern `find_cards_workspace.py` established,
+rather than `calibrate_ui.py`'s Tkinter canvas-item approach.
+
+The CLI's step-numbered wizard chrome ("Step 1 of 3") is intentionally
+not carried over -- the guidance panel and status bar already have a
+proven multi-cue pattern for "what's happening right now" (see Pan mode),
+so `calibrate_guidance_text()`/`calibrate_status_text()` make that text
+state-aware (pending corner / one card measured / calibrated) instead of
+introducing a step counter. The underlying state machine is identical;
+only the presentation differs.
+
+**Presenting one shared geometry, not per-page calibration.** Cards
+calibration produces a single geometry from one representative marked
+page, applied to every page Find Cards selected -- but early wording
+("Calibrated.", "Page 3 (2 of 6 marked)") read as though each page still
+needed its own calibration, especially with page navigation still
+available afterward. `calibrate_guidance_text()`/`calibrate_status_text()`
+now take a `marked_page_count` (threaded from `FindCardsState` through
+`CalibrateWorkspace`, `GuidancePanel`, and `MainWindow._status_text()`) so
+the completion message names the representative page and states that the
+result applies to all selected front-card pages. Separately,
+`CalibrateWorkspace._page_label_text()` grounds page navigation in the
+original PDF's numbering ("PDF page 3 of 8") as the primary line, with the
+front-card-relative position ("Front card page 2 of 6") as a visually
+lighter secondary line -- rather than replacing PDF page numbers with a
+filtered sequence, which made pages excluded by Find Cards (e.g. the
+shared back) feel like they'd been dropped rather than simply out of
+scope for this step. Shared Back keeps just the PDF-page line, since it
+navigates the whole PDF rather than a marked subset.
 
 ## Common Commands
 
@@ -434,10 +540,13 @@ DeckForge/
 │   ├── sidebar.py                # Fixed-width workflow sidebar
 │   ├── guidance_panel.py         # Collapsible right-hand guidance panel
 │   ├── calibrate_toolbar.py      # Fit/Zoom/Pan toolbar shown above the Calibrate workspace
+│   ├── calibrate_state.py        # Pure CalibrateState/CalibrationTarget model -- two-corner-click geometry, in PDF points
+│   ├── calibrate_workspace.py    # Calibrate page (Cards/Shared Back): PDF canvas, click handling, zoom/pan, overlays
+│   ├── view_transform.py         # Ported ViewTransform + pure zoom/pan/fit math (from calibrate_ui.py), shared GUI infra
 │   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
 │   ├── find_cards_state.py       # Pure FindCardsState/PageMarker model -- coarse per-page markers, in PDF points
 │   ├── find_cards_workspace.py   # Find Cards page: PDF page-by-page preview + marker placement
-│   └── workspaces.py             # Central workspace per workflow step (placeholders past Find Cards)
+│   └── workspaces.py             # Central workspace per workflow step (placeholders past Calibrate)
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 
@@ -524,6 +633,51 @@ information hierarchy, and overall user experience over exact appearance.
 
 The purpose of the GUI is to make the engine approachable for tabletop
 gamers, not to expose implementation details.
+
+## Workflow Completion
+
+A milestone is not complete simply because its primary functionality has been implemented.
+
+Before considering a workflow complete, verify:
+
+- How the user enters the workflow.
+- How the user knows they are making progress.
+- How the user knows they have finished.
+- What the obvious next action is.
+- How the next workflow step becomes available.
+- How the user returns to this workflow later.
+
+Avoid leaving users in dead-end states where the functionality is complete but the application does not clearly communicate what to do next.
+
+## UX Validation
+
+Implementation is not considered complete until the developer has personally exercised the workflow.
+
+Repository analysis and unit tests cannot replace interactive evaluation.
+
+After implementation:
+
+- perform the workflow
+- note anything surprising
+- fix obvious UX issues before considering the milestone complete
+
+## First-Time User Review
+
+Before declaring a milestone complete, mentally walk through the workflow as a first-time user.
+
+Assume the user has not read the documentation and does not know the internal architecture.
+
+Review:
+
+- terminology
+- guidance text
+- page numbering
+- status messages
+- visual hierarchy
+- navigation
+- completion messaging
+
+If the implementation is technically correct but could reasonably mislead a first-time user, treat that as a UX issue rather than expected behavior.
 
 ## Design Philosophy
 

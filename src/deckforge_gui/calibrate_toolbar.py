@@ -20,10 +20,6 @@ from .theme import (
     TEXT_HEADING,
 )
 
-_MIN_ZOOM = 25
-_MAX_ZOOM = 400
-_ZOOM_STEP = 10
-
 _TOOLBAR_STYLE = f"""
 CalibrateToolbar {{
     background: {BG_CARD};
@@ -64,6 +60,9 @@ QPushButton#panButton:checked:pressed {{
 
 class CalibrateToolbar(QWidget):
     pan_toggled = Signal(bool)
+    fit_clicked = Signal()
+    zoom_in_clicked = Signal()
+    zoom_out_clicked = Signal()
 
     def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -104,9 +103,9 @@ class CalibrateToolbar(QWidget):
         layout.addWidget(self._pan_btn)
         layout.addStretch(1)
 
-        self._fit_btn.clicked.connect(self._on_fit)
-        self._zoom_out_btn.clicked.connect(self._on_zoom_out)
-        self._zoom_in_btn.clicked.connect(self._on_zoom_in)
+        self._fit_btn.clicked.connect(self.fit_clicked.emit)
+        self._zoom_out_btn.clicked.connect(self.zoom_out_clicked.emit)
+        self._zoom_in_btn.clicked.connect(self.zoom_in_clicked.emit)
         self._pan_btn.toggled.connect(self.pan_toggled.emit)
 
     def sync_pan_button(self) -> None:
@@ -114,17 +113,12 @@ class CalibrateToolbar(QWidget):
         self._pan_btn.setChecked(self.state.pan_mode)
         self._pan_btn.blockSignals(False)
 
-    def _on_fit(self) -> None:
-        self._zoom_percent = 100
-        self._zoom_label.setText(f"{self._zoom_percent}%")
-
-    def _on_zoom_in(self) -> None:
-        self._zoom_percent = min(_MAX_ZOOM, self._zoom_percent + _ZOOM_STEP)
-        self._zoom_label.setText(f"{self._zoom_percent}%")
-
-    def _on_zoom_out(self) -> None:
-        self._zoom_percent = max(_MIN_ZOOM, self._zoom_percent - _ZOOM_STEP)
-        self._zoom_label.setText(f"{self._zoom_percent}%")
+    def set_zoom_percent(self, percent: int) -> None:
+        """Pushed by the active Calibrate workspace after any view change
+        (load/fit/zoom/resize) -- this widget has no zoom state of its
+        own, it only displays whatever the workspace reports."""
+        self._zoom_percent = percent
+        self._zoom_label.setText(f"{percent}%")
 
 
 def _vline() -> QFrame:

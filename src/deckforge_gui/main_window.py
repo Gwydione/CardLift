@@ -24,7 +24,9 @@ from PySide6.QtWidgets import (
 )
 
 from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
+from .calibrate_state import CalibrateState, calibrate_status_text
 from .calibrate_toolbar import CalibrateToolbar
+from .calibrate_workspace import CalibrateWorkspace
 from .find_cards_state import FindCardsState
 from .guidance_panel import GuidancePanel
 from .session import DeckLoadError, DeckSession
@@ -74,6 +76,7 @@ class MainWindow(QMainWindow):
         self.state = AppState()
         self.session = DeckSession()
         self.find_cards_state = FindCardsState()
+        self.calibrate_state = CalibrateState()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -107,6 +110,9 @@ class MainWindow(QMainWindow):
 
         self.calibrate_toolbar = CalibrateToolbar(self.state)
         self.calibrate_toolbar.pan_toggled.connect(self._on_pan_toggled)
+        self.calibrate_toolbar.fit_clicked.connect(self._on_fit_clicked)
+        self.calibrate_toolbar.zoom_in_clicked.connect(self._on_zoom_in_clicked)
+        self.calibrate_toolbar.zoom_out_clicked.connect(self._on_zoom_out_clicked)
         no_toolbar = QWidget()  # index 0: no toolbar for this step
         no_toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         no_toolbar.setStyleSheet(f"background: {BG_WORKSPACE};")
@@ -116,15 +122,22 @@ class MainWindow(QMainWindow):
         self.workspace_stack = QStackedWidget()
         center_layout.addWidget(self.workspace_stack, 1)
 
-        self.workspaces = build_workspaces(self.state, self.find_cards_state)
+        self.workspaces = build_workspaces(self.state, self.find_cards_state, self.calibrate_state)
         for step in WORKFLOW_ORDER:
             self.workspace_stack.addWidget(self.workspaces[step])
 
         self.deck_workspace = self.workspaces[WorkflowStep.DECK]
         self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
         self.find_cards_workspace = self.workspaces[WorkflowStep.FIND_CARDS]
+        self.find_cards_workspace.continue_clicked.connect(self._on_find_cards_continue)
+        self.calibrate_cards_workspace = self.workspaces[WorkflowStep.CALIBRATE_CARDS]
+        self.calibrate_cards_workspace.continue_clicked.connect(self._on_cards_continue)
+        self.calibrate_back_workspace = self.workspaces[WorkflowStep.CALIBRATE_BACK]
+        for calibrate_workspace in (self.calibrate_cards_workspace, self.calibrate_back_workspace):
+            calibrate_workspace.zoom_changed.connect(self.calibrate_toolbar.set_zoom_percent)
+            calibrate_workspace.calibration_changed.connect(self._on_calibration_changed)
 
-        self.guidance_panel = GuidancePanel(self.state)
+        self.guidance_panel = GuidancePanel(self.state, self.calibrate_state, self.find_cards_state)
         self.guidance_panel.collapse_toggled.connect(self._on_guidance_collapse_toggled)
         body_layout.addWidget(self.guidance_panel)
 
@@ -152,12 +165,21 @@ class MainWindow(QMainWindow):
             self.deck_workspace.show_error(str(exc))
             return
         self._update_deck_status_label()
-        # A newly (or re-)loaded PDF invalidates any previous markers --
-        # page N in a different PDF has no relationship to page N's marker
-        # in the last one.
+        # A newly (or re-)loaded PDF invalidates any previous markers/
+        # calibration -- page N in a different PDF has no relationship to
+        # page N's marker or measured geometry in the last one.
         self.find_cards_state.clear_all()
+        self.calibrate_state.reset_all()
         self.find_cards_workspace.set_pdf(path, self.session.page_count)
+        self.calibrate_cards_workspace.set_pdf(path, self.session.page_count)
+        self.calibrate_back_workspace.set_pdf(path, self.session.page_count)
         self._on_step_selected(WorkflowStep.FIND_CARDS)
+
+    def _on_find_cards_continue(self) -> None:
+        self._on_step_selected(WorkflowStep.CALIBRATE_CARDS)
+
+    def _on_cards_continue(self) -> None:
+        self._on_step_selected(WorkflowStep.CALIBRATE_BACK)
 
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:
@@ -168,6 +190,22 @@ class MainWindow(QMainWindow):
 
     def _on_pan_toggled(self, active: bool) -> None:
         self.state.set_pan_mode(active)
+        self._refresh_current_workspace()
+
+    def _on_fit_clicked(self) -> None:
+        self._active_calibrate_workspace().fit_to_window()
+
+    def _on_zoom_in_clicked(self) -> None:
+        self._active_calibrate_workspace().zoom_in()
+
+    def _on_zoom_out_clicked(self) -> None:
+        self._active_calibrate_workspace().zoom_out()
+
+    def _active_calibrate_workspace(self) -> CalibrateWorkspace:
+        return self.workspaces[self.state.current_step]
+
+    def _on_calibration_changed(self) -> None:
+        self.guidance_panel.refresh()
         self._refresh_current_workspace()
 
     def _on_guidance_collapse_toggled(self, collapsed: bool) -> None:
@@ -187,6 +225,12 @@ class MainWindow(QMainWindow):
         )
         if is_calibrate:
             self.calibrate_toolbar.sync_pan_button()
+            if step is WorkflowStep.CALIBRATE_CARDS and self.calibrate_state.cards_is_stale(self.find_cards_state):
+                # The page Cards was calibrated from got unmarked in Find
+                # Cards since -- the geometry no longer corresponds to a
+                # confirmed card-grid page.
+                self.calibrate_state.cards.reset()
+            self.workspaces[step].on_shown()
 
         self._refresh_current_workspace()
         self.guidance_panel.refresh()
@@ -194,7 +238,15 @@ class MainWindow(QMainWindow):
     def _refresh_current_workspace(self) -> None:
         workspace = self.workspaces[self.state.current_step]
         workspace.set_pan_active(self.state.pan_mode)
-        self.status_bar.showMessage(self.state.status_text())
+        self.status_bar.showMessage(self._status_text())
+
+    def _status_text(self) -> str:
+        step = self.state.current_step
+        if step in CALIBRATE_STEPS and not self.state.pan_mode:
+            return calibrate_status_text(
+                step, self.calibrate_state.target_for(step), self.find_cards_state.marked_page_count()
+            )
+        return self.state.status_text()
 
     def _update_guidance_visibility(self) -> None:
         collapsed = self.state.guidance_collapsed or self.width() < GUIDANCE_MIN_WINDOW_WIDTH

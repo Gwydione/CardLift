@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QStackedWidget,
@@ -12,14 +13,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .app_state import AppState
+from .app_state import AppState, CALIBRATE_STEPS
+from .calibrate_state import CalibrateState, calibrate_guidance_text
+from .find_cards_state import FindCardsState
 from .theme import (
+    ACCENT,
     BG_GUIDANCE,
     FONT_BODY_SM,
-    FONT_CAPTION,
     FONT_H2,
     TEXT_NAV,
-    TEXT_NAV_HEADER,
     TEXT_NAV_MUTED,
 )
 
@@ -34,9 +36,17 @@ class GuidancePanel(QWidget):
 
     collapse_toggled = Signal(bool)
 
-    def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        state: AppState,
+        calibrate_state: CalibrateState,
+        find_cards_state: FindCardsState,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.state = state
+        self.calibrate_state = calibrate_state
+        self.find_cards_state = find_cards_state
         self.setObjectName("guidancePanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#guidancePanel {{ background: {BG_GUIDANCE}; }}")
@@ -62,10 +72,21 @@ class GuidancePanel(QWidget):
         layout.setSpacing(10)
 
         header_row = QHBoxLayout()
+        header_row.setSpacing(7)
+
+        # A small accent-colored marker -- ties this label to the same purple
+        # used elsewhere for "current progress" (active nav step, primary
+        # actions) rather than recoloring the text itself, which at this size
+        # wouldn't clear body-text contrast against BG_GUIDANCE.
+        marker = QFrame()
+        marker.setFixedSize(7, 7)
+        marker.setStyleSheet(f"background: {ACCENT}; border-radius: 3px;")
+        header_row.addWidget(marker, 0, Qt.AlignmentFlag.AlignVCenter)
+
         title = QLabel("Guidance")
         title.setStyleSheet(
-            f"font-size: {FONT_CAPTION}px; font-weight: 700; letter-spacing: 1px;"
-            f" color: {TEXT_NAV_HEADER};"
+            f"font-size: {FONT_BODY_SM}px; font-weight: 700; letter-spacing: 1px;"
+            f" color: {TEXT_NAV};"
         )
         header_row.addWidget(title)
         header_row.addStretch(1)
@@ -114,6 +135,14 @@ class GuidancePanel(QWidget):
         self.setFixedWidth(COLLAPSED_WIDTH if collapsed else EXPANDED_WIDTH)
 
     def refresh(self) -> None:
-        headline, body = self.state.guidance_text()
+        headline, body = self._guidance_text()
         self._headline.setText(headline)
         self._body.setText(body)
+
+    def _guidance_text(self) -> tuple[str, str]:
+        step = self.state.current_step
+        if step in CALIBRATE_STEPS:
+            return calibrate_guidance_text(
+                step, self.calibrate_state.target_for(step), self.find_cards_state.marked_page_count()
+            )
+        return self.state.guidance_text()

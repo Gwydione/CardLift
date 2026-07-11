@@ -12,7 +12,7 @@ is to make it disappear.
 Every design decision should reinforce clarity, confidence, and ease of
 use.
 
-------------------------------------------------------------------------
+---
 
 # Product Philosophy
 
@@ -29,7 +29,15 @@ keeping advanced capabilities available without overwhelming beginners.
 Users should focus on their cards and workflow---not on the extraction
 engine.
 
-------------------------------------------------------------------------
+---
+
+# Privacy and Security
+
+DeckForge should require no network access for its core PDF-processing workflow.
+
+User PDFs and derived card data should remain on the user’s computer unless the user explicitly chooses an online feature. Any future network-dependent capability must be optional, clearly disclosed, and designed so the local core workflow remains usable without it.
+
+---
 
 # Core Principles
 
@@ -51,6 +59,10 @@ advanced options until they are needed.
 
 Simple workflows should require very few decisions.
 
+## Clarity over Assumption
+
+Interfaces should communicate the user's current task, progress, and next action without requiring prior knowledge of DeckForge's internal model.
+
 ## Every interaction should build confidence.
 
 Each completed step should leave the user more confident than before.
@@ -60,13 +72,13 @@ and what will happen next.
 
 Examples include:
 
--   pages selected
--   layouts detected
--   page assignments
--   card counts
--   visual overlays
--   review screens
--   clear readiness indicators
+- pages selected
+- layouts detected
+- page assignments
+- card counts
+- visual overlays
+- review screens
+- clear readiness indicators
 
 Users should never wonder whether the application understood their deck
 or what will happen next.
@@ -79,10 +91,10 @@ Experienced users should be able to move quickly.
 
 Examples include:
 
--   collapsible guidance panel
--   remembered preferences
--   keyboard shortcuts
--   large PDF workspace
+- collapsible guidance panel
+- remembered preferences
+- keyboard shortcuts
+- large PDF workspace
 
 ## The current interaction mode must always be obvious.
 
@@ -91,9 +103,9 @@ Users should never wonder why clicking behaves differently.
 Whenever the application enters a different interaction mode, it should
 communicate that through multiple cues such as:
 
--   highlighted controls
--   cursor changes
--   status messages
+- highlighted controls
+- cursor changes
+- status messages
 
 ## Progressive disclosure
 
@@ -115,25 +127,25 @@ details.
 
 Use language that is:
 
--   clear
--   friendly
--   concise
--   confident
+- clear
+- friendly
+- concise
+- confident
 
 Avoid unnecessary technical terminology.
 
 Prefer user-oriented language such as:
 
--   Find Cards
--   Review Cards
--   Show DeckForge the first card
+- Find Cards
+- Review Cards
+- Show DeckForge the first card
 
 Avoid exposing concepts such as:
 
--   JSON
--   profile normalization
--   crop geometry
--   internal engine terminology
+- JSON
+- profile normalization
+- crop geometry
+- internal engine terminology
 
 # Visual Philosophy
 
@@ -148,9 +160,9 @@ for attention.
 
 Users should always know:
 
--   where they are
--   what DeckForge understands
--   what to do next
+- where they are
+- what DeckForge understands
+- what to do next
 
 # Decision Filter
 

@@ -38,7 +38,7 @@ from typing import Optional
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -78,6 +78,26 @@ QPushButton {{
 QPushButton:hover {{ background: #f1effa; border-color: {ACCENT}; }}
 QPushButton:pressed {{ background: #e9e4fb; }}
 QPushButton:disabled {{ color: {TEXT_CAPTION_MUTED}; background: {BG_WORKSPACE}; }}
+"""
+
+# Filled/accent variant for the one primary action on this page -- moving on
+# to Calibrate once at least one page is marked. Every other control here
+# (page nav, clear) is secondary/outlined via _CONTROL_BUTTON_STYLE above;
+# this is the only forward-progressing action, so it reads as the obvious
+# next step rather than blending in with paging controls.
+_PRIMARY_BUTTON_STYLE = f"""
+QPushButton {{
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    background: {ACCENT};
+    color: white;
+    font-size: {FONT_BODY_SM}px;
+    font-weight: 600;
+}}
+QPushButton:hover {{ background: {ACCENT_HOVER}; }}
+QPushButton:pressed {{ background: {ACCENT_PRESSED}; }}
+QPushButton:disabled {{ background: #cfc9e8; color: #f4f2fb; }}
 """
 
 
@@ -197,6 +217,8 @@ class FindCardsWorkspace(QWidget):
     engine; that's Calibrate's job in a later milestone.
     """
 
+    continue_clicked = Signal()
+
     def __init__(self, state: FindCardsState, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.state = state
@@ -246,9 +268,19 @@ class FindCardsWorkspace(QWidget):
         )
         outer.addWidget(self._status_label)
 
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        self._continue_btn = QPushButton("Continue to Calibrate ›")
+        self._continue_btn.setAutoDefault(False)
+        self._continue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._continue_btn.setStyleSheet(_PRIMARY_BUTTON_STYLE)
+        footer.addWidget(self._continue_btn)
+        outer.addLayout(footer)
+
         self._prev_btn.clicked.connect(self._go_previous)
         self._next_btn.clicked.connect(self._go_next)
         self._clear_btn.clicked.connect(self._clear_current_page)
+        self._continue_btn.clicked.connect(self.continue_clicked.emit)
 
         self._update_labels()
 
@@ -324,10 +356,15 @@ class FindCardsWorkspace(QWidget):
         self._next_btn.setEnabled(self.state.current_page < self._page_count)
         self._clear_btn.setEnabled(self.current_marker() is not None)
 
+        count = self.state.marked_page_count()
+        self._continue_btn.setEnabled(count > 0)
+
         if self._page_count:
-            count = self.state.marked_page_count()
             noun = "page" if count == 1 else "pages"
-            self._status_label.setText(f"{count} of {self._page_count} {noun} marked with a card grid")
+            marked_text = f"{count} of {self._page_count} {noun} marked with a card grid"
+            if count == 0:
+                marked_text += " — mark at least one page to continue"
+            self._status_label.setText(marked_text)
         else:
             self._status_label.setText("Open a PDF on the Deck page to begin.")
 
