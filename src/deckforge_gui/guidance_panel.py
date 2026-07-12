@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from .app_state import AppState, CALIBRATE_STEPS, WorkflowStep
 from .calibrate_state import CalibrateState, calibrate_guidance_text
+from .export_state import export_guidance_text
 from .find_cards_state import FindCardsState
 from .review_state import ReviewCardsState, review_guidance_text
 from .theme import (
@@ -153,6 +154,16 @@ class GuidancePanel(QWidget):
             )
         if step is WorkflowStep.REVIEW_CARDS:
             return review_guidance_text(
+                self.calibrate_state.cards,
+                self.calibrate_state.back,
+                self.find_cards_state.shared_back_status(),
+                self.review_cards_state,
+            )
+        if step is WorkflowStep.EXPORT:
+            # Deliberately the simple export_ready() check (no page-size-
+            # dependent stale-snapshot check) -- see export_workspace.py's
+            # module docstring for why that check is workspace-only.
+            return export_guidance_text(
                 self.calibrate_state.cards,
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),

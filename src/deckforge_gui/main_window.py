@@ -27,6 +27,7 @@ from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
 from .calibrate_state import CalibrateState, calibrate_status_text
 from .calibrate_toolbar import CalibrateToolbar
 from .calibrate_workspace import CalibrateWorkspace
+from .export_state import export_status_text
 from .find_cards_state import FindCardsState, find_cards_status_text
 from .guidance_panel import GuidancePanel
 from .review_state import ReviewCardsState, review_status_text
@@ -147,6 +148,9 @@ class MainWindow(QMainWindow):
         self.review_workspace.continue_clicked.connect(self._on_review_continue)
         self.review_workspace.back_to_calibrate_clicked.connect(self._on_review_back_to_calibrate)
         self.review_workspace.state_changed.connect(self._on_workspace_state_changed)
+        self.export_workspace = self.workspaces[WorkflowStep.EXPORT]
+        self.export_workspace.back_to_review_clicked.connect(self._on_export_back_to_review)
+        self.export_workspace.start_new_deck_clicked.connect(self._on_start_new_deck)
 
         self.guidance_panel = GuidancePanel(
             self.state, self.calibrate_state, self.find_cards_state, self.review_cards_state,
@@ -188,6 +192,7 @@ class MainWindow(QMainWindow):
         self.calibrate_cards_workspace.set_pdf(path, self.session.page_count)
         self.calibrate_back_workspace.set_pdf(path, self.session.page_count)
         self.review_workspace.set_pdf(path, self.session.page_count)
+        self.export_workspace.set_pdf(path, self.session.page_count)
         self._on_step_selected(WorkflowStep.FIND_CARDS)
 
     def _on_find_cards_continue(self) -> None:
@@ -207,6 +212,16 @@ class MainWindow(QMainWindow):
 
     def _on_review_back_to_calibrate(self) -> None:
         self._on_step_selected(WorkflowStep.CALIBRATE_BACK)
+
+    def _on_export_back_to_review(self) -> None:
+        self._on_step_selected(WorkflowStep.REVIEW_CARDS)
+
+    def _on_start_new_deck(self) -> None:
+        # Reuses the Deck page's existing PDF-(re)load reset: dropping or
+        # choosing a PDF there already clears find_cards_state/
+        # calibrate_state/review_cards_state via _on_pdf_chosen -- no
+        # separate app-wide "start over" reset needed here.
+        self._on_step_selected(WorkflowStep.DECK)
 
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:
@@ -255,21 +270,33 @@ class MainWindow(QMainWindow):
         self.toolbar_stack.setCurrentIndex(
             _CALIBRATE_TOOLBAR_INDEX if is_calibrate else _NO_TOOLBAR_INDEX
         )
-        # Checked on Review Cards' own entry too, not just Calibrate's --
-        # AppState.is_reached lets the sidebar route straight to Review
-        # Cards without passing back through Calibrate first, so a
-        # Calibrate target that went stale since it was last shown (a
-        # Front Page role changed, or the Shared Back page was
-        # reassigned) must still be caught here rather than trusted as-is.
-        if step in (WorkflowStep.CALIBRATE_CARDS, WorkflowStep.REVIEW_CARDS) and self.calibrate_state.cards_is_stale(self.find_cards_state):
+        # Checked on Review Cards' and Export's own entry too, not just
+        # Calibrate's -- AppState.is_reached lets the sidebar route
+        # straight to either without passing back through Calibrate
+        # first, so a Calibrate target that went stale since it was last
+        # shown (a Front Page role changed, or the Shared Back page was
+        # reassigned) must still be caught here rather than trusted
+        # as-is. This is structural staleness (the calibrated page no
+        # longer holds the role it was calibrated for); a *content*
+        # staleness -- the same page recalibrated differently, or a front
+        # page added without touching the calibrated one -- is instead
+        # caught by ExportWorkspace itself via export_state.
+        # review_snapshot_is_current(), since only it has an open
+        # PDFRenderer to check page sizes with (see export_workspace.py's
+        # module docstring).
+        stale_steps = (WorkflowStep.CALIBRATE_CARDS, WorkflowStep.REVIEW_CARDS, WorkflowStep.EXPORT)
+        if step in stale_steps and self.calibrate_state.cards_is_stale(self.find_cards_state):
             self.calibrate_state.cards.reset()
-        if step in (WorkflowStep.CALIBRATE_BACK, WorkflowStep.REVIEW_CARDS) and self.calibrate_state.back_is_stale(self.find_cards_state):
+        back_stale_steps = (WorkflowStep.CALIBRATE_BACK, WorkflowStep.REVIEW_CARDS, WorkflowStep.EXPORT)
+        if step in back_stale_steps and self.calibrate_state.back_is_stale(self.find_cards_state):
             self.calibrate_state.back.reset()
         if is_calibrate:
             self.calibrate_toolbar.sync_pan_button()
             self.workspaces[step].on_shown()
         if step is WorkflowStep.REVIEW_CARDS:
             self.review_workspace.on_shown()
+        if step is WorkflowStep.EXPORT:
+            self.export_workspace.on_shown()
 
         self._refresh_current_workspace()
         self.guidance_panel.refresh()
@@ -293,6 +320,13 @@ class MainWindow(QMainWindow):
             )
         if step is WorkflowStep.REVIEW_CARDS:
             return review_status_text(
+                self.calibrate_state.cards,
+                self.calibrate_state.back,
+                self.find_cards_state.shared_back_status(),
+                self.review_cards_state,
+            )
+        if step is WorkflowStep.EXPORT:
+            return export_status_text(
                 self.calibrate_state.cards,
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),

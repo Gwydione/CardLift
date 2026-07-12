@@ -115,14 +115,6 @@ QPushButton:disabled {{ background: #cfc9e8; color: #f4f2fb; }}
 """
 
 
-def _to_grid_geometry(geometry: CalibratedGeometry) -> GridGeometry:
-    return GridGeometry(
-        left=geometry.left, top=geometry.top,
-        card_width=geometry.card_width, card_height=geometry.card_height,
-        gap_x=geometry.gap_x, gap_y=geometry.gap_y,
-    )
-
-
 class _CardTile(QWidget):
     """One suggested card: its cropped thumbnail, a border/checkmark
     showing whether it's included, and a click to toggle. No caption --
@@ -382,7 +374,7 @@ class ReviewWorkspace(QWidget):
         assert self._renderer is not None
         assert back_target.geometry is not None and back_target.calibrated_page_num is not None
         page_image = self._renderer.render_page(back_target.calibrated_page_num, REVIEW_RENDER_SCALE)
-        crop = self._cropper.crop_card(page_image, _to_grid_geometry(back_target.geometry), _ZERO_TRIM, 0, 0)
+        crop = self._cropper.crop_card(page_image, back_target.geometry.to_grid_geometry(), _ZERO_TRIM, 0, 0)
         pixmap = _pil_to_pixmap(crop).scaledToHeight(126, Qt.TransformationMode.SmoothTransformation)
         self._back_thumb_label.setPixmap(pixmap)
         self._back_caption.setText(
@@ -393,7 +385,7 @@ class ReviewWorkspace(QWidget):
         self._clear_content()
         self._tiles = {}
         assert self._renderer is not None
-        grid_geometry = _to_grid_geometry(geometry)
+        grid_geometry = geometry.to_grid_geometry()
 
         pages: list[int] = []
         for card in card_list:

@@ -454,12 +454,171 @@ click the user made in Calibrate already *is* the exact crop box, unlike
 the CLI's eyeballed-pixel-coordinates flow that trim exists to nudge
 afterward.
 
-Forward-compatible note for a future Export milestone: `review_workspace.py`
-converts `CalibratedGeometry` to `profile.GridGeometry` via one small
-`_to_grid_geometry()` helper, so the shapes stay byte-identical to
-`profile.py`'s real dataclasses -- Export can build actual `CardLayout`/
-`DeckProfile` values from the same `CalibrateState` and reuse
-`DeckExporter` unchanged rather than reimplementing file-writing.
+`CalibratedGeometry.to_grid_geometry()` converts to `profile.GridGeometry`,
+so the shapes stay byte-identical to `profile.py`'s real dataclasses --
+`review_workspace.py` and `export_state.py` both use it. An earlier version
+of this note suggested Export would go further and build actual
+`CardLayout`/`DeckProfile` values, reusing `DeckExporter` unchanged. That
+turned out to be wrong: see "Export milestone" below for why a `CardLayout`
+can't represent Review Cards' excluded cells at all, and what Export does
+instead.
+
+**Export milestone.** The final Phase II workflow step: writes the exact
+set of cards Review Cards approved to PNG files in a folder the user
+chooses -- PNG only, no resizing/padding/bleed/presets, no printable-PDF
+formats, no contact sheet (all deferred). No profile file, JSON, or CLI
+concept is ever exposed, per `docs/ui/DESIGN_PRINCIPLES.md`.
+
+**Why `DeckProfile`/`CardLayout` are never built.** The original design
+sketch (see the corrected note above) assumed Export would build a real
+profile and reuse `DeckExporter.export()`. That is wrong: a `CardLayout`
+always means "a complete, regular `rows x cols` grid" -- `CardCropper.
+crop_all()` / `geometry.iter_grid_positions()` enumerate every cell in
+range unconditionally, with no way to omit one. Review Cards, however,
+lets a human exclude specific over-suggested cells from an otherwise
+regular grid (e.g. a partly-filled last page). Routing that reviewed,
+possibly-sparse cell list through a `CardLayout` would silently
+re-include every excluded cell in the real export -- a correctness bug,
+not just an inconvenience. `CardLayout`/`DeckProfile`/`DeckExporter`
+remain completely untouched by this milestone; the CLI's own export
+behavior is unaffected.
+
+`deckforge/cell_export.py` is the new engine primitive instead:
+`export_cells(renderer, render_scale, front_geometry, cells, output_dir,
+back=None)` takes an explicit, ordered `(page_num, row, col)` sequence --
+no notion of a "complete grid" at all -- and reuses `PDFRenderer`/
+`CardCropper` exactly as `DeckExporter` does, just keyed by an explicit
+cell list rather than `profile.layouts`. It renders each distinct page at
+most once via an internal cache keyed by page number, regardless of
+whether the caller's cells happen to be grouped by page (they are, by
+construction -- see below -- but the function doesn't rely on that).
+`front_NNN.png` numbering follows the caller's list order exactly,
+1-indexed; trim is always zero (same reasoning as Review Cards' own
+`_ZERO_TRIM`: Calibrate's two-corner click already *is* the exact crop
+box). `back`, if given, is `(page_num, geometry)`; omitting it (the
+default) writes no `back.png` -- this is how a Deck with a confirmed no
+Shared Back exports, with no change to `profile.py`'s `back_page`
+schema needed, since Export never constructs a profile at all.
+
+`deckforge_gui/export_state.py` is the pure (no PySide6/PDF import)
+builder: `build_export_plan()` reads `ReviewCardsState.included_cards()`
+verbatim -- the exact order and exclusions Review Cards produced, with no
+re-sorting or re-derivation -- converts `CalibratedGeometry` to
+`profile.GridGeometry` via `to_grid_geometry()`, and bundles the Shared
+Back page/geometry only when `shared_back_status()` is `ASSIGNED`.
+`export_ready()` is `review_ready()` plus "at least one card included".
+
+**Review Cards must stay authoritative, even after `AppState.is_reached`
+lets the sidebar jump straight to Export.** The same mechanism that lets
+the sidebar route straight to Review Cards without passing back through
+Calibrate (see "Select Card Pages redesign" above) also applies to
+Export once it's been reached once. `MainWindow._apply_step()`'s existing
+`cards_is_stale()`/`back_is_stale()` reset check (previously run only for
+`CALIBRATE_CARDS`/`CALIBRATE_BACK`/`REVIEW_CARDS`) now also runs for
+`EXPORT`, catching the *structural* staleness case (the calibrated page
+no longer holds the role it was calibrated for).
+
+That alone isn't sufficient: a *content* staleness case exists too --
+Calibrate redone on the *same* page (a different card size/position, so
+`cards_is_stale()` sees no change since `calibrated_page_num` is
+unchanged), or a new Front Page added in Select Card Pages without
+touching the calibrated page -- either of which changes what
+`build_review_cards()` would suggest without invalidating `cards_target.
+is_complete`. `export_state.review_snapshot_is_current()` catches this:
+it recomputes `build_review_cards()` from the *current* calibrated
+geometry and front-page set and compares the resulting cell identities
+against whatever `review_state` last synced (only possible inside Review
+Cards' own `on_shown()`). `ExportWorkspace` is the only caller, since it
+already owns a `PDFRenderer` for the export operation itself and needs no
+new infrastructure to also use it for this check; when the snapshot is
+stale, `ExportWorkspace` blocks with `stale_review_guidance_text()`/
+`stale_review_status_text()` instead of running `export_cells()` against
+cards the human never actually confirmed. This was verified directly (not
+just by code review): a smoke run that calibrates, reviews, excludes one
+card, exports (54 cards -> 53 PNGs + `back.png`, confirming the exclusion
+survived), then adds an extra Front Page and jumps back to Export via the
+sidebar without revisiting Review Cards, confirms `ExportWorkspace` blocks
+with this exact message rather than re-exporting.
+
+**Documented limitation: the guidance panel and status bar do not run
+`review_snapshot_is_current()`.** That check needs a page-size lookup,
+which needs an open `PDFRenderer`; `GuidancePanel` and `MainWindow`'s
+status bar have neither, and giving them one would mean threading a
+workspace reference into `GuidancePanel`, breaking its "reads only plain
+state, no widget dependency" boundary for one narrow edge case.
+`export_state.export_ready()` (what both of those surfaces use) therefore
+does not perform this check -- only `ExportWorkspace._rebuild()` does. The
+practical effect: in the specific stale-snapshot scenario described above,
+the guidance panel/status bar can say "Ready to export" while the Export
+workspace body (the actual gate on the action that writes files to disk)
+correctly blocks and explains why. This is an accepted, deliberately
+narrow gap -- the thing that actually matters (never silently exporting
+an unconfirmed cell set) is guaranteed regardless -- rather than a larger
+redesign (e.g. giving every step's guidance text access to a shared
+renderer) to close a purely cosmetic inconsistency in one rare path. A
+future polish pass could resolve it by having `MainWindow` reuse `review_
+workspace.page_size` (already backed by an open renderer) for the
+guidance/status-bar text too, the same way it already reaches into
+`CalibrateWorkspace.grid_page_size()` for Calibrate's status line.
+
+`export_workspace.py`'s `ExportWorkspace` owns its own `PDFRenderer` (set
+via `set_pdf()`, same pattern as every other PDF-driven workspace),
+renders at `export_state.EXPORT_RENDER_SCALE` (4.0, matching the CLI's
+own typical profile `render_scale` -- README: "e.g. 4 ~ 288 DPI" -- since
+these are the same kind of final deliverable PNG, independent of
+Calibrate's precision-click scale or Review Cards' thumbnail scale). It
+has four states: blocked (not ready, or a stale snapshot, both routed
+through the same centered message + a "‹ Back to Review Cards" button),
+ready (card/back summary, a destination-folder picker via
+`QFileDialog.getExistingDirectory`, and an Export button enabled only
+once a folder is chosen), in-progress (see below), and completion (see
+below).
+
+**Export in-progress feedback and a real completion state.** The first
+cut of Export ran `export_cells()` synchronously on the GUI thread and
+showed nothing until it returned -- fine for the sample deck, but a large
+deck gives no sign anything is happening and risks the window appearing
+frozen. `_ExportWorker(QThread)` in `export_workspace.py` now runs the
+exact same, unmodified `export_cells()` call off the GUI thread; nothing
+about the export itself (arguments, engine call, file naming) changed,
+only where it runs. While it runs, the Export and Choose Folder buttons
+are disabled (`self._worker is not None` doubles as a re-entrancy guard,
+belt-and-suspenders alongside the disabled button, against a double
+dispatch), and an indeterminate `QProgressBar` (`setRange(0, 0)`) plus an
+"Exporting N cards…" label are shown -- genuinely animated, since the GUI
+thread's event loop keeps running. `_close_renderer()` (called from
+`set_pdf()` when a new PDF is loaded) waits on any in-flight worker
+before closing the `PDFRenderer` it's reading from, so loading a
+replacement PDF mid-export can't race a close against the worker thread's
+PyMuPDF calls.
+
+On success, `ExportWorkspace._export_complete` flips the ready panel into
+a distinct completion state (`_apply_completion_visibility()`): the
+heading becomes "Export complete.", the destination picker/Export button
+and the "‹ Back to Review Cards" footer button hide (the sidebar remains
+the way back to any earlier, already-reached step, same as everywhere
+else in the app -- see `sidebar.py`'s `is_reached`-driven enabling), and
+an Open Folder (`QDesktopServices.openUrl` on the destination) / Start
+New Deck action row appears in their place. `start_new_deck_clicked`
+navigates to the Deck step exactly like the sidebar's own Deck entry --
+it does not duplicate any reset logic itself; `MainWindow._on_pdf_chosen`
+already clears `find_cards_state`/`calibrate_state`/`review_cards_state`
+whenever a (re)loaded PDF is chosen there, which is what actually starts
+a new deck over. `on_shown()` resets `_export_complete` to `False` on
+every fresh entry to Export, so revisiting via the sidebar after
+navigating away always starts from the ordinary ready state, not a stale
+completion screen.
+
+Known, accepted gap (same category DEVELOPER.md already documents for
+`review_snapshot_is_current()` above): the guidance panel and the global
+status bar do not know about `_export_complete` and keep showing "Ready
+to export N cards." even right after a successful export, since neither
+has (or should gain, per this file's existing reasoning) a dependency on
+`ExportWorkspace`'s internal widget state. The main workspace body -- the
+far more prominent surface -- correctly shows "Export complete." with the
+completion actions, so this is a minor, secondary-panel inconsistency
+rather than something that could mislead a user about whether the export
+actually finished.
 
 ## Common Commands
 
@@ -693,6 +852,7 @@ DeckForge/
 │   ├── exporter.py              # DeckExporter: orchestrates preview/export/overlay/inspect/contact-sheet
 │   ├── measure.py               # --measure: pixel coords → suggested profile patch (no rendering)
 │   ├── calibrate_ui.py          # --calibrate: interactive click-to-measure window
+│   ├── cell_export.py           # export_cells(): explicit ordered cell list → PNGs, no CardLayout/DeckProfile involved
 │   └── cli.py                   # argparse wiring — the only file that knows about CLI flags
 ├── src/deckforge_gui/            # PySide6 desktop app (Phase II)
 │   ├── app_state.py              # Pure navigation/state model — no PySide6 import, unit tested directly
@@ -710,7 +870,9 @@ DeckForge/
 │   ├── find_cards_workspace.py   # Select Card Pages workspace: PDF page-by-page preview + role toggle buttons
 │   ├── review_state.py           # Pure ReviewCard/ReviewCardsState model -- suggested-grid cards, include/exclude toggle
 │   ├── review_workspace.py       # Review Cards workspace: per-page card thumbnail grid, Shared Back preview, toggles
-│   └── workspaces.py             # Central workspace per workflow step (Export is still a placeholder)
+│   ├── export_state.py           # Pure ExportPlan/export_ready() model -- built from Review Cards' approved cells
+│   ├── export_workspace.py       # Export workspace: summary, destination folder picker, Export action, result message
+│   └── workspaces.py             # Central workspace per workflow step
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 

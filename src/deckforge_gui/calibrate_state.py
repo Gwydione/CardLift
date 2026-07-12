@@ -67,6 +67,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional, Sequence
 
 from deckforge.measure import CardMeasurement, MeasureError, PixelBox, derive_geometry
+from deckforge.profile import GridGeometry
 
 from .app_state import GUIDANCE, STATUS, WorkflowStep
 from .find_cards_state import SharedBackStatus
@@ -183,6 +184,18 @@ class CalibratedGeometry:
     gap_x_derived: bool
     gap_y_derived: bool
     warnings: tuple[str, ...] = ()
+
+    def to_grid_geometry(self) -> GridGeometry:
+        """Converts to profile.py's GridGeometry shape -- the one place
+        this happens, so review_workspace.py and export_state.py (the two
+        callers that need to hand a calibrated geometry to engine code
+        that knows nothing about Calibrate/Qt) share a single conversion
+        instead of each keeping their own copy."""
+        return GridGeometry(
+            left=self.left, top=self.top,
+            card_width=self.card_width, card_height=self.card_height,
+            gap_x=self.gap_x, gap_y=self.gap_y,
+        )
 
 
 # How much slack, in points, a near-boundary cell is still allowed to be
