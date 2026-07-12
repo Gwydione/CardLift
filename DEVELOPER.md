@@ -356,6 +356,59 @@ scope for this step. Shared Back keeps just the PDF-page line, since it
 navigates only its single assigned page rather than the Front Pages
 subset.
 
+**Calibration geometry robustness.** Alpha testing across real PnP PDFs
+found that different choices of calibration cards produced systematically
+different, sometimes-clipping grids -- root-caused in
+`docs/CALIBRATION_GEOMETRY_INVESTIGATION.md` to two additive effects, both
+fixed without touching `derive_geometry()`'s math, `GridGeometry`, or the
+two-click workflow:
+
+Effect A (silent 0.0 gap fallback): `CalibratedGeometry.gap_x_derived`/
+`gap_y_derived` already recorded whether an axis was actually measured
+versus defaulted to edge-to-edge, but nothing read them.
+`ungauged_axis_warning()` (`calibrate_state.py`) now appends a plain-
+language warning to the completion banner and guidance/status text
+whenever an axis was defaulted *and* it actually matters -- gated on
+`suggested_grid()`'s rows/cols, so a genuine one-row, one-column, or
+single-card deck (where that axis's spacing is never applied to any real
+cell) never sees a spurious warning. `CalibrateWorkspace._update_continue_footer()`
+and `calibrate_guidance_text()`/`calibrate_status_text()` all thread it
+through, so the workspace's own prominent banner and the app-wide
+guidance panel/status bar stay consistent with each other.
+
+Effect B (adjacent-click noise amplification): a gap estimate's error is
+inversely proportional to how far apart the two measured cells are, but
+`predicted_neighbor_box()`'s hint previously only ever pointed at the
+immediately-adjacent cell, and nothing about the workflow nudged a user
+toward a wider baseline. `suggested_second_card_offset()` estimates
+roughly how many cells fit across the page (reusing `_fit_count()`, the
+same math `suggested_grid()` already uses) and the hint box is now drawn
+that far away instead, capped at `_MAX_SUGGESTED_OFFSET` (6 cells) so a
+tiny card on a large page doesn't suggest something off the default
+Fit-to-Window view. `infer_second_cell()` needed no change -- it already
+derived a click's real `(row, col)` from wherever the user actually
+clicked, not from the hint, so it was never actually limited to adjacent
+cells, only the drawn hint was.
+
+A related, separate finding from the same alpha round: users naturally
+click a card's cutting guide when one is printed, and the card's outer
+printed edge when it isn't -- reasonable behavior the two-corner-click
+model already tolerates *as long as the same reference point is used for
+both corners of the calibrated card*, since there's no cushion (trim is
+always zero in the GUI -- see "Why `review_workspace.py` calls
+`CardCropper` directly" above) to absorb an inconsistency between them.
+`app_state.py`'s `GUIDANCE`/`STATUS` for both Calibrate steps, and
+`calibrate_state.py`'s "click the opposite corner" guidance, now name
+this rule explicitly rather than leaving it for the user to infer.
+
+Deliberately not touched: the CLI's own `--calibrate` window
+(`src/deckforge/calibrate_ui.py`) has structurally the same
+`predicted_neighbor_box()`/silent-fallback pattern, but it's a separate
+Tkinter port (not shared code with the GUI -- see "`view_transform.py` is
+a straight port" above for why), and the CLI engine is documented
+elsewhere in this file as stable. Left as a follow-up rather than folded
+into this pass; see `docs/RELEASE_READINESS.md`'s Open section.
+
 **Review Cards milestone.** The last checkpoint before Export: every
 suggested card is rendered as a clickable thumbnail so the user can catch
 a miscount or a bad crop before anything is written to disk -- CORE_CONCEPTS.md's

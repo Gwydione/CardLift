@@ -57,6 +57,8 @@ from .calibrate_state import (
     calibrate_status_text,
     predicted_neighbor_box,
     suggested_grid,
+    suggested_second_card_offset,
+    ungauged_axis_warning,
 )
 from .find_cards_state import FindCardsState, SharedBackStatus
 from .theme import (
@@ -213,12 +215,15 @@ class _CalibrateCanvas(QWidget):
         first = target.measurements[0]
         card_width = first.x2 - first.x1
         card_height = first.y2 - first.y1
+        col_offset, row_offset = self._workspace.suggested_second_card_offsets(
+            first.as_tuple(), card_width, card_height,
+        )
         scale = self._workspace.render_scale
         pen = QPen(_SUGGESTION_COLOR, 1)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        for direction in ("right", "below"):
-            box = predicted_neighbor_box(first.as_tuple(), card_width, card_height, 0.0, 0.0, direction)
+        for direction, cells_away in (("right", col_offset), ("below", row_offset)):
+            box = predicted_neighbor_box(first.as_tuple(), card_width, card_height, 0.0, 0.0, direction, cells_away)
             x1, y1 = view.image_to_canvas(box[0] * scale, box[1] * scale)
             x2, y2 = view.image_to_canvas(box[2] * scale, box[3] * scale)
             painter.drawRect(QRectF(x1, y1, x2 - x1, y2 - y1))
@@ -640,6 +645,34 @@ class CalibrateWorkspace(QWidget):
         except PDFRenderError:
             return None
 
+    def _current_page_size(self) -> Optional[tuple[float, float]]:
+        """Point-size of whatever page is currently being viewed, unlike
+        grid_page_size() (which only resolves once a page is calibrated).
+        Needed to estimate a good second-card hint before calibration
+        completes -- see suggested_second_card_offsets()."""
+        target = self.current_target()
+        if self._renderer is None or target.page_num is None:
+            return None
+        try:
+            return self._renderer.page_size(target.page_num)
+        except PDFRenderError:
+            return None
+
+    def suggested_second_card_offsets(
+        self, first_box: tuple[float, float, float, float], card_width: float, card_height: float,
+    ) -> tuple[int, int]:
+        """(col_offset, row_offset) cells away to draw the second-card hint
+        at -- farther than adjacent, so a user who clicks it gives
+        derive_geometry() a wider baseline (see
+        CALIBRATION_GEOMETRY_INVESTIGATION.md, Effect B). Falls back to the
+        immediately adjacent cell if the current page's size isn't known
+        yet, matching the hint's previous behavior."""
+        page_size = self._current_page_size()
+        if page_size is None:
+            return (1, 1)
+        page_width_pt, page_height_pt = page_size
+        return suggested_second_card_offset(card_width, card_height, page_width_pt, page_height_pt, first_box)
+
     def _grid_note(self, target: CalibrationTarget) -> str:
         page_size = self.grid_page_size()
         if page_size is None or target.geometry is None:
@@ -736,7 +769,8 @@ class CalibrateWorkspace(QWidget):
         if complete:
             self._completion_banner.setText(self._banner_html(
                 "Fronts calibration complete",
-                f"Applies to all {front_page_count} selected front {noun}.{self._grid_note(target)} "
+                f"Applies to all {front_page_count} selected front {noun}.{self._grid_note(target)}"
+                f"{ungauged_axis_warning(target, self.grid_page_size())} "
                 "Browsing other pages below is optional — continue to Shared Back whenever you're ready.",
             ))
 

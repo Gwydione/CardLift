@@ -102,43 +102,58 @@ def infer_second_cell(
 ) -> Optional[tuple[int, int]]:
     """Figures out a second measured card's (row, col) from where it sits
     relative to the first card, so the user doesn't have to label the
-    common case of clicking a visibly-adjacent card. Returns None if the
-    displacement doesn't round to a clean, nonzero cell offset along the
-    dominant axis -- callers should fall back to asking. Unit-agnostic
-    (works the same in points or pixels, since only ratios matter), so
-    this needs no adaptation from calibrate_ui.py's pixel-space original."""
+    common case of clicking a visibly-adjacent (or diagonal) card.
+
+    Each axis is judged independently, normalized by that axis's own cell
+    size (dx/cell_width, dy/cell_height) rather than comparing raw
+    dx/dy magnitude -- a card is very rarely square, so raw displacement
+    is not comparable across axes: a one-row-one-column diagonal move on a
+    portrait card has a larger raw vertical displacement than horizontal
+    (and the reverse on a landscape card), which previously caused the
+    smaller raw axis to be silently discarded even when it represented a
+    perfectly real cell offset (see CALIBRATION_GEOMETRY_INVESTIGATION.md).
+    Normalizing first means both axes are compared in the same "cells
+    moved" unit, so a genuine diagonal click yields nonzero offsets on
+    both axes independently.
+
+    Returns None only when neither axis rounds to a nonzero cell offset
+    (the two clicks are essentially the same point) -- callers should fall
+    back to asking. Unit-agnostic (works the same in points or pixels,
+    since only ratios matter), so this needs no adaptation from
+    calibrate_ui.py's pixel-space original."""
     if cell_width <= 0 or cell_height <= 0:
         return None
     fx1, fy1, fx2, fy2 = first_box
     sx1, sy1, sx2, sy2 = second_box
     dx = (sx1 + sx2) / 2 - (fx1 + fx2) / 2
     dy = (sy1 + sy2) / 2 - (fy1 + fy2) / 2
-    if abs(dx) >= abs(dy):
-        col_offset = round(dx / cell_width)
-        if col_offset == 0:
-            return None
-        return (first_row, first_col + col_offset)
+    col_offset = round(dx / cell_width)
     row_offset = round(dy / cell_height)
-    if row_offset == 0:
+    if col_offset == 0 and row_offset == 0:
         return None
-    return (first_row + row_offset, first_col)
+    return (first_row + row_offset, first_col + col_offset)
 
 
 def predicted_neighbor_box(
     first_box: tuple[float, float, float, float], card_width: float, card_height: float,
-    gap_x: float, gap_y: float, direction: str,
+    gap_x: float, gap_y: float, direction: str, cells_away: int = 1,
 ) -> tuple[float, float, float, float]:
-    """Guesses where a horizontally- or vertically-adjacent card would be,
-    in the same coordinate space as `first_box`, using the just-measured
-    card size and a gap (0.0 before a second card fixes it). Only ever
-    used to draw a "click here" hint -- if the guess is wrong the user
-    simply clicks somewhere else instead."""
+    """Guesses where a horizontally- or vertically-offset card would be,
+    `cells_away` cells from the first, in the same coordinate space as
+    `first_box`, using the just-measured card size and a gap (0.0 before a
+    second card fixes it). Only ever used to draw a "click here" hint -- if
+    the guess is wrong the user simply clicks somewhere else instead.
+
+    `cells_away` defaults to 1 (the immediately adjacent cell) for
+    backward compatibility, but callers choosing where to draw the hint
+    should generally prefer a larger value -- see
+    suggested_second_card_offset()'s docstring for why."""
     x1, y1, x2, y2 = first_box
     if direction == "right":
-        nx1 = x2 + gap_x
+        nx1 = x2 + gap_x + (cells_away - 1) * (card_width + gap_x)
         return (nx1, y1, nx1 + card_width, y2)
     if direction == "below":
-        ny1 = y2 + gap_y
+        ny1 = y2 + gap_y + (cells_away - 1) * (card_height + gap_y)
         return (x1, ny1, x2, ny1 + card_height)
     raise ValueError(f"direction must be 'right' or 'below', got {direction!r}")
 
@@ -236,6 +251,43 @@ def _fit_count(page_extent_pt: float, origin_pt: float, card_size_pt: float, gap
     pitch = card_size_pt + gap_pt
     count = math.floor((page_extent_pt - origin_pt + gap_pt + tolerance_pt) / pitch)
     return max(count, 0)
+
+
+# How far the suggested second-card hint reaches at most, in cells. Caps
+# the offset so an unusually small card on a large page doesn't suggest a
+# cell dozens of columns away -- still clickable, but a hint that far
+# outside the default Fit-to-Window view stops being a usable visual cue.
+_MAX_SUGGESTED_OFFSET = 6
+
+
+def suggested_second_card_offset(
+    card_width: float, card_height: float,
+    page_width_pt: float, page_height_pt: float,
+    first_box: tuple[float, float, float, float],
+) -> tuple[int, int]:
+    """(col_offset, row_offset) cells away from the first measured card to
+    hint the second click at.
+
+    A short baseline -- the immediately adjacent cell, which is all the
+    hint used to ever suggest -- divides the gap estimate's denominator by
+    1, so ordinary click-precision noise (or genuine tiny print
+    non-uniformity) gets fully amplified once extrapolated across the rest
+    of the grid. A farther second card divides that same noise by a larger
+    denominator instead, sharply reducing it (see
+    CALIBRATION_GEOMETRY_INVESTIGATION.md, Effect B). This only changes
+    where the *hint* is drawn -- infer_second_cell() already derives the
+    click's real (row, col) from wherever the user actually clicks, not
+    from this guess, so a wrong estimate here is harmless.
+
+    Uses gap=0 as a rough a-priori estimate of how many cells fit, the
+    same assumption predicted_neighbor_box() already makes before a gap is
+    known -- exactness doesn't matter for a hint's placement."""
+    x1, y1, _, _ = first_box
+    cols = _fit_count(page_width_pt, x1, card_width, 0.0, GRID_FIT_TOLERANCE_PT)
+    rows = _fit_count(page_height_pt, y1, card_height, 0.0, GRID_FIT_TOLERANCE_PT)
+    col_offset = min(max(cols - 1, 1), _MAX_SUGGESTED_OFFSET)
+    row_offset = min(max(rows - 1, 1), _MAX_SUGGESTED_OFFSET)
+    return (col_offset, row_offset)
 
 
 @dataclass
@@ -423,6 +475,40 @@ def _grid_clause(target: CalibrationTarget, page_size: Optional[tuple[float, flo
     return f" Looks like a {rows}×{cols} grid per page."
 
 
+def ungauged_axis_warning(target: CalibrationTarget, page_size: Optional[tuple[float, float]]) -> str:
+    """Explains, in Calibrate's own completion text, when a spacing axis
+    was never actually measured and is silently assumed edge-to-edge (see
+    CALIBRATION_GEOMETRY_INVESTIGATION.md, Effect A -- `gap_x_derived`/
+    `gap_y_derived` already existed and were already computed but nothing
+    read them). Only fires when the axis actually matters: a deck with a
+    single row or single column never uses that axis's spacing at all
+    (its row/col index is always 0, so the fallback gap is never
+    multiplied by anything), so warning about it there would be noise, not
+    help -- reuses the same suggested_grid() estimate _grid_clause() above
+    already computes for the grid-size note."""
+    if page_size is None or target.geometry is None:
+        return ""
+    geometry = target.geometry
+    if geometry.gap_x_derived and geometry.gap_y_derived:
+        return ""
+    page_width_pt, page_height_pt = page_size
+    rows, cols = suggested_grid(geometry, page_width_pt, page_height_pt)
+    missing_axes = []
+    if not geometry.gap_x_derived and cols > 1:
+        missing_axes.append("columns")
+    if not geometry.gap_y_derived and rows > 1:
+        missing_axes.append("rows")
+    if not missing_axes:
+        return ""
+    axes_text = " and ".join(missing_axes)
+    return (
+        f" Spacing between {axes_text} wasn't measured, so DeckForge "
+        "assumed cards sit edge-to-edge. If cards look clipped in Review "
+        "Cards, click Start Over and measure a second card farther away "
+        "instead of finishing with one."
+    )
+
+
 def calibrate_guidance_text(
     step: WorkflowStep,
     target: CalibrationTarget,
@@ -454,7 +540,8 @@ def calibrate_guidance_text(
                 f"Calibrated using page {target.calibrated_page_num}. This "
                 f"geometry applies to all {front_page_count} selected "
                 "front pages — click Start Over if you'd like to "
-                f"remeasure it.{_grid_clause(target, page_size)}",
+                f"remeasure it.{_grid_clause(target, page_size)}"
+                f"{ungauged_axis_warning(target, page_size)}",
             )
         return (
             "Shared Back calibration complete",
@@ -467,14 +554,16 @@ def calibrate_guidance_text(
         return (
             "Click the diagonally opposite corner.",
             f"Click the opposite corner of the same {subject} — the corner "
-            "diagonally across from your first click, e.g. the lower-right "
-            "corner if you started at the upper-left.",
+            "diagonally across from your first click (e.g. the lower-right "
+            "corner if you started at the upper-left), using the same "
+            "cutting guide or edge you used for the first corner.",
         )
     if target.measurements:
         return (
             "Capture spacing? (optional)",
-            f"To capture spacing, begin measuring a neighboring {subject} by "
-            "clicking its first corner. Otherwise, click Finish with one card.",
+            f"To capture spacing, click a neighboring {subject} — choosing "
+            "one farther away, not just the next one over, gives more "
+            "accurate results. Otherwise, click Finish with one card.",
         )
     return GUIDANCE[step]
 
@@ -497,6 +586,7 @@ def calibrate_status_text(
                 f"Calibrated from page {target.calibrated_page_num} — "
                 f"applies to all {front_page_count} front pages. "
                 f"Click Start Over to remeasure.{_grid_clause(target, page_size)}"
+                f"{ungauged_axis_warning(target, page_size)}"
             )
         return (
             f"Calibrated from page {target.calibrated_page_num} — applied "
@@ -504,7 +594,10 @@ def calibrate_status_text(
             "pages. Click Start Over to remeasure."
         )
     if target.pending_point is not None:
-        return f"Click the opposite corner of the same {subject} — diagonally across from your first click."
+        return (
+            f"Click the opposite corner of the same {subject} — diagonally "
+            "across, using the same cutting guide or edge as before."
+        )
     if target.measurements:
-        return "1 card measured — click a neighbor's first corner for spacing, or click Finish with one card."
+        return "1 card measured — click a farther neighbor's first corner for more accurate spacing, or click Finish with one card."
     return STATUS[step]

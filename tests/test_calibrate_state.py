@@ -1,3 +1,5 @@
+import pytest
+
 from deckforge_gui.app_state import GUIDANCE, STATUS, AppState, WorkflowStep
 from deckforge_gui.calibrate_state import (
     CalibratedGeometry,
@@ -9,6 +11,7 @@ from deckforge_gui.calibrate_state import (
     normalize_box,
     predicted_neighbor_box,
     suggested_grid,
+    suggested_second_card_offset,
 )
 from deckforge_gui.find_cards_state import FindCardsState, PageRole, SharedBackStatus
 
@@ -57,6 +60,52 @@ class TestInferSecondCell:
         second = (220, 0, 420, 300)
         assert infer_second_cell(0, 0, first, second, cell_width=0, cell_height=310) is None
 
+    def test_adjacent_diagonal_on_portrait_card(self) -> None:
+        # card_height > card_width (e.g. solo_cards.json's real dimensions)
+        # -- the raw vertical displacement of a one-cell diagonal move is
+        # larger than the horizontal one, which is exactly what previously
+        # made the column offset get silently discarded (see
+        # CALIBRATION_GEOMETRY_INVESTIGATION.md).
+        cw, ch = 174.58, 239.75
+        first = (0.0, 0.0, cw, ch)
+        second = (cw, ch, 2 * cw, 2 * ch)
+        assert infer_second_cell(0, 0, first, second, cell_width=cw, cell_height=ch) == (1, 1)
+
+    def test_far_diagonal_on_portrait_card(self) -> None:
+        # Same aspect ratio, but several cells away on each axis -- both
+        # offsets must still be derived independently, not just the
+        # adjacent case.
+        cw, ch = 174.58, 239.75
+        first = (0.0, 0.0, cw, ch)
+        second = (2 * cw, 3 * ch, 3 * cw, 4 * ch)
+        assert infer_second_cell(0, 0, first, second, cell_width=cw, cell_height=ch) == (3, 2)
+
+    def test_diagonal_on_landscape_card(self) -> None:
+        # card_width > card_height -- the mirror-image failure mode: raw
+        # horizontal displacement dominates, which previously discarded
+        # the row offset instead of the column offset.
+        cw, ch = 300.0, 150.0
+        first = (0.0, 0.0, cw, ch)
+        second = (cw, ch, 2 * cw, 2 * ch)
+        assert infer_second_cell(0, 0, first, second, cell_width=cw, cell_height=ch) == (1, 1)
+
+    def test_diagonal_on_square_card(self) -> None:
+        # Raw dx and dy are exactly equal here, so the old "abs(dx) >=
+        # abs(dy)" comparison would always resolve the tie in favor of the
+        # column and drop the row -- this must derive both.
+        cw, ch = 150.0, 150.0
+        first = (0.0, 0.0, cw, ch)
+        second = (cw, ch, 2 * cw, 2 * ch)
+        assert infer_second_cell(0, 0, first, second, cell_width=cw, cell_height=ch) == (1, 1)
+
+    def test_ambiguous_click_returns_none_regardless_of_aspect_ratio(self) -> None:
+        # A near-identical click (well under one cell on either axis) must
+        # still be treated as ambiguous, not misread as a diagonal move,
+        # even on a strongly non-square card.
+        first = (0.0, 0.0, 100.0, 300.0)
+        second = (2.0, 2.0, 102.0, 302.0)
+        assert infer_second_cell(0, 0, first, second, cell_width=100.0, cell_height=300.0) is None
+
 
 class TestPredictedNeighborBox:
     def test_right_neighbor_is_offset_by_width_plus_gap(self) -> None:
@@ -66,6 +115,54 @@ class TestPredictedNeighborBox:
     def test_below_neighbor_is_offset_by_height_plus_gap(self) -> None:
         box = predicted_neighbor_box((100, 200, 300, 500), card_width=200, card_height=300, gap_x=20, gap_y=10, direction="below")
         assert box == (100, 510, 300, 810)
+
+    def test_cells_away_defaults_to_the_adjacent_cell(self) -> None:
+        adjacent = predicted_neighbor_box((100, 200, 300, 500), card_width=200, card_height=300, gap_x=20, gap_y=10, direction="right")
+        explicit = predicted_neighbor_box((100, 200, 300, 500), card_width=200, card_height=300, gap_x=20, gap_y=10, direction="right", cells_away=1)
+        assert adjacent == explicit
+
+    def test_right_neighbor_two_cells_away(self) -> None:
+        box = predicted_neighbor_box((100, 200, 300, 500), card_width=200, card_height=300, gap_x=20, gap_y=10, direction="right", cells_away=2)
+        assert box == (540, 200, 740, 500)
+
+    def test_below_neighbor_two_cells_away(self) -> None:
+        box = predicted_neighbor_box((100, 200, 300, 500), card_width=200, card_height=300, gap_x=20, gap_y=10, direction="below", cells_away=2)
+        assert box == (100, 820, 300, 1120)
+
+
+class TestSuggestedSecondCardOffset:
+    """A wider baseline between the two calibration clicks sharply reduces
+    how much ordinary click imprecision (or genuine tiny print
+    non-uniformity) gets amplified once extrapolated across the grid --
+    see CALIBRATION_GEOMETRY_INVESTIGATION.md, Effect B. This only decides
+    where the "click here" hint is drawn; infer_second_cell() derives the
+    click's real (row, col) from wherever the user actually clicks."""
+
+    def test_small_card_on_a_large_page_suggests_a_farther_cell(self) -> None:
+        col_offset, row_offset = suggested_second_card_offset(
+            card_width=50.0, card_height=50.0,
+            page_width_pt=300.0, page_height_pt=300.0,
+            first_box=(0.0, 0.0, 50.0, 50.0),
+        )
+        assert col_offset > 1
+        assert row_offset > 1
+
+    def test_card_filling_the_page_still_suggests_at_least_one_cell_away(self) -> None:
+        col_offset, row_offset = suggested_second_card_offset(
+            card_width=300.0, card_height=300.0,
+            page_width_pt=300.0, page_height_pt=300.0,
+            first_box=(0.0, 0.0, 300.0, 300.0),
+        )
+        assert (col_offset, row_offset) == (1, 1)
+
+    def test_offset_is_capped_for_a_tiny_card_on_a_huge_page(self) -> None:
+        col_offset, row_offset = suggested_second_card_offset(
+            card_width=10.0, card_height=10.0,
+            page_width_pt=5000.0, page_height_pt=5000.0,
+            first_box=(0.0, 0.0, 10.0, 10.0),
+        )
+        assert col_offset <= 6
+        assert row_offset <= 6
 
 
 class TestRecordClickSingleCard:
@@ -605,3 +702,153 @@ class TestGridClauseInCompletionText:
         state.record_click(CARDS, 0.0, 0.0)  # pending, not complete
         _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
         assert "grid" not in body.lower()
+
+
+class TestUngaugedAxisWarning:
+    """Effect A from CALIBRATION_GEOMETRY_INVESTIGATION.md: an axis that
+    was never actually measured is silently assumed edge-to-edge
+    (gap = 0.0). gap_x_derived/gap_y_derived already tracked which axis
+    was real vs. defaulted -- this surfaces that fact in the completion
+    text, but only when the axis in question actually has more than one
+    cell (a 1-row or 1-column deck never uses that axis's spacing, so
+    warning about it would be noise)."""
+
+    def _finish_with_one_card(self, x2: float, y2: float) -> CalibrateState:
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, x2, y2)
+        state.finish_with_one_card(CARDS)
+        return state
+
+    def test_one_card_finish_on_a_multi_row_multi_col_grid_warns_about_both(self) -> None:
+        state = self._finish_with_one_card(100.0, 100.0)
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "columns" in body
+        assert "rows" in body
+        assert "Start Over" in body
+        status = calibrate_status_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "columns" in status and "rows" in status
+
+    def test_same_row_measurement_only_warns_about_rows(self) -> None:
+        # Second card directly to the right -- derives gap_x, leaves gap_y
+        # (rows) defaulted.
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 100.0, 0.0)
+        state.record_click(CARDS, 200.0, 100.0)
+        assert state.cards.geometry.gap_x_derived is True
+        assert state.cards.geometry.gap_y_derived is False
+
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "rows" in body
+        assert "columns" not in body
+
+    def test_same_column_measurement_only_warns_about_columns(self) -> None:
+        # Second card directly below -- derives gap_y, leaves gap_x
+        # (columns) defaulted.
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 0.0, 100.0)
+        state.record_click(CARDS, 100.0, 200.0)
+        assert state.cards.geometry.gap_x_derived is False
+        assert state.cards.geometry.gap_y_derived is True
+
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "columns" in body
+        assert "rows" not in body
+
+    def test_near_identical_second_click_needs_a_cell_label(self) -> None:
+        # A click too close to the first to resolve on either axis (well
+        # under one cell of displacement) still can't be auto-inferred and
+        # must fall back to asking -- see TestRecordClickTwoCards'
+        # test_ambiguous_second_card_needs_a_cell_label for the same case
+        # exercised directly against record_click().
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 5.0, 5.0)
+        outcome = state.record_click(CARDS, 105.0, 105.0)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+        outcome = state.add_measurement_with_cell(CARDS, row=1, col=1)
+        assert outcome is ClickOutcome.COMPLETE
+        assert state.cards.geometry.gap_x_derived is True
+        assert state.cards.geometry.gap_y_derived is True
+
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "wasn't measured" not in body
+        status = calibrate_status_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "wasn't measured" not in status
+
+    def test_genuine_diagonal_measurement_is_auto_inferred_and_warns_about_neither(self) -> None:
+        # Regression test for the actual reported bug: a real diagonal
+        # second-card click (a full cell away on both axes, on a portrait
+        # card -- i.e. exactly the "click a farther diagonal card" guidance
+        # the app itself gives) must be auto-inferred directly (no
+        # NEEDS_CELL_LABEL round-trip) and must derive both gap_x and
+        # gap_y, not silently default one of them to 0.0.
+        cw, ch = 174.58, 239.75
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, cw, ch)
+        gap_x, gap_y = 2.0, 3.0
+        second_x0 = cw + gap_x
+        second_y0 = ch + gap_y
+        state.record_click(CARDS, second_x0, second_y0)
+        outcome = state.record_click(CARDS, second_x0 + cw, second_y0 + ch)
+
+        assert outcome is ClickOutcome.COMPLETE
+        assert state.cards.measurements[1].row == 1
+        assert state.cards.measurements[1].col == 1
+        geometry = state.cards.geometry
+        assert geometry.gap_x_derived is True
+        assert geometry.gap_y_derived is True
+        assert geometry.gap_x == pytest.approx(gap_x)
+        assert geometry.gap_y == pytest.approx(gap_y)
+
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(1000.0, 1000.0))
+        assert "wasn't measured" not in body
+        status = calibrate_status_text(CARDS, state.cards, page_size=(1000.0, 1000.0))
+        assert "wasn't measured" not in status
+
+    def test_single_row_layout_does_not_warn_about_rows(self) -> None:
+        # 50pt-wide cards on a 300pt-wide page (several columns), but only
+        # 100pt tall on a 100pt-tall page (exactly one row).
+        state = self._finish_with_one_card(50.0, 100.0)
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 100.0))
+        assert "columns" in body
+        assert "rows" not in body
+
+    def test_single_column_layout_does_not_warn_about_columns(self) -> None:
+        state = self._finish_with_one_card(100.0, 50.0)
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(100.0, 300.0))
+        assert "rows" in body
+        assert "columns" not in body
+
+    def test_single_card_layout_warns_about_neither(self) -> None:
+        # Card fills the whole page -- there's no second cell on either
+        # axis, so an unmeasured gap is correct, not a defaulted guess.
+        state = self._finish_with_one_card(100.0, 100.0)
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(100.0, 100.0))
+        assert "wasn't measured" not in body
+
+    def test_no_warning_without_a_page_size(self) -> None:
+        state = self._finish_with_one_card(100.0, 100.0)
+        _, body = calibrate_guidance_text(CARDS, state.cards)
+        assert "wasn't measured" not in body
+
+    def test_no_warning_for_shared_back(self) -> None:
+        # Shared Back is a single representative card, not a grid -- no
+        # spacing concept applies, so it must never show this warning.
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click(BACK, 0.0, 0.0)
+        state.record_click(BACK, 100.0, 100.0)
+        _, body = calibrate_guidance_text(BACK, state.back, page_size=(300.0, 300.0))
+        assert "wasn't measured" not in body

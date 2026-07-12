@@ -54,11 +54,13 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
     ),
     WorkflowStep.CALIBRATE_CARDS: (
         "Show DeckForge a front card.",
-        "Click the upper-left corner of a card.",
+        "Click the upper-left corner of a card — use its cutting guide if "
+        "it has one, otherwise the card's outer edge.",
     ),
     WorkflowStep.CALIBRATE_BACK: (
         "Show DeckForge the card back.",
-        "Click the upper-left corner of the back design.",
+        "Click the upper-left corner of the back design — use its cutting "
+        "guide if it has one, otherwise the design's outer edge.",
     ),
     WorkflowStep.REVIEW_CARDS: (
         "Check your cards.",
@@ -73,8 +75,8 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
 STATUS: dict[WorkflowStep, str] = {
     WorkflowStep.DECK: "Ready — Open a PDF to begin.",
     WorkflowStep.FIND_CARDS: "Ready — mark your card fronts (and shared back, if any).",
-    WorkflowStep.CALIBRATE_CARDS: "Ready — Click the upper-left corner of a card.",
-    WorkflowStep.CALIBRATE_BACK: "Ready — Click the upper-left corner of the back design.",
+    WorkflowStep.CALIBRATE_CARDS: "Ready — Click the upper-left corner of a card (its cutting guide, if it has one).",
+    WorkflowStep.CALIBRATE_BACK: "Ready — Click the upper-left corner of the back design (its cutting guide, if it has one).",
     WorkflowStep.REVIEW_CARDS: "Ready — review your cards.",
     WorkflowStep.EXPORT: "Ready to export.",
 }
