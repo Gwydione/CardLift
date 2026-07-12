@@ -47,8 +47,10 @@ confirmed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+from deckforge.cell_export import output_filenames
 from deckforge.profile import GridGeometry
 
 from .calibrate_state import CalibrationTarget
@@ -89,6 +91,22 @@ class ExportPlan:
     @property
     def has_back(self) -> bool:
         return self.back is not None
+
+
+def predicted_output_filenames(plan: ExportPlan) -> list[str]:
+    """The exact filenames this plan's Export run will write -- delegates
+    to deckforge.cell_export.output_filenames(), the single source of
+    truth for the naming convention, rather than re-deriving it. Used by
+    existing_output_files() below for the pre-flight overwrite check."""
+    return output_filenames(plan.card_count, plan.has_back)
+
+
+def existing_output_files(destination: Path, plan: ExportPlan) -> list[str]:
+    """Which of this plan's predicted output filenames already exist in
+    destination -- a non-empty result means running Export now would
+    silently overwrite them. Pure filesystem read, no writes; safe to
+    call as many times as the destination folder changes."""
+    return [name for name in predicted_output_filenames(plan) if (destination / name).exists()]
 
 
 def build_export_plan(

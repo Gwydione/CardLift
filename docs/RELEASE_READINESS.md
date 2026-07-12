@@ -109,7 +109,19 @@ _Bugs found during manual alpha testing:_
   now suggests a farther, not adjacent, cell (`suggested_second_card_offset()`)
   to reduce click-noise amplification; and Calibrate's corner-click
   guidance now names a consistent cutting-guide-or-edge reference point.
-- 426 passing unit tests across engine + GUI state/logic layers.
+- **Alpha Polish: Shared Back experience.** "Set as Shared Back" no
+  longer reads as disabled (visible border + normal text color on its
+  idle state); a blocked Continue click now shows an inline message
+  next to Continue instead of failing silently; the "Confirm there's no
+  Shared Back" action is now a visible chip instead of small link text.
+  State model unchanged -- see DEVELOPER.md's "Alpha Polish: Shared Back
+  discoverability."
+- **Alpha Polish: export overwrite confirmation.** Export now checks the
+  chosen destination folder for filename collisions before writing, and
+  blocks with a confirmation dialog (Cancel is the default/safe choice)
+  instead of silently overwriting existing files. See DEVELOPER.md's
+  "Alpha Polish: export overwrite confirmation."
+- 440 passing unit tests across engine + GUI state/logic layers.
 
 ---
 

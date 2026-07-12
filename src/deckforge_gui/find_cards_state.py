@@ -190,6 +190,19 @@ class FindCardsState:
         self.furthest_page_viewed = 1
 
 
+def continue_blocked_text(state: FindCardsState) -> str | None:
+    """Message to show right next to Continue once a click has been
+    blocked by an unresolved Shared Back decision -- None before any
+    Continue attempt, and None again once resolved. Distinct from
+    should_prompt_shared_back(), which only decides whether the Deck
+    Summary's separate inline "Confirm there's no Shared Back" action is
+    showing; this is the feedback for the failed click itself, so a
+    Continue attempt doesn't look like it silently did nothing."""
+    if state.continue_attempted and not state.shared_back_resolved():
+        return "Choose a Shared Back or confirm that this deck has no Shared Back before continuing."
+    return None
+
+
 def find_cards_status_text(state: FindCardsState, page_count: int) -> str:
     """Bottom status-bar text for Select Card Pages -- the same two facts
     (Front count, Shared Back answer) the workspace's own Deck Summary

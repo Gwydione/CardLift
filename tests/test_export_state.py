@@ -1,9 +1,13 @@
+from pathlib import Path
+
 from deckforge_gui.calibrate_state import CalibratedGeometry, CalibrationTarget
 from deckforge_gui.export_state import (
     build_export_plan,
+    existing_output_files,
     export_guidance_text,
     export_ready,
     export_status_text,
+    predicted_output_filenames,
     review_snapshot_is_current,
     stale_review_guidance_text,
     stale_review_status_text,
@@ -71,6 +75,38 @@ class TestBuildExportPlan:
         assert plan.front_geometry.card_height == 140.0
         assert plan.front_geometry.gap_x == 1.0
         assert plan.front_geometry.gap_y == 2.0
+
+
+class TestExistingOutputFiles:
+    def _plan(self, card_count: int, has_back: bool):
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, i) for i in range(card_count)])
+        back_status = SharedBackStatus.ASSIGNED if has_back else SharedBackStatus.CONFIRMED_NONE
+        back_target = complete_target(page_num=9) if has_back else incomplete_target()
+        return build_export_plan(review_state, complete_target(), back_target, back_status)
+
+    def test_predicted_filenames_match_cell_export_convention(self) -> None:
+        plan = self._plan(2, has_back=True)
+        assert predicted_output_filenames(plan) == ["front_001.png", "front_002.png", "back.png"]
+
+    def test_no_collisions_in_an_empty_folder(self, tmp_path: Path) -> None:
+        plan = self._plan(2, has_back=False)
+        assert existing_output_files(tmp_path, plan) == []
+
+    def test_detects_a_colliding_front_file(self, tmp_path: Path) -> None:
+        plan = self._plan(2, has_back=False)
+        (tmp_path / "front_001.png").write_bytes(b"old")
+        assert existing_output_files(tmp_path, plan) == ["front_001.png"]
+
+    def test_detects_a_colliding_back_file(self, tmp_path: Path) -> None:
+        plan = self._plan(1, has_back=True)
+        (tmp_path / "back.png").write_bytes(b"old")
+        assert existing_output_files(tmp_path, plan) == ["back.png"]
+
+    def test_unrelated_files_are_not_flagged(self, tmp_path: Path) -> None:
+        plan = self._plan(1, has_back=False)
+        (tmp_path / "notes.txt").write_bytes(b"old")
+        assert existing_output_files(tmp_path, plan) == []
 
 
 class TestExportReady:

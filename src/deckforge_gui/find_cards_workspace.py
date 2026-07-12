@@ -40,7 +40,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from deckforge.pdf_renderer import PDFRenderer
 
-from .find_cards_state import FindCardsState, PageRole, SharedBackStatus
+from .find_cards_state import FindCardsState, PageRole, SharedBackStatus, continue_blocked_text
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -48,6 +48,7 @@ from .theme import (
     BG_CARD,
     BG_WORKSPACE,
     BORDER_CARD,
+    ERROR_TEXT,
     FONT_BODY_SM,
     FONT_CAPTION,
     TEXT_CAPTION_MUTED,
@@ -117,36 +118,42 @@ QPushButton:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: whit
 """
 
 # "Set as Shared Back" -- a secondary control, used at most once a session,
-# so it stays visually lighter even when active (outline, not a fill) --
-# it should never compete with the Front toggle for attention.
+# so it stays visually lighter than "Mark as Front" even when active (an
+# outline, not a fill). It still needs a real border and non-muted idle
+# text, though -- an earlier version used transparent border + muted text,
+# which was meant to read as "lightweight" but instead was nearly identical
+# to _CONTROL_BUTTON_STYLE's actual :disabled look (same muted color, no
+# border), so the button was mistaken for disabled rather than secondary.
 _BACK_TOGGLE_STYLE = f"""
 QPushButton {{
     padding: 8px 16px;
-    border: 1px solid transparent;
+    border: 1px solid {BORDER_CARD};
     border-radius: 6px;
     background: transparent;
-    color: {TEXT_CAPTION_MUTED};
+    color: {TEXT_HEADING};
     font-size: {FONT_BODY_SM}px;
 }}
-QPushButton:hover {{ color: {TEXT_HEADING}; background: #f1effa; }}
+QPushButton:hover {{ color: {TEXT_HEADING}; background: #f1effa; border-color: {ACCENT}; }}
 QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; font-weight: 600; background: #f1effa; }}
 """
 
 # The inline "Confirm there's no Shared Back" action -- appears only inside
 # the Deck Summary's Shared Back line, only once should_prompt_shared_back()
-# is true. Link-styled rather than a boxed button so it reads as part of
-# the summary sentence, not a new competing control.
-_LINK_BUTTON_STYLE = f"""
+# is true. At that point it is the one thing blocking Continue, so it gets
+# a light filled "chip" treatment (its own hover look, always on) instead
+# of plain underlined link text, which was easy to miss entirely against
+# the rest of the muted summary copy around it.
+_CONFIRM_NO_BACK_STYLE = f"""
 QPushButton {{
-    border: none;
-    background: transparent;
+    border: 1px solid {ACCENT};
+    border-radius: 6px;
+    background: #f1effa;
     color: {ACCENT};
-    font-size: {FONT_CAPTION}px;
+    font-size: {FONT_BODY_SM}px;
     font-weight: 600;
-    text-decoration: underline;
-    padding: 0px;
+    padding: 4px 10px;
 }}
-QPushButton:hover {{ color: {ACCENT_HOVER}; }}
+QPushButton:hover {{ background: #e9e4fb; border-color: {ACCENT_HOVER}; color: {ACCENT_HOVER}; }}
 """
 
 
@@ -351,12 +358,30 @@ class FindCardsWorkspace(QWidget):
         self._confirm_no_back_btn = QPushButton("Confirm there's no Shared Back")
         self._confirm_no_back_btn.setAutoDefault(False)
         self._confirm_no_back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._confirm_no_back_btn.setStyleSheet(_LINK_BUTTON_STYLE)
+        self._confirm_no_back_btn.setStyleSheet(_CONFIRM_NO_BACK_STYLE)
         self._confirm_no_back_btn.setVisible(False)
         back_row.addWidget(self._confirm_no_back_btn)
         back_row.addStretch(1)
         summary.addLayout(back_row)
         outer.addLayout(summary)
+
+        # Shown only right after a blocked Continue attempt (see
+        # continue_blocked_text()) -- feedback at the point of the failed
+        # click itself, so it doesn't look like Continue silently did
+        # nothing. Right-aligned to sit visually with the Continue button
+        # it explains.
+        warn_row = QHBoxLayout()
+        warn_row.addStretch(1)
+        self._continue_blocked_label = QLabel("")
+        self._continue_blocked_label.setWordWrap(True)
+        self._continue_blocked_label.setMaximumWidth(360)
+        self._continue_blocked_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._continue_blocked_label.setStyleSheet(
+            f"color: {ERROR_TEXT}; font-size: {FONT_CAPTION}px; font-weight: 600; background: transparent;"
+        )
+        self._continue_blocked_label.setVisible(False)
+        warn_row.addWidget(self._continue_blocked_label)
+        outer.addLayout(warn_row)
 
         footer = QHBoxLayout()
         footer.addStretch(1)
@@ -474,6 +499,10 @@ class FindCardsWorkspace(QWidget):
 
         front_count = self.state.front_page_count()
         self._continue_btn.setEnabled(front_count > 0)
+
+        blocked_message = continue_blocked_text(self.state)
+        self._continue_blocked_label.setText(blocked_message or "")
+        self._continue_blocked_label.setVisible(blocked_message is not None)
 
         self._refresh_deck_summary(front_count)
 

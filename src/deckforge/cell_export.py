@@ -41,6 +41,19 @@ from .profile import GridGeometry, TrimValues
 _ZERO_TRIM = TrimValues(0.0, 0.0, 0.0, 0.0)
 
 
+def output_filenames(cell_count: int, has_back: bool) -> list[str]:
+    """The exact filenames export_cells() will write for `cell_count`
+    front cells (plus "back.png" if has_back) -- the single source of
+    truth for the naming convention, so a caller that needs to predict
+    them (e.g. a pre-flight overwrite check) never has to duplicate this
+    format string and risk it drifting from the one export_cells() itself
+    uses."""
+    names = [f"front_{i:03d}.png" for i in range(1, cell_count + 1)]
+    if has_back:
+        names.append("back.png")
+    return names
+
+
 def export_cells(
     renderer: PDFRenderer,
     render_scale: float,
@@ -79,11 +92,13 @@ def export_cells(
             page_cache[page_num] = image
         return image
 
+    filenames = output_filenames(len(cells), back is not None)
+
     written: list[Path] = []
-    for index, (page_num, row, col) in enumerate(cells, start=1):
+    for name, (page_num, row, col) in zip(filenames, cells):
         page_image = rendered_page(page_num)
         card_img = cropper.crop_card(page_image, front_geometry, _ZERO_TRIM, row, col)
-        out_path = output_dir / f"front_{index:03d}.png"
+        out_path = output_dir / name
         card_img.save(out_path)
         written.append(out_path)
 
@@ -91,7 +106,7 @@ def export_cells(
         back_page_num, back_geometry = back
         back_image = rendered_page(back_page_num)
         back_card = cropper.crop_card(back_image, back_geometry, _ZERO_TRIM, 0, 0)
-        back_path = output_dir / "back.png"
+        back_path = output_dir / filenames[-1]
         back_card.save(back_path)
         written.append(back_path)
 

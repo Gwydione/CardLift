@@ -1,7 +1,7 @@
 from collections import Counter
 from pathlib import Path
 
-from deckforge.cell_export import export_cells
+from deckforge.cell_export import export_cells, output_filenames
 from deckforge.cropper import CardCropper
 from deckforge.pdf_renderer import PDFRenderer
 from deckforge.profile import GridGeometry, TrimValues
@@ -35,6 +35,28 @@ class _CountingRenderer:
     def render_page(self, page_number: int, scale: float):
         self.calls.append(page_number)
         return self._real.render_page(page_number, scale)
+
+
+class TestOutputFilenames:
+    def test_front_only(self) -> None:
+        assert output_filenames(3, has_back=False) == ["front_001.png", "front_002.png", "front_003.png"]
+
+    def test_front_and_back(self) -> None:
+        assert output_filenames(2, has_back=True) == ["front_001.png", "front_002.png", "back.png"]
+
+    def test_back_only(self) -> None:
+        assert output_filenames(0, has_back=True) == ["back.png"]
+
+    def test_no_cells_no_back(self) -> None:
+        assert output_filenames(0, has_back=False) == []
+
+    def test_matches_what_export_cells_actually_writes(self, tmp_path: Path) -> None:
+        cells = [(2, 0, 0), (2, 0, 1)]
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            written = export_cells(
+                renderer, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path, back=(BACK_PAGE, BACK_GEOMETRY),
+            )
+        assert [p.name for p in written] == output_filenames(len(cells), has_back=True)
 
 
 class TestExportCellsOrderingAndNumbering:

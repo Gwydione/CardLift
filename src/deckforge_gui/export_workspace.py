@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -63,6 +64,7 @@ from .export_state import (
     EXPORT_RENDER_SCALE,
     ExportPlan,
     build_export_plan,
+    existing_output_files,
     export_guidance_text,
     export_ready,
     export_status_text,
@@ -445,12 +447,40 @@ class ExportWorkspace(QWidget):
         self._update_destination_label()
         self._export_btn.setEnabled(self._plan is not None)
 
+    def _confirm_overwrite_if_needed(self) -> bool:
+        """True if it's safe to proceed with export -- either nothing in
+        the destination would be overwritten, or the user explicitly chose
+        to overwrite anyway. Cancel is both the default button (Enter) and
+        the escape button (Esc / closing the dialog), so an accidental
+        dismissal never overwrites existing files."""
+        assert self._plan is not None and self._destination is not None
+        existing = existing_output_files(self._destination, self._plan)
+        if not existing:
+            return True
+
+        noun = "file" if len(existing) == 1 else "files"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Overwrite existing files?")
+        box.setText(f"This folder already has {len(existing)} {noun} this export would overwrite.")
+        box.setInformativeText("Choose a different folder, or continue to overwrite them.")
+        overwrite_btn = box.addButton("Overwrite", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel_btn)
+        box.setEscapeButton(cancel_btn)
+        box.exec()
+        return box.clickedButton() is overwrite_btn
+
     def _on_export_clicked(self) -> None:
         # self._worker is not None guards against a double dispatch --
         # belt-and-suspenders alongside the button itself being disabled
         # for the whole time a worker is running.
         if self._plan is None or self._destination is None or self._renderer is None or self._worker is not None:
             return
+
+        if not self._confirm_overwrite_if_needed():
+            return
+
         cells = [(c.page_num, c.row, c.col) for c in self._plan.front_cells]
 
         self._result_label.setVisible(False)

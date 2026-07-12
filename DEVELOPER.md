@@ -245,6 +245,49 @@ there's no Shared Back" action (reaching the PDF's last page, or a
 blocked Continue attempt), which is a timing question layered on top of,
 not a substitute for, the underlying `SharedBackStatus` fact.
 
+**Alpha Polish: Shared Back discoverability.** Manual alpha testing
+surfaced three related friction points in this same Select Card Pages
+flow, none of them a state-model problem -- `FindCardsState`/
+`SharedBackStatus` already tracked everything correctly; the gap was
+purely in what the workspace showed the user in the moment.
+
+1. **"Set as Shared Back" read as disabled.** `_BACK_TOGGLE_STYLE`'s idle
+   state (`find_cards_workspace.py`) used a transparent border and
+   `TEXT_CAPTION_MUTED` text to stay visually lighter than "Mark as
+   Front" -- but that combination is nearly identical to
+   `_CONTROL_BUTTON_STYLE`'s actual `:disabled` look (same muted color, no
+   border change), so the button read as inactive rather than secondary.
+   The idle state now uses a real `BORDER_CARD` border and `TEXT_HEADING`
+   text, keeping the *fill* difference (still unfilled vs. Front's
+   filled-when-checked) as the thing that signals "lighter weight,"
+   rather than muted color doing double duty as both "secondary" and
+   "disabled."
+2. **A blocked Continue attempt looked like nothing happened.**
+   `_on_continue_clicked()` already called `state.note_continue_
+   attempted()` when Shared Back was unresolved, but the only visible
+   effect was revealing the Deck Summary's confirm action further down
+   the workspace -- nothing changed near Continue itself.
+   `find_cards_state.continue_blocked_text()` is a new, small pure
+   function (same family as `find_cards_status_text()`, unit tested the
+   same way) returning a message once `continue_attempted` is true and
+   Shared Back is still unresolved, `None` otherwise.
+   `FindCardsWorkspace._refresh()` binds it to a label right above the
+   Continue button, styled with `ERROR_TEXT` (the same error-color
+   convention already used in `deck_workspace.py`/`export_workspace.py`),
+   so a blocked click now gets feedback at the point of the click.
+3. **The inline confirm action was easy to overlook.** "Confirm there's
+   no Shared Back" was plain underlined link text at `FONT_CAPTION` size
+   (the smallest type on the page) despite being, whenever it's visible,
+   the one thing blocking Continue. `_CONFIRM_NO_BACK_STYLE` replaces the
+   link styling with a light filled "chip" (bordered, `FONT_BODY_SM`,
+   always showing the hover-style fill rather than only on hover) so it
+   reads as an actionable control rather than fine print, while staying
+   unfilled/non-bold relative to Continue so it doesn't compete with the
+   workflow's actual primary action.
+
+All three are additive styling/messaging changes -- `FindCardsState`,
+`SharedBackStatus`, and the Continue/confirm gating logic are unchanged.
+
 **Calibrate milestone.** The first milestone where precise geometry is
 established: two-corner-click measurement of one representative Fronts
 page plus the single page Select Card Pages assigns as Shared Back
@@ -672,6 +715,38 @@ far more prominent surface -- correctly shows "Export complete." with the
 completion actions, so this is a minor, secondary-panel inconsistency
 rather than something that could mislead a user about whether the export
 actually finished.
+
+**Alpha Polish: export overwrite confirmation.** `ExportWorkspace` had no
+check at all for a destination folder that already contained files
+`export_cells()` was about to overwrite (e.g. re-exporting into the same
+folder, or picking a folder used for a previous deck) -- `Image.save()`
+just clobbers a same-named file silently. `deckforge.cell_export.
+output_filenames(cell_count, has_back)` is a new small function pulling
+the `front_{i:03d}.png`/`back.png` naming convention out of
+`export_cells()`'s write loop into one place, so it can be reused by a
+caller that needs to *predict* filenames without duplicating (and
+risking drift from) the format string; `export_cells()` itself now calls
+it once up front rather than formatting `front_NNN.png` inline per cell.
+`deckforge_gui.export_state.existing_output_files(destination, plan)`
+is the pure pre-flight check built on top of it -- which of a plan's
+predicted filenames already exist in a given folder -- and
+`ExportWorkspace._confirm_overwrite_if_needed()` calls it right before
+dispatching the export worker (not at folder-choose time, since the
+plan and the folder's contents can both still change before Export is
+actually clicked). A non-empty result shows a `QMessageBox` naming the
+count of files that would be overwritten, with **Cancel** as both the
+default button (Enter) and the escape button (Esc / closing the dialog)
+-- an accidental dismissal always lands on the safe outcome, matching
+`ENGINEERING_STANDARDS.md`'s "fail safely." Choosing "Overwrite"
+proceeds exactly as export already did; choosing "Cancel" (or dismissing
+the dialog) leaves the destination and plan untouched so the user can
+just pick a different folder and try again. The filename-prediction and
+existing-file-detection functions are pure and unit tested directly
+(`tests/test_cell_export.py`, `tests/test_export_state.py`); the dialog
+itself is not covered by an automated test, since the project has no
+widget-level test infrastructure yet (see "Regression testing" in
+`docs/ALPHA_HARDENING_PLAN.md` §3, not yet implemented) -- verified
+manually instead.
 
 ## Common Commands
 

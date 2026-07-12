@@ -2,6 +2,7 @@ from deckforge_gui.find_cards_state import (
     FindCardsState,
     PageRole,
     SharedBackStatus,
+    continue_blocked_text,
     find_cards_status_text,
 )
 
@@ -291,6 +292,34 @@ class TestFindCardsStatusText:
         state.confirm_no_shared_back()
         text = find_cards_status_text(state, page_count=10)
         assert "Shared Back: none." in text
+
+
+class TestContinueBlockedText:
+    def test_none_before_any_continue_attempt(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        assert continue_blocked_text(state) is None
+
+    def test_message_shown_after_a_blocked_continue_attempt(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        state.note_continue_attempted()
+        text = continue_blocked_text(state)
+        assert text == "Choose a Shared Back or confirm that this deck has no Shared Back before continuing."
+
+    def test_none_once_a_back_page_is_assigned_after_a_blocked_attempt(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        state.note_continue_attempted()
+        state.toggle_back(8)
+        assert continue_blocked_text(state) is None
+
+    def test_none_once_no_shared_back_is_confirmed_after_a_blocked_attempt(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        state.note_continue_attempted()
+        state.confirm_no_shared_back()
+        assert continue_blocked_text(state) is None
 
 
 class TestReachedLastPage:
