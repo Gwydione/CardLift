@@ -68,8 +68,13 @@ _Design review findings (not yet implemented):_
 
 _Bugs found during manual alpha testing:_
 
-- (none logged yet — add here as they're found; this session is
-  reserved for the user's manual pass)
+- [x] Drag-and-drop appeared completely broken when DeckForge was
+      launched from an elevated (Administrator) PowerShell. Traced to
+      Windows UIPI blocking OLE drag-and-drop from Explorer (normal
+      integrity level) into an elevated target process — not a DeckForge
+      defect. Resolved by running DeckForge from a normal, non-elevated
+      PowerShell; manually verified with a real PDF from Explorer. See
+      `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
 
 ---
 
@@ -84,6 +89,14 @@ _Bugs found during manual alpha testing:_
   with `deckforge.cell_export.export_cells()` as the engine primitive
   and `export_state.py` as the pure planning/gating layer.
 - Branding document (icon/identity) drafted.
+- Drag-and-drop event handling hardened (`deck_workspace.py`'s
+  `_DropZone`): `dragMoveEvent` now explicitly accepts each move event
+  (Qt doesn't carry acceptance forward from `dragEnterEvent`), and the
+  drop zone's icon/text/button children now forward drag events to the
+  zone via an event filter (Qt doesn't propagate ignored drag events up
+  the widget hierarchy the way it does mouse events). Both are genuine
+  Qt requirements, independent of the elevation finding above — see
+  `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
 - CLI engine (`extract.py` + `src/deckforge/`) stable: manual
   calibration, multi-layout profiles, `--measure`/`--calibrate`/
   `--overlay`/`--inspect`, friendly CLI error handling.

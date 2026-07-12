@@ -17,8 +17,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QResizeEvent, QShowEvent
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QMouseEvent,
+    QResizeEvent,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -123,6 +130,15 @@ class _DropZone(QFrame):
             event.acceptProposedAction()
             self._set_drag_over(True)
 
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        # Qt does not carry acceptance forward from dragEnterEvent: each
+        # QDragMoveEvent defaults to unaccepted and must call
+        # acceptProposedAction() itself, or Qt shows a "not allowed" cursor
+        # and dropEvent never fires. This is general Qt drag-and-drop
+        # behavior, not platform-specific.
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
     def dragLeaveEvent(self, event) -> None:  # noqa: ANN001 -- Qt event signature
         self._set_drag_over(False)
 
@@ -130,6 +146,7 @@ class _DropZone(QFrame):
         self._set_drag_over(False)
         urls = event.mimeData().urls()
         if urls:
+            event.acceptProposedAction()
             self.file_dropped.emit(Path(urls[0].toLocalFile()))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -141,6 +158,30 @@ class _DropZone(QFrame):
         self.setProperty("dragOver", active)
         self.style().unpolish(self)
         self.style().polish(self)
+
+    def catch_drops_from(self, child: QWidget) -> None:
+        """The icon/text/button children visually cover almost the whole
+        drop zone, and Qt targets drag events at the exact child widget
+        under the cursor -- unlike mouse events, an ignored drag event does
+        NOT bubble up to the parent. Without this, dropping anywhere but
+        the frame's bare edge would silently do nothing."""
+        child.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        event_type = event.type()
+        if event_type == QEvent.Type.DragEnter:
+            self.dragEnterEvent(event)
+            return True
+        if event_type == QEvent.Type.DragMove:
+            self.dragMoveEvent(event)
+            return True
+        if event_type == QEvent.Type.DragLeave:
+            self.dragLeaveEvent(event)
+            return True
+        if event_type == QEvent.Type.Drop:
+            self.dropEvent(event)
+            return True
+        return super().eventFilter(watched, event)
 
 
 class DeckWorkspace(QWidget):
@@ -210,6 +251,9 @@ class DeckWorkspace(QWidget):
         self._choose_btn.setAutoDefault(False)
         self._choose_btn.clicked.connect(self._browse)
         self._zone_layout.addWidget(self._choose_btn, 0, Qt.AlignmentFlag.AlignCenter)
+
+        for zone_child in (self._icon, self._drop_text, self._browse_text, self._or_text, self._choose_btn):
+            self._dropzone.catch_drops_from(zone_child)
 
         self._reassurance = QLabel("\U0001F512 Your original PDF will not be modified.")
         self._reassurance.setAlignment(Qt.AlignmentFlag.AlignCenter)

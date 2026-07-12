@@ -309,3 +309,53 @@ solves the problem." Recommended sequencing: §1 and §2 first (they're the
 actual correctness/crash risks and share code), §3 alongside them (proves
 the fixes), §6 next (turns remaining alpha-testing crashes into
 actionable reports), §5 and §4 last (lowest risk, most mechanical).
+
+---
+
+## Addendum: PDF drag-and-drop event handling (implemented, 2026-07-12)
+
+Out of this plan's six-area scope (per the intro: manual-testing findings
+are tracked in `docs/RELEASE_READINESS.md`, not folded in here) — recorded
+as a short addendum, not a numbered section, so the table above still
+maps 1:1 to the original six areas and "nothing implemented yet" still
+describes that six-item plan accurately.
+
+**What was fixed, in `deckforge_gui/deck_workspace.py`'s `_DropZone`:**
+
+1. **`dragMoveEvent` now explicitly accepts the event.** Qt does not carry
+   acceptance forward from `dragEnterEvent` — each `QDragMoveEvent`
+   defaults to unaccepted and needs its own `acceptProposedAction()`, or
+   Qt shows a "not allowed" cursor and `dropEvent` never fires. Verified
+   directly against PySide6 (constructing a bare `QDragMoveEvent` and
+   checking `isAccepted()` defaults to `False` even after a prior
+   `dragEnterEvent` was accepted). This is general Qt behavior on every
+   platform, not Windows- or OLE-specific.
+2. **Child widgets now forward drag events to the drop zone.** The
+   zone's icon/text/button children are stacked via `QVBoxLayout` and
+   visually cover nearly the entire dashed frame. Unlike mouse events,
+   Qt does not propagate ignored drag/drop events up the widget
+   hierarchy — a child that doesn't handle them simply swallows them.
+   `catch_drops_from()` installs an event filter on each child so
+   `DragEnter`/`DragMove`/`DragLeave`/`Drop` are forwarded to the parent
+   `_DropZone`, which is the documented Qt workaround for this. Without
+   it, dropping on any of those children (most of the visible target)
+   would silently do nothing.
+
+Both are genuine, independently-reproducible Qt requirements, confirmed
+against Qt Forum discussion of the same pattern, not workarounds for the
+elevation issue below — they'd be necessary on any platform, elevated or
+not.
+
+**Separate finding — not an application defect:** during manual alpha
+testing, drag-and-drop appeared completely broken when DeckForge was
+launched from an elevated (Administrator) PowerShell. Root cause: Windows
+blocks OLE drag-and-drop between processes at different integrity
+levels — Explorer runs at the normal user's integrity level and cannot
+supply drag data to a higher-integrity-level (elevated) target process.
+This is Windows UIPI (User Interface Privilege Isolation) behavior, not a
+DeckForge bug, and no code change addresses or should attempt to address
+it. Running DeckForge from a normal, non-elevated PowerShell resolves it.
+Manually verified 2026-07-12: dragging a real PDF from Explorer into a
+non-elevated DeckForge works correctly with the event-handling fixes
+above in place. Recorded here so a future elevated-process test session
+isn't re-diagnosed as an application defect.
