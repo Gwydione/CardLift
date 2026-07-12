@@ -61,6 +61,7 @@ where an earlier revision collapsed the two.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, Sequence
@@ -182,6 +183,46 @@ class CalibratedGeometry:
     gap_x_derived: bool
     gap_y_derived: bool
     warnings: tuple[str, ...] = ()
+
+
+# How much slack, in points, a near-boundary cell is still allowed to be
+# "cut off" by and still count as a real card in suggested_grid() below.
+# Biases the suggestion toward one card too many (a one-click fix in
+# Review Cards) rather than one too few (silently missing, and much
+# easier to overlook) when a page's margins leave the grid right at its
+# edge -- see DEVELOPER.md's "Suggested grid size" for the boundary-
+# sensitivity analysis this constant exists to cover.
+GRID_FIT_TOLERANCE_PT = 2.0
+
+
+def suggested_grid(
+    geometry: CalibratedGeometry,
+    page_width_pt: float,
+    page_height_pt: float,
+    tolerance_pt: float = GRID_FIT_TOLERANCE_PT,
+) -> tuple[int, int]:
+    """How many (rows, cols) of `geometry`-sized cells fit on a page of the
+    given point-dimensions, repeating the calibrated card's pitch (its
+    size plus gap) outward from its (left, top) origin.
+
+    This is a STARTING SUGGESTION for Review Cards to confirm or correct,
+    never a final answer trusted unreviewed -- nothing here is exported
+    until a human has looked at every suggested card as a rendered image.
+    That's what keeps this consistent with README's "manual calibration
+    only, no automatic edge detection" philosophy: the guess is never
+    silent, only ever a starting point.
+    """
+    cols = _fit_count(page_width_pt, geometry.left, geometry.card_width, geometry.gap_x, tolerance_pt)
+    rows = _fit_count(page_height_pt, geometry.top, geometry.card_height, geometry.gap_y, tolerance_pt)
+    return (rows, cols)
+
+
+def _fit_count(page_extent_pt: float, origin_pt: float, card_size_pt: float, gap_pt: float, tolerance_pt: float) -> int:
+    if card_size_pt <= 0:
+        return 0
+    pitch = card_size_pt + gap_pt
+    count = math.floor((page_extent_pt - origin_pt + gap_pt + tolerance_pt) / pitch)
+    return max(count, 0)
 
 
 @dataclass
@@ -353,11 +394,28 @@ class CalibrateState:
 # STATUS for the base case reused below) --------------------------------
 
 
+def _grid_clause(target: CalibrationTarget, page_size: Optional[tuple[float, float]]) -> str:
+    """' Looks like a RxC grid per page.' once a page size is available to
+    suggest one from -- purely descriptive, never a question or a gate
+    (Review Cards, not Calibrate, is where the user actually confirms or
+    corrects the count). Empty string if there's nothing sensible to say
+    (no page size yet, or a degenerate 0-card suggestion, e.g. from a
+    mis-measured card larger than the page)."""
+    if page_size is None or target.geometry is None:
+        return ""
+    page_width_pt, page_height_pt = page_size
+    rows, cols = suggested_grid(target.geometry, page_width_pt, page_height_pt)
+    if rows <= 0 or cols <= 0:
+        return ""
+    return f" Looks like a {rows}×{cols} grid per page."
+
+
 def calibrate_guidance_text(
     step: WorkflowStep,
     target: CalibrationTarget,
     front_page_count: int = 0,
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
+    page_size: Optional[tuple[float, float]] = None,
 ) -> tuple[str, str]:
     if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
@@ -383,7 +441,7 @@ def calibrate_guidance_text(
                 f"Calibrated using page {target.calibrated_page_num}. This "
                 f"geometry applies to all {front_page_count} selected "
                 "front pages — click Start Over if you'd like to "
-                "remeasure it.",
+                f"remeasure it.{_grid_clause(target, page_size)}",
             )
         return (
             "Shared Back calibration complete",
@@ -413,6 +471,7 @@ def calibrate_status_text(
     target: CalibrationTarget,
     front_page_count: int = 0,
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
+    page_size: Optional[tuple[float, float]] = None,
 ) -> str:
     if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
@@ -424,7 +483,7 @@ def calibrate_status_text(
             return (
                 f"Calibrated from page {target.calibrated_page_num} — "
                 f"applies to all {front_page_count} front pages. "
-                "Click Start Over to remeasure."
+                f"Click Start Over to remeasure.{_grid_clause(target, page_size)}"
             )
         return (
             f"Calibrated from page {target.calibrated_page_num} — applied "

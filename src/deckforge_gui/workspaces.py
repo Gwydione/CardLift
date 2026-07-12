@@ -1,7 +1,7 @@
 """Central workspaces, one per workflow step.
 
-Deck, Select Card Pages, and Calibrate (Fronts/Shared Back) are real, PDF-driven
-workspaces. Review Cards and Export remain placeholders for a later
+Deck, Select Card Pages, Calibrate (Fronts/Shared Back), and Review Cards
+are real, PDF-driven workspaces. Export remains a placeholder for a later
 milestone.
 """
 
@@ -16,6 +16,8 @@ from .calibrate_workspace import CalibrateWorkspace
 from .deck_workspace import DeckWorkspace
 from .find_cards_state import FindCardsState
 from .find_cards_workspace import FindCardsWorkspace
+from .review_state import ReviewCardsState
+from .review_workspace import ReviewWorkspace
 from .theme import (
     BG_WORKSPACE,
     FONT_BODY,
@@ -60,7 +62,10 @@ class PlaceholderWorkspace(QWidget):
 
 
 def build_workspaces(
-    state: AppState, find_cards_state: FindCardsState, calibrate_state: CalibrateState,
+    state: AppState,
+    find_cards_state: FindCardsState,
+    calibrate_state: CalibrateState,
+    review_cards_state: ReviewCardsState,
 ) -> dict[WorkflowStep, QWidget]:
     """One workspace instance per workflow step, in WORKFLOW_ORDER."""
     return {
@@ -72,9 +77,7 @@ def build_workspaces(
         WorkflowStep.CALIBRATE_BACK: CalibrateWorkspace(
             WorkflowStep.CALIBRATE_BACK, state, calibrate_state, find_cards_state,
         ),
-        WorkflowStep.REVIEW_CARDS: PlaceholderWorkspace(
-            "Review Cards", "Look over every card before exporting your deck."
-        ),
+        WorkflowStep.REVIEW_CARDS: ReviewWorkspace(calibrate_state, find_cards_state, review_cards_state),
         WorkflowStep.EXPORT: PlaceholderWorkspace(
             "Export", "Save your finished cards as image files."
         ),

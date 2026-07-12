@@ -46,7 +46,7 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPix
 from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from deckforge.measure import CARD_SPEC_RE
-from deckforge.pdf_renderer import PDFRenderer
+from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 
 from .app_state import AppState, WorkflowStep
 from .calibrate_state import (
@@ -56,6 +56,7 @@ from .calibrate_state import (
     calibrate_guidance_text,
     calibrate_status_text,
     predicted_neighbor_box,
+    suggested_grid,
 )
 from .find_cards_state import FindCardsState, SharedBackStatus
 from .theme import (
@@ -622,6 +623,32 @@ class CalibrateWorkspace(QWidget):
             self._renderer.close()
             self._renderer = None
 
+    def grid_page_size(self) -> Optional[tuple[float, float]]:
+        """Point-size of the calibrated Fronts page, for the completion
+        text's informational grid-size guess -- None for Shared Back (no
+        grid concept applies to a single card) or before a page has been
+        calibrated. Used by this workspace's own caption/banner and by
+        MainWindow's status-bar text, so the same lookup backs every
+        surface that mentions it."""
+        if self.target_step is not WorkflowStep.CALIBRATE_CARDS:
+            return None
+        target = self.current_target()
+        if self._renderer is None or target.calibrated_page_num is None:
+            return None
+        try:
+            return self._renderer.page_size(target.calibrated_page_num)
+        except PDFRenderError:
+            return None
+
+    def _grid_note(self, target: CalibrationTarget) -> str:
+        page_size = self.grid_page_size()
+        if page_size is None or target.geometry is None:
+            return ""
+        rows, cols = suggested_grid(target.geometry, *page_size)
+        if rows <= 0 or cols <= 0:
+            return ""
+        return f" Looks like a {rows}×{cols} grid per page."
+
     def _update_controls(self) -> None:
         navigable = self._navigable_pages()
         target = self.current_target()
@@ -652,7 +679,9 @@ class CalibrateWorkspace(QWidget):
             return
 
         self._page_label.setText(self._page_label_text(target, index, navigable))
-        _, body = calibrate_guidance_text(self.target_step, target, front_page_count, shared_back_status)
+        _, body = calibrate_guidance_text(
+            self.target_step, target, front_page_count, shared_back_status, self.grid_page_size(),
+        )
         self._status_label.setText(body)
 
     def _update_continue_footer(self, target: CalibrationTarget) -> None:
@@ -707,8 +736,8 @@ class CalibrateWorkspace(QWidget):
         if complete:
             self._completion_banner.setText(self._banner_html(
                 "Fronts calibration complete",
-                f"Applies to all {front_page_count} selected front {noun}. Browsing other pages below is "
-                "optional — continue to Shared Back whenever you're ready.",
+                f"Applies to all {front_page_count} selected front {noun}.{self._grid_note(target)} "
+                "Browsing other pages below is optional — continue to Shared Back whenever you're ready.",
             ))
 
     @staticmethod

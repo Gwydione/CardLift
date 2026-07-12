@@ -13,9 +13,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .app_state import AppState, CALIBRATE_STEPS
+from .app_state import AppState, CALIBRATE_STEPS, WorkflowStep
 from .calibrate_state import CalibrateState, calibrate_guidance_text
 from .find_cards_state import FindCardsState
+from .review_state import ReviewCardsState, review_guidance_text
 from .theme import (
     ACCENT,
     BG_GUIDANCE,
@@ -41,12 +42,14 @@ class GuidancePanel(QWidget):
         state: AppState,
         calibrate_state: CalibrateState,
         find_cards_state: FindCardsState,
+        review_cards_state: ReviewCardsState,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.state = state
         self.calibrate_state = calibrate_state
         self.find_cards_state = find_cards_state
+        self.review_cards_state = review_cards_state
         self.setObjectName("guidancePanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#guidancePanel {{ background: {BG_GUIDANCE}; }}")
@@ -147,5 +150,12 @@ class GuidancePanel(QWidget):
                 self.calibrate_state.target_for(step),
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
+            )
+        if step is WorkflowStep.REVIEW_CARDS:
+            return review_guidance_text(
+                self.calibrate_state.cards,
+                self.calibrate_state.back,
+                self.find_cards_state.shared_back_status(),
+                self.review_cards_state,
             )
         return self.state.guidance_text()

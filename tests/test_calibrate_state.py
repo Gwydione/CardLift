@@ -1,5 +1,6 @@
 from deckforge_gui.app_state import GUIDANCE, STATUS, AppState, WorkflowStep
 from deckforge_gui.calibrate_state import (
+    CalibratedGeometry,
     CalibrateState,
     ClickOutcome,
     calibrate_guidance_text,
@@ -7,11 +8,21 @@ from deckforge_gui.calibrate_state import (
     infer_second_cell,
     normalize_box,
     predicted_neighbor_box,
+    suggested_grid,
 )
 from deckforge_gui.find_cards_state import FindCardsState, PageRole, SharedBackStatus
 
 CARDS = WorkflowStep.CALIBRATE_CARDS
 BACK = WorkflowStep.CALIBRATE_BACK
+
+
+def make_geometry(**overrides) -> CalibratedGeometry:
+    data = dict(
+        left=0.0, top=0.0, card_width=100.0, card_height=150.0,
+        gap_x=0.0, gap_y=0.0, gap_x_derived=False, gap_y_derived=False,
+    )
+    data.update(overrides)
+    return CalibratedGeometry(**data)
 
 
 class TestNormalizeBox:
@@ -491,3 +502,106 @@ class TestUnresolvedSharedBackReachedViaSidebar:
 
         status = calibrate_status_text(BACK, calibrate.back, shared_back_status=find_cards.shared_back_status())
         assert status == "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
+
+
+class TestSuggestedGrid:
+    """suggested_grid() is a STARTING SUGGESTION for Review Cards, biased
+    toward over- rather than under-suggesting near a boundary -- see the
+    module docstring on GRID_FIT_TOLERANCE_PT for why that direction was
+    chosen (a phantom card is a one-click fix; a silently missing one is
+    not)."""
+
+    def test_cols_and_rows_fit_the_page(self) -> None:
+        geo = make_geometry(left=0.0, top=0.0, card_width=100.0, card_height=150.0)
+        assert suggested_grid(geo, page_width_pt=300.0, page_height_pt=450.0) == (3, 3)
+
+    def test_margin_reduces_the_count(self) -> None:
+        geo = make_geometry(left=50.0, top=0.0, card_width=100.0, card_height=150.0)
+        rows, cols = suggested_grid(geo, page_width_pt=300.0, page_height_pt=450.0)
+        assert cols == 2  # 50 + 2*100 = 250 fits; a 3rd would need 350
+
+    def test_tolerance_rescues_a_near_miss(self) -> None:
+        geo = make_geometry(card_width=100.0, card_height=150.0)
+        # Page is 1pt short of a full 3rd column -- the 2pt default
+        # tolerance still suggests it rather than silently dropping it.
+        _, cols = suggested_grid(geo, page_width_pt=299.0, page_height_pt=450.0)
+        assert cols == 3
+
+    def test_without_tolerance_the_near_miss_is_excluded(self) -> None:
+        geo = make_geometry(card_width=100.0, card_height=150.0)
+        _, cols = suggested_grid(geo, page_width_pt=299.0, page_height_pt=450.0, tolerance_pt=0.0)
+        assert cols == 2
+
+    def test_gap_is_accounted_for(self) -> None:
+        geo = make_geometry(card_width=100.0, card_height=150.0, gap_x=10.0, gap_y=10.0)
+        # 3 cards + 2 gaps = 300 + 20 = 320; 3 cards + 2 gaps tall = 450 + 20 = 470
+        assert suggested_grid(geo, page_width_pt=320.0, page_height_pt=470.0) == (3, 3)
+
+    def test_zero_card_size_is_safe(self) -> None:
+        geo = make_geometry(card_width=0.0, card_height=0.0)
+        assert suggested_grid(geo, 300.0, 450.0) == (0, 0)
+
+    def test_card_larger_than_page_suggests_nothing(self) -> None:
+        geo = make_geometry(card_width=5000.0, card_height=5000.0)
+        assert suggested_grid(geo, 300.0, 450.0) == (0, 0)
+
+    def test_matches_the_real_solo_cards_profile(self) -> None:
+        # profiles/solo_cards.json's actual calibrated values against the
+        # real A4 page (595.276 x 841.89pt, confirmed via PyMuPDF) -- ties
+        # this formula to a real deck already verified correct via
+        # --preview, not only synthetic numbers.
+        geo = make_geometry(left=35.75, top=61.25, card_width=174.58, card_height=239.75)
+        assert suggested_grid(geo, page_width_pt=595.276, page_height_pt=841.89) == (3, 3)
+
+
+class TestGridClauseInCompletionText:
+    """The suggested-grid mention in Calibrate's completion text is purely
+    informational ('Here's what DeckForge thinks it found') -- Review
+    Cards, not Calibrate, is where the count is actually confirmed or
+    corrected. See DEVELOPER.md's "Suggested grid size" section."""
+
+    def _complete_cards_state(self) -> CalibrateState:
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.finish_with_one_card(CARDS)
+        return state
+
+    def test_guidance_and_status_mention_the_suggested_grid_when_page_size_given(self) -> None:
+        state = self._complete_cards_state()
+        _, body = calibrate_guidance_text(CARDS, state.cards, front_page_count=6, page_size=(300.0, 300.0))
+        assert "3×3 grid" in body
+        status = calibrate_status_text(CARDS, state.cards, front_page_count=6, page_size=(300.0, 300.0))
+        assert "3×3 grid" in status
+
+    def test_no_grid_clause_without_a_page_size(self) -> None:
+        state = self._complete_cards_state()
+        _, body = calibrate_guidance_text(CARDS, state.cards, front_page_count=6)
+        assert "grid" not in body.lower()
+        assert "grid" not in calibrate_status_text(CARDS, state.cards, front_page_count=6).lower()
+
+    def test_no_grid_clause_for_a_degenerate_zero_suggestion(self) -> None:
+        state = CalibrateState()
+        state.cards.page_num = 3
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 5000.0, 5000.0)  # measured "card" bigger than the page
+        state.finish_with_one_card(CARDS)
+        _, body = calibrate_guidance_text(CARDS, state.cards, front_page_count=1, page_size=(300.0, 300.0))
+        assert "grid" not in body.lower()
+
+    def test_grid_clause_never_appears_for_shared_back(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click(BACK, 0.0, 0.0)
+        state.record_click(BACK, 100.0, 100.0)
+        _, body = calibrate_guidance_text(BACK, state.back, front_page_count=6, page_size=(300.0, 300.0))
+        assert "grid" not in body.lower()
+        status = calibrate_status_text(BACK, state.back, front_page_count=6, page_size=(300.0, 300.0))
+        assert "grid" not in status.lower()
+
+    def test_no_grid_clause_before_calibration_completes(self) -> None:
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)  # pending, not complete
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=(300.0, 300.0))
+        assert "grid" not in body.lower()

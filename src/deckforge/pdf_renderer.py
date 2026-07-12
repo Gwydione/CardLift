@@ -35,17 +35,28 @@ class PDFRenderer:
     def page_count(self) -> int:
         return self._doc.page_count
 
-    def render_page(self, page_number: int, scale: float) -> Image.Image:
+    def _load_page_checked(self, page_number: int):
         page_index = page_number - 1
         if page_index < 0 or page_index >= self._doc.page_count:
             raise PDFRenderError(
                 f"page {page_number} is out of range for {self._path.name} "
                 f"(it has {self._doc.page_count} pages)"
             )
-        page = self._doc.load_page(page_index)
+        return self._doc.load_page(page_index)
+
+    def render_page(self, page_number: int, scale: float) -> Image.Image:
+        page = self._load_page_checked(page_number)
         matrix = fitz.Matrix(scale, scale)
         pixmap = page.get_pixmap(matrix=matrix, alpha=False)
         return Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+
+    def page_size(self, page_number: int) -> tuple[float, float]:
+        """(width_pt, height_pt) of one page -- e.g. for grid-fit math that
+        needs the page's own dimensions alongside a calibrated card size.
+        `page.rect` already reflects the page's /Rotate entry, so a
+        rotated page reports its displayed (not raw MediaBox) extent."""
+        page = self._load_page_checked(page_number)
+        return (page.rect.width, page.rect.height)
 
     def close(self) -> None:
         self._doc.close()

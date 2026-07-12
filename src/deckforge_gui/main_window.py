@@ -29,6 +29,7 @@ from .calibrate_toolbar import CalibrateToolbar
 from .calibrate_workspace import CalibrateWorkspace
 from .find_cards_state import FindCardsState, find_cards_status_text
 from .guidance_panel import GuidancePanel
+from .review_state import ReviewCardsState, review_status_text
 from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
 from .theme import ACCENT, BG_TOPBAR, BG_WORKSPACE, BORDER_CARD, FONT_BODY_SM, TEXT_BODY, TEXT_NAV
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self.session = DeckSession()
         self.find_cards_state = FindCardsState()
         self.calibrate_state = CalibrateState()
+        self.review_cards_state = ReviewCardsState()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -122,7 +124,9 @@ class MainWindow(QMainWindow):
         self.workspace_stack = QStackedWidget()
         center_layout.addWidget(self.workspace_stack, 1)
 
-        self.workspaces = build_workspaces(self.state, self.find_cards_state, self.calibrate_state)
+        self.workspaces = build_workspaces(
+            self.state, self.find_cards_state, self.calibrate_state, self.review_cards_state,
+        )
         for step in WORKFLOW_ORDER:
             self.workspace_stack.addWidget(self.workspaces[step])
 
@@ -130,7 +134,7 @@ class MainWindow(QMainWindow):
         self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
         self.find_cards_workspace = self.workspaces[WorkflowStep.FIND_CARDS]
         self.find_cards_workspace.continue_clicked.connect(self._on_find_cards_continue)
-        self.find_cards_workspace.state_changed.connect(self._on_find_cards_state_changed)
+        self.find_cards_workspace.state_changed.connect(self._on_workspace_state_changed)
         self.calibrate_cards_workspace = self.workspaces[WorkflowStep.CALIBRATE_CARDS]
         self.calibrate_cards_workspace.continue_clicked.connect(self._on_cards_continue)
         self.calibrate_back_workspace = self.workspaces[WorkflowStep.CALIBRATE_BACK]
@@ -138,9 +142,15 @@ class MainWindow(QMainWindow):
         self.calibrate_back_workspace.back_to_select_cards_clicked.connect(self._on_back_to_select_cards)
         for calibrate_workspace in (self.calibrate_cards_workspace, self.calibrate_back_workspace):
             calibrate_workspace.zoom_changed.connect(self.calibrate_toolbar.set_zoom_percent)
-            calibrate_workspace.calibration_changed.connect(self._on_calibration_changed)
+            calibrate_workspace.calibration_changed.connect(self._on_workspace_state_changed)
+        self.review_workspace = self.workspaces[WorkflowStep.REVIEW_CARDS]
+        self.review_workspace.continue_clicked.connect(self._on_review_continue)
+        self.review_workspace.back_to_calibrate_clicked.connect(self._on_review_back_to_calibrate)
+        self.review_workspace.state_changed.connect(self._on_workspace_state_changed)
 
-        self.guidance_panel = GuidancePanel(self.state, self.calibrate_state, self.find_cards_state)
+        self.guidance_panel = GuidancePanel(
+            self.state, self.calibrate_state, self.find_cards_state, self.review_cards_state,
+        )
         self.guidance_panel.collapse_toggled.connect(self._on_guidance_collapse_toggled)
         body_layout.addWidget(self.guidance_panel)
 
@@ -173,9 +183,11 @@ class MainWindow(QMainWindow):
         # page N's marker or measured geometry in the last one.
         self.find_cards_state.clear_all()
         self.calibrate_state.reset_all()
+        self.review_cards_state.clear()
         self.find_cards_workspace.set_pdf(path, self.session.page_count)
         self.calibrate_cards_workspace.set_pdf(path, self.session.page_count)
         self.calibrate_back_workspace.set_pdf(path, self.session.page_count)
+        self.review_workspace.set_pdf(path, self.session.page_count)
         self._on_step_selected(WorkflowStep.FIND_CARDS)
 
     def _on_find_cards_continue(self) -> None:
@@ -189,6 +201,12 @@ class MainWindow(QMainWindow):
 
     def _on_back_to_select_cards(self) -> None:
         self._on_step_selected(WorkflowStep.FIND_CARDS)
+
+    def _on_review_continue(self) -> None:
+        self._on_step_selected(WorkflowStep.EXPORT)
+
+    def _on_review_back_to_calibrate(self) -> None:
+        self._on_step_selected(WorkflowStep.CALIBRATE_BACK)
 
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:
@@ -213,11 +231,12 @@ class MainWindow(QMainWindow):
     def _active_calibrate_workspace(self) -> CalibrateWorkspace:
         return self.workspaces[self.state.current_step]
 
-    def _on_calibration_changed(self) -> None:
-        self.guidance_panel.refresh()
-        self._refresh_current_workspace()
-
-    def _on_find_cards_state_changed(self) -> None:
+    def _on_workspace_state_changed(self) -> None:
+        """Shared handler for any signal meaning 'something this workspace
+        owns changed in a way the status bar/guidance panel should
+        reflect' -- calibration progress, a Select Card Pages role toggle,
+        or a Review Cards include/exclude toggle all funnel here rather
+        than each getting its own identical two-line method."""
         self.guidance_panel.refresh()
         self._refresh_current_workspace()
 
@@ -236,19 +255,21 @@ class MainWindow(QMainWindow):
         self.toolbar_stack.setCurrentIndex(
             _CALIBRATE_TOOLBAR_INDEX if is_calibrate else _NO_TOOLBAR_INDEX
         )
+        # Checked on Review Cards' own entry too, not just Calibrate's --
+        # AppState.is_reached lets the sidebar route straight to Review
+        # Cards without passing back through Calibrate first, so a
+        # Calibrate target that went stale since it was last shown (a
+        # Front Page role changed, or the Shared Back page was
+        # reassigned) must still be caught here rather than trusted as-is.
+        if step in (WorkflowStep.CALIBRATE_CARDS, WorkflowStep.REVIEW_CARDS) and self.calibrate_state.cards_is_stale(self.find_cards_state):
+            self.calibrate_state.cards.reset()
+        if step in (WorkflowStep.CALIBRATE_BACK, WorkflowStep.REVIEW_CARDS) and self.calibrate_state.back_is_stale(self.find_cards_state):
+            self.calibrate_state.back.reset()
         if is_calibrate:
             self.calibrate_toolbar.sync_pan_button()
-            if step is WorkflowStep.CALIBRATE_CARDS and self.calibrate_state.cards_is_stale(self.find_cards_state):
-                # The page Fronts was calibrated from is no longer a Front
-                # Page in Select Card Pages since -- the geometry no longer
-                # corresponds to a confirmed front page.
-                self.calibrate_state.cards.reset()
-            if step is WorkflowStep.CALIBRATE_BACK and self.calibrate_state.back_is_stale(self.find_cards_state):
-                # The Shared Back assignment changed (reassigned to a
-                # different page, cleared, or confirmed none) since this
-                # was calibrated.
-                self.calibrate_state.back.reset()
             self.workspaces[step].on_shown()
+        if step is WorkflowStep.REVIEW_CARDS:
+            self.review_workspace.on_shown()
 
         self._refresh_current_workspace()
         self.guidance_panel.refresh()
@@ -268,6 +289,14 @@ class MainWindow(QMainWindow):
                 self.calibrate_state.target_for(step),
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
+                self.workspaces[step].grid_page_size(),
+            )
+        if step is WorkflowStep.REVIEW_CARDS:
+            return review_status_text(
+                self.calibrate_state.cards,
+                self.calibrate_state.back,
+                self.find_cards_state.shared_back_status(),
+                self.review_cards_state,
             )
         return self.state.status_text()
 

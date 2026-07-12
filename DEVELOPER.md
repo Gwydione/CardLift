@@ -356,6 +356,111 @@ scope for this step. Shared Back keeps just the PDF-page line, since it
 navigates only its single assigned page rather than the Front Pages
 subset.
 
+**Review Cards milestone.** The last checkpoint before Export: every
+suggested card is rendered as a clickable thumbnail so the user can catch
+a miscount or a bad crop before anything is written to disk -- CORE_CONCEPTS.md's
+definition of Preview ("build confidence and catch mistakes before files
+are generated").
+
+**Suggested grid size.** Nothing before this milestone ever determined how
+many cards (rows x cols) are on a page -- Select Card Pages only assigns
+page-level roles, and Calibrate deliberately defers "grid inference" (see
+"Calibrate milestone" above). Review Cards needs that number to enumerate
+cards at all, and README's "manual calibration only, no automatic edge
+detection" philosophy rules out silently trusting a computed guess.
+`calibrate_state.suggested_grid()` resolves this by computing a **starting
+suggestion** -- how many `card_width x card_height` (+ `gap`) cells fit
+within the calibrated Front Page's own point-dimensions
+(`PDFRenderer.page_size()`, new this milestone) -- that Review Cards then
+requires a human to confirm or correct before anything is exported. The
+guess is never trusted unreviewed, so it doesn't reintroduce the "wrong
+automatic guess silently produces bad crops" risk README warns about.
+
+The formula (`(page_extent - origin + gap + tolerance) // (card_size + gap)`,
+per axis) has a real boundary-sensitivity risk worth naming: on a deck
+whose margins leave little slack past the last row/column, ordinary
+calibration click imprecision (a point or two) can tip the suggestion
+across an integer boundary. The two failure directions aren't symmetric --
+suggesting one card too many is a one-click fix in Review Cards, while
+suggesting one too few is silently missing and much easier to overlook.
+`GRID_FIT_TOLERANCE_PT` (2.0pt) deliberately biases toward the cheap
+failure: a page whose margin is within tolerance of fitting one more cell
+still gets it suggested. `TestSuggestedGrid` in `test_calibrate_state.py`
+includes a regression test against `profiles/solo_cards.json`'s real,
+`--preview`-verified calibration values (against the sample deck's actual
+A4 page size) precisely to keep this formula honest against a real deck,
+not only synthetic numbers.
+
+The suggestion is surfaced as a plain descriptive clause appended to
+Calibrate's existing completion text ("... Looks like a 3x3 grid per
+page.") -- informational only, never a question or a second confirmation
+gate. `CalibrateWorkspace.grid_page_size()` is the one place that looks up
+the calibrated page's dimensions, reused by the workspace's own
+caption/completion-banner and by `MainWindow._status_text()`, so the
+number can't drift between surfaces. Confirming or correcting the actual
+count is Review Cards' job alone, not Calibrate's -- see calibrate_state.py's
+`_grid_clause()` docstring.
+
+**`review_state.py`.** Pure state module (no PySide6/PDF import, same
+family as `find_cards_state.py`/`calibrate_state.py`), unit tested in
+`tests/test_review_state.py`. `build_review_cards()` calls
+`suggested_grid()` once per Front Page (each page can suggest a different
+grid if page sizes differ) and enumerates every cell as a `ReviewCard`
+(page, row, col) -- identity only, no image data. `ReviewCardsState.sync()`
+reconciles that list against whatever was previously toggled: cards still
+present keep their yes/no, new cards default to included, cards no longer
+suggested are dropped. It's safe to call on every entry to the step
+(idempotent if nothing changed), the same pull-based-refresh idiom
+`cards_is_stale()`/`back_is_stale()` already use elsewhere.
+
+This module deliberately does **not** group Select Card Pages'
+`front_pages()` into contiguous runs or construct a `profile.CardLayout` --
+unlike a future Export milestone (which will need one, since `CardLayout`
+requires a *contiguous* page range), Review Cards only ever crops and
+displays individual cells, so nothing here needs that grouping yet.
+
+**Two additional Calibrate-staleness checks, on Review Cards' own entry.**
+`MainWindow._apply_step()` already resets a stale Calibrate target when
+navigating *into* Calibrate Fronts/Shared Back (`cards_is_stale()`/
+`back_is_stale()`). That alone isn't sufficient for Review Cards:
+`AppState.is_reached` lets the sidebar route straight to Review Cards
+without passing back through Calibrate, so a target that went stale after
+Review Cards was last shown (a Front Page role changed, or the Shared Back
+page was reassigned to a different page) would otherwise be displayed
+as-is. `_apply_step()` now runs both staleness checks whenever the target
+step is `REVIEW_CARDS` too, not only the matching Calibrate step, before
+`ReviewWorkspace.on_shown()` reads `calibrate_state.cards`/`back` --
+`review_state.review_ready()` is the resulting gate `ReviewWorkspace` (and
+its guidance/status text) branches on, covering three blocked states: Fronts
+not calibrated, Shared Back still `UNRESOLVED`, and Shared Back `ASSIGNED`
+but not yet calibrated (reachable via the same stale-reset path).
+
+**Why `review_workspace.py` calls `CardCropper` directly, not
+`DeckExporter`.** `deckforge.exporter.DeckExporter` is CLI-shaped: it
+discovers the PDF by scanning `sample_decks/`/the project root via
+`profile.pdf_file`, and every operation (`preview()`, `overlay()`,
+`export()`) writes straight to fixed `preview/`/`output/` folders on disk.
+The GUI already has the user's actual PDF open via its own `PDFRenderer`
+(whatever path they chose, not necessarily under `sample_decks/`) and
+wants in-memory `PIL.Image`s to page through live, re-cropped on every
+toggle -- not files rewritten per click. `deckforge.cropper.CardCropper`
+is the lower engine layer built for exactly this ("given a rendered page
+image ... produce PIL Images for each card cell"), so `ReviewWorkspace`
+calls it directly, matching ENGINEERING_STANDARDS.md's "the GUI should
+call the engine, not duplicate it" without pulling in `DeckExporter`'s
+file-orchestration layer. Trim is always `TrimValues(0, 0, 0, 0)` here --
+see `calibrate_state.py`'s `CalibratedGeometry` docstring: the two-corner
+click the user made in Calibrate already *is* the exact crop box, unlike
+the CLI's eyeballed-pixel-coordinates flow that trim exists to nudge
+afterward.
+
+Forward-compatible note for a future Export milestone: `review_workspace.py`
+converts `CalibratedGeometry` to `profile.GridGeometry` via one small
+`_to_grid_geometry()` helper, so the shapes stay byte-identical to
+`profile.py`'s real dataclasses -- Export can build actual `CardLayout`/
+`DeckProfile` values from the same `CalibrateState` and reuse
+`DeckExporter` unchanged rather than reimplementing file-writing.
+
 ## Common Commands
 
 All commands go through `extract.py` and require `--profile <name>`
@@ -581,7 +686,7 @@ DeckForge/
 ├── preview/                    # --preview/--overlay/--inspect/--contact-sheet write here
 ├── src/deckforge/
 │   ├── profile.py             # DeckProfile: schema, JSON loading, validation (layouts list + legacy normalization -- see README "Profiles")
-│   ├── pdf_renderer.py         # PyMuPDF page → Pillow image (only file that imports fitz)
+│   ├── pdf_renderer.py         # PyMuPDF page → Pillow image + page_size() (only file that imports fitz)
 │   ├── geometry.py             # Pure grid math: cell box → trimmed box → pixels (no I/O)
 │   ├── cropper.py              # CardCropper: renders + geometry → cropped card images
 │   ├── contact_sheet.py         # Tiles a list of images into a labeled QA sheet
@@ -603,7 +708,9 @@ DeckForge/
 │   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
 │   ├── find_cards_state.py       # Pure FindCardsState/PageRole/SharedBackStatus model -- per-page Front/Back roles
 │   ├── find_cards_workspace.py   # Select Card Pages workspace: PDF page-by-page preview + role toggle buttons
-│   └── workspaces.py             # Central workspace per workflow step (placeholders past Calibrate)
+│   ├── review_state.py           # Pure ReviewCard/ReviewCardsState model -- suggested-grid cards, include/exclude toggle
+│   ├── review_workspace.py       # Review Cards workspace: per-page card thumbnail grid, Shared Back preview, toggles
+│   └── workspaces.py             # Central workspace per workflow step (Export is still a placeholder)
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
 ```
 
