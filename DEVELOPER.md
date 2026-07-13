@@ -743,10 +743,7 @@ navigates to the Deck step exactly like the sidebar's own Deck entry --
 it does not duplicate any reset logic itself; `MainWindow._on_pdf_chosen`
 already clears `find_cards_state`/`calibrate_state`/`review_cards_state`
 whenever a (re)loaded PDF is chosen there, which is what actually starts
-a new deck over. `on_shown()` resets `_export_complete` to `False` on
-every fresh entry to Export, so revisiting via the sidebar after
-navigating away always starts from the ordinary ready state, not a stale
-completion screen.
+a new deck over.
 
 Known, accepted gap (same category DEVELOPER.md already documents for
 `review_snapshot_is_current()` above): the guidance panel and the global
@@ -758,6 +755,48 @@ far more prominent surface -- correctly shows "Export complete." with the
 completion actions, so this is a minor, secondary-panel inconsistency
 rather than something that could mislead a user about whether the export
 actually finished.
+
+**Hardened export state across navigation.** An export operation belongs
+to the deck that was loaded when it began, for as long as it runs --
+never to whatever deck happens to be loaded by the time its results
+arrive. `ExportWorkspace._pdf_generation` is that ownership epoch: an
+`int` bumped on every `set_pdf()` call, and stamped onto each
+`_ExportWorker` at dispatch time. This closes three gaps the first cut of
+the in-progress/completion states above didn't handle:
+
+- `on_shown()` no longer unconditionally resets `_export_complete` to
+  `False` on every entry to Export. Instead, it leaves an active
+  same-generation worker's in-progress UI (`_exporting_label`,
+  `_progress_bar`, disabled Export button) untouched on a revisit, rather
+  than rebuilding the ready panel over it -- which would re-enable Export
+  and hide the progress bar out from under a worker still writing files
+  to disk.
+- `_on_export_succeeded()`/`_on_export_failed()` compare
+  `self.sender().pdf_generation` (the worker whose signal is being
+  handled) against the current generation and no-op on a mismatch. A
+  worker abandoned via `set_pdf()` before its already-queued
+  `succeeded`/`failed` signal is delivered can therefore never mark a
+  *different*, later deck's Export as complete, or show its file
+  count/destination -- `set_pdf()` also resets `_export_complete` and a
+  `_completed_plan`/`_completed_result_message` snapshot directly,
+  closing the window before the stale signal even arrives.
+- A completion is now restored, not just cleared: `_show_ready()`
+  compares the freshly rebuilt `ExportPlan` against `_completed_plan` (an
+  `ExportPlan` is a frozen dataclass, so this is a value comparison, not
+  identity). If they match, the exact `_completed_result_message` shown
+  when the export finished is restored verbatim, so a plain revisit (e.g.
+  a trip to Review Cards and back with nothing changed) doesn't silently
+  drop the "Exported N files to `<destination>`." confirmation. If they
+  don't match -- a card was toggled back in Review Cards, say -- the
+  completion banner clears instead of describing a plan that's no longer
+  what's on screen.
+
+`tests/test_export_workspace.py`'s `TestExportReentry` drives a real
+`PDFRenderer`/`QThread`/`export_cells()` pipeline (not a synthetic slot
+call) to cover all four scenarios, since the bug this closes is
+specifically about *when* a queued cross-thread signal is delivered
+relative to `set_pdf()`/`on_shown()` -- see
+`docs/ALPHA_HARDENING_PLAN.md` §1 risks 1, 2, and 4.
 
 **Alpha Polish: export overwrite confirmation.** `ExportWorkspace` had no
 check at all for a destination folder that already contained files

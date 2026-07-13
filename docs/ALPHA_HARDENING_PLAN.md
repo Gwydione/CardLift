@@ -1,7 +1,14 @@
 # Alpha Hardening — Design Review
 
-Status: **review draft, nothing in this document has been implemented.**
-Scope is deliberately limited to six areas: export thread synchronization,
+Status: **review draft; §1 risk 3 (destination race on PDF switch) and
+§1 risks 1, 2, and a newly found risk 4 (stale cross-deck export
+completion) are all implemented and committed together (see
+`docs/RELEASE_READINESS.md`'s Accomplished section) — risk 4 was found
+while manually verifying risk 3's fix, and risks 1/2/4's fix was
+deliberately reviewed as its own change before being folded into the
+same commit as risk 3. Everything else in this plan
+has not been started.** Scope is deliberately
+limited to six areas: export thread synchronization,
 safe shutdown during export, regression testing, README accuracy, release
 versioning, crash logging. Bugs found during manual alpha testing are
 tracked separately (see `docs/RELEASE_READINESS.md`) and are not folded
@@ -35,6 +42,10 @@ that same renderer to the worker; `export_cells()` calls
    from two threads with no lock. MuPDF is not documented as safe for
    unsynchronized concurrent use of a single document across threads —
    this is a real crash/corruption risk, not just a style concern.
+   **Fixed:** `on_shown()` now returns early —
+   skipping `_rebuild()` (and therefore this GUI-thread renderer call)
+   entirely — whenever a worker for the currently-loaded PDF is still
+   running. Side effect of the risk 2 fix below, not a separate change.
 2. **Stale in-progress UI.** `_rebuild()` → `_show_ready()` unconditionally
    sets `self._export_btn.setEnabled(self._destination is not None)` and
    never checks `self._worker is not None`. Navigating away and back
@@ -42,15 +53,40 @@ that same renderer to the worker; `export_cells()` calls
    Export button look clickable again. `_on_export_clicked()`'s own
    `self._worker is not None` guard prevents an actual second dispatch,
    but the visible state lies to the user.
-3. **Destination race on PDF switch.** `_close_renderer()` (called from
-   `set_pdf()`) blocks the GUI thread on `self._worker.wait()` before
-   tearing down the old renderer — correct in spirit, but `set_pdf()` also
-   resets `self._destination = None` and `self._plan = None` as part of
-   the same call, *before* the queued `succeeded`/`failed` signal from the
-   just-finished worker is delivered. `_on_export_succeeded()` then reads
-   `self._destination`, which is already `None` — the user sees "Exported
-   54 files to None." instead of the real folder, even though the files
-   were written correctly.
+   **Fixed:** `on_shown()` checks `self._worker`
+   before deciding whether to rebuild — guarded against a stale,
+   already-finished worker reference left over from a since-abandoned PDF
+   via the new `_pdf_generation` counter (see risk 4) — and leaves the
+   in-progress UI untouched if a same-PDF worker is still active.
+3. **Destination race on PDF switch — FIXED, see below.** `_close_renderer()`
+   (called from `set_pdf()`) blocks the GUI thread on `self._worker.wait()`
+   before tearing down the old renderer — correct in spirit, but
+   `set_pdf()` also resets `self._destination = None` and `self._plan =
+   None` as part of the same call, *before* the queued `succeeded`/`failed`
+   signal from the just-finished worker is delivered. `_on_export_succeeded()`
+   then reads `self._destination`, which is already `None` — the user sees
+   "Exported 54 files to None." instead of the real folder, even though
+   the files were written correctly.
+4. **Stale cross-deck export completion.** Found while manually verifying
+   risk 3's fix, not from tracing code up front. `set_pdf()` blocks on
+   `self._worker.wait()` for the outgoing worker's thread to join, but
+   never invalidates that worker's already-emitted `succeeded`/`finished`
+   signals (already queued for cross-thread delivery) and never marks it
+   as belonging to an abandoned PDF. If the user switches to a different
+   deck while an export is running, and then brings *that* deck all the
+   way to a genuinely ready-to-export state before the queued signals
+   drain — ordinarily the very next event-loop turn, so the window is
+   narrow but real, and easily wide enough to survive a few seconds of
+   normal navigation — `_on_export_succeeded()` marks the new deck's
+   Export as complete and shows the *old* deck's file count/destination
+   message: a false "Export complete" for a deck that was never actually
+   exported. Confirmed with a real `PDFRenderer`/`QThread`/`export_cells()`
+   reproduction, not just reasoned about. Narrower than it first sounds:
+   navigating straight to Export for a freshly-opened, not-yet-calibrated
+   deck does *not* trigger this — `export_ready()` correctly blocks with a
+   guidance message in that case regardless of this fix; the false
+   completion only shows once the new deck is independently brought to
+   "ready" while the old export's signals are still in flight.
 
 **Smallest coherent implementation:**
 
@@ -65,6 +101,46 @@ that same renderer to the worker; `export_cells()` calls
   `_on_export_clicked()`) and have `_on_export_succeeded()` read that
   snapshot instead of `self._destination`. Fixes risk 3 without changing
   `_close_renderer()`'s existing (intentional) wait-before-close behavior.
+
+  **Implemented, worker-centrically rather than via a dispatch-time
+  snapshot attribute:** `_ExportWorker.succeeded` now carries the
+  destination it actually wrote to as part of its signal payload
+  (`Signal(list, Path)`, emitted as `self.succeeded.emit(written,
+  self._destination)` from `run()`), and `_on_export_succeeded(written,
+  destination)` uses that parameter instead of reading any
+  `ExportWorkspace` instance attribute. Same guarantee as the snapshot
+  approach above (the slot never re-reads workspace state that could have
+  changed since dispatch) but the correct value lives on the one object
+  that's guaranteed not to be mutated by a PDF switch — the worker itself
+  — rather than a second copy on `ExportWorkspace`. Risks 1, 2, and 4
+  below were fixed in the same commit as this one, after their own
+  separate review. Regression test:
+  `tests/test_export_workspace.py` (new — the suite's first widget-level
+  test, see §3 below).
+
+  **Implemented, for risks 1, 2, and 4:** a `self._pdf_generation`
+  counter on `ExportWorkspace`, bumped on every `set_pdf()` call; each
+  `_ExportWorker` is stamped with the generation at dispatch time.
+  `_on_export_succeeded()`/`_on_export_failed()` compare
+  `self.sender().pdf_generation` against the current generation and no-op
+  on a mismatch, so a stale worker's payload can never touch
+  `_export_complete`, the completion banner, or the result message (fixes
+  risk 4); `set_pdf()` also resets `_export_complete` and a new
+  `_completed_plan` snapshot directly, closing the window before the stale
+  signal even arrives. `on_shown()` skips its rebuild entirely when a
+  same-generation worker is still active (the `self._worker is not None
+  and self._worker.pdf_generation == self._pdf_generation` check
+  described under risks 1-2 above), leaving the in-progress UI untouched.
+  Separately, `_completed_plan` is compared against the freshly rebuilt
+  plan in `_show_ready()` so a legitimate completion banner survives an
+  unrelated revisit (e.g. a trip to Review Cards and back) but clears
+  itself if Review Cards changes what would actually be exported.
+  Regression tests: `TestExportReentry` in `tests/test_export_workspace.py`
+  (new) — drives a real worker/PDF/event-loop rather than a
+  synthetic slot call, since this is fundamentally a signal-timing
+  question. Reviewed as its own change before being committed
+  alongside risk 3's already-verified fix. See
+  `docs/RELEASE_READINESS.md`'s Accomplished section.
 
 **Out of scope for this milestone:** making `_close_renderer()`
 non-blocking, or supporting true export cancellation. Both are real
@@ -129,6 +205,35 @@ only — nothing instantiates a real `QWidget`/`QApplication`, drives a
 installed (`requirements-dev.txt` is just `-r requirements.txt` +
 `pytest`).
 
+**Partially addressed:** `tests/test_export_workspace.py` (new) is the
+suite's first widget-level test — 478 tests total now (469 pre-existing +
+9 new: 4 in `TestExportCompletionMessageUsesSignalPayload` + 5 in
+`TestExportReentry`, both committed alongside the risk 1/2/3/4 fixes they
+cover; see below).
+`TestExportCompletionMessageUsesSignalPayload` covers the first bullet
+below (§1 risk 3's fix) without `pytest-qt`: it instantiates
+`ExportWorkspace` under `QT_QPA_PLATFORM=offscreen` and calls
+`_on_export_succeeded()` directly with a synthetic signal payload, which
+needed no `qtbot`/signal-waiting machinery since that fix is a pure
+data-flow question (does the slot use its own argument or stale instance
+state), not a timing one.
+
+`TestExportReentry` (new) additionally covers the
+second bullet below (`on_shown()` during an active export, plus the risk
+4 cross-deck completion corruption) — and had to drive a *real*
+`PDFRenderer`/`QThread`/`export_cells()` pipeline against
+`sample_decks/Solo-cards-digital.pdf` to do it, manually draining the Qt
+event loop (`QApplication.processEvents()` in a loop) rather than using
+`pytest-qt`'s `qtbot.waitSignal()`. This is exactly the risk-1/2/4 root
+cause made concrete: the bug is specifically about *when* a queued
+cross-thread signal gets delivered relative to `set_pdf()`/`on_shown()`,
+so a synthetic direct slot call (the pattern the first bullet's tests
+use) cannot reproduce it — there has to be a real background thread and
+a real event loop to race against. The worker failure and `closeEvent`
+bullets below are still uncovered; now that a real (if `pytest-qt`-free)
+worker/event-loop pattern exists in this file, a future pass can decide
+whether to extend it or bring in `pytest-qt` for those instead.
+
 **Risk:** every bug identified in §1 and §2 is a *widget/thread lifecycle*
 bug — exactly the class of defect pure-function unit tests cannot catch
 by construction. The current suite gives no signal on any of them, and
@@ -144,14 +249,21 @@ would give no signal if a future change reintroduced them.
   milestone touches (not a general GUI-coverage sweep):
   - Worker success → completion UI shown, message names the destination
     captured at dispatch time even if `self._destination` is mutated
-    afterward (direct regression test for §1 risk 3).
+    afterward (direct regression test for §1 risk 3). **Done** —
+    `TestExportCompletionMessageUsesSignalPayload` in
+    `tests/test_export_workspace.py`.
   - Worker failure → error message shown, controls re-enabled, no
     completion state.
   - `on_shown()`/`_rebuild()` while a worker is active does not touch the
     renderer and does not re-enable the Export button or hide the
-    progress UI (regression test for §1 risks 1–2). A fake/stubbed
-    `export_cells` that blocks on a `threading.Event` gives the test a
-    deterministic window in which to assert this.
+    progress UI (regression test for §1 risks 1–2). **Done**
+    — `TestExportReentry.test_revisiting_during_an_active_export_shows_progress_not_ready`
+    in `tests/test_export_workspace.py`, using a real worker rather than a
+    `threading.Event`-blocked fake, since the fix itself needed a real
+    cross-thread signal to guard against. Also added, beyond this
+    bullet's original scope: coverage for risk 4 (cross-deck stale
+    completion) and for a completion banner correctly surviving vs.
+    clearing across a revisit — see risk 4's fix note above.
   - `MainWindow.closeEvent` during an active export shows the
     confirmation path and never lets a running worker be destroyed
     (assert `wait()`/`is_exporting()` behavior rather than trying to
@@ -292,16 +404,19 @@ addition once you know what testers actually need from it.
 
 ---
 
-## Summary of what's proposed (nothing implemented yet)
+## Summary of what's proposed
 
-| Area | Core fix | New files | Touches |
-|---|---|---|---|
-| Export thread sync | guard `_rebuild()` during an active worker; snapshot destination at dispatch | — | `export_workspace.py` |
-| Safe shutdown | `closeEvent` confirmation + guaranteed `wait()` before teardown | — | `main_window.py`, `export_workspace.py` |
-| Regression testing | `pytest-qt` + targeted widget/thread tests for the two fixes above | `tests/test_export_workspace.py` | `requirements-dev.txt` |
-| README accuracy | add GUI entry point, remove stale Future-work bullet | — | `README.md` |
-| Release versioning | one version constant, shown in window title | `deckforge_gui/_version.py` | `main_window.py`, `DEVELOPER.md` |
-| Crash logging | rotating local log file + excepthook + widened worker try/except | — | `gui_app.py`, `export_workspace.py` |
+Status per area, not "nothing implemented yet" anymore — see each area's
+own section for exactly what landed vs. what's still only proposed.
+
+| Area | Core fix | New files | Touches | Status |
+|---|---|---|---|---|
+| Export thread sync | guard `_rebuild()`/`on_shown()` during an active worker; carry destination + a `pdf_generation` stamp on the worker | — | `export_workspace.py` | Risks 1, 2, 3, 4 implemented |
+| Safe shutdown | `closeEvent` confirmation + guaranteed `wait()` before teardown | — | `main_window.py`, `export_workspace.py` | Not started |
+| Regression testing | `pytest-qt` + targeted widget/thread tests for the two fixes above | `tests/test_export_workspace.py` | `requirements-dev.txt` | Risk 3 test done; risk 1/2/4 tests done; worker-failure/`closeEvent` tests not started |
+| README accuracy | add GUI entry point, remove stale Future-work bullet | — | `README.md` | Implemented — see `docs/RELEASE_READINESS.md` |
+| Release versioning | one version constant, shown in window title | `deckforge_gui/_version.py` | `main_window.py`, `DEVELOPER.md` | Not started |
+| Crash logging | rotating local log file + excepthook + widened worker try/except | — | `gui_app.py`, `export_workspace.py` | Not started |
 
 All six are additive/local edits to existing files (no architectural
 change), consistent with ENGINEERING_STANDARDS.md's "smallest change that

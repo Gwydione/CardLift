@@ -5,7 +5,7 @@ priority before DeckForge's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
-Last updated: 2026-07-12.
+Last updated: 2026-07-13.
 
 ---
 
@@ -16,12 +16,12 @@ Ranked by risk, not by discovery order.
 | # | Item | Why it's top-priority | Status |
 |---|---|---|---|
 | 1 | **Calibration geometry robustness** (different calibration-click choices produce systematically different, sometimes-clipping grids) | Correctness of the core "click two corners, get a grid" promise — the product's central value proposition. Flagged by alpha testing as the current highest-priority issue. | Implemented — see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md` |
-| 2 | Export thread synchronization (renderer race, stale in-progress UI, destination-message race) | Real crash/corruption risk during the app's core "write files to disk" action | Planned — see `docs/ALPHA_HARDENING_PLAN.md` §1 |
+| 2 | Export thread synchronization (renderer race, stale in-progress UI, destination-message race, stale cross-deck completion) | Real crash/corruption risk during the app's core "write files to disk" action | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §1 |
 | 3 | Safe shutdown during export | Closing the app mid-export can destroy a running `QThread` — known Qt crash pattern, plus silent partial file writes | Planned — §2 |
 | 4 | Crash logging | Zero diagnostic trail today; every other bug found during alpha testing is harder to fix without this | Planned — §6 |
 | 5 | Regression testing for the above | Confirms 2 & 3 are actually fixed and stay fixed | Planned — §3 |
 | 6 | Release versioning | Bug reports currently can't be tied to a build | Planned — §5 |
-| 7 | README accuracy | Alpha testers' entry point currently hides the GUI entirely | Planned — §4 |
+| 7 | README accuracy | Alpha testers' entry point currently hides the GUI entirely | Implemented — see below |
 
 Full design review, risk tracing, and implementation plan for items 2-7:
 `docs/ALPHA_HARDENING_PLAN.md`. Full calibration math trace, root-cause
@@ -48,23 +48,14 @@ _Calibration geometry follow-up (not yet implemented):_
 
 _Design review findings (not yet implemented):_
 
-- [ ] Export workspace can read/write its `PDFRenderer` from the GUI
-      thread while `_ExportWorker` is rendering on a background thread
-      (navigate away from Export and back mid-export). — plan §1
-- [ ] Re-entering the Export step mid-export re-enables the Export
-      button and hides the progress UI (internally guarded against a
-      real double-dispatch, but visually misleading). — plan §1
-- [ ] Switching PDFs mid-export shows "Exported N files to None." — the
-      files land correctly, only the completion message is wrong. — plan §1
 - [ ] No `closeEvent` handling: quitting the app while an export is
       running can destroy a live `QThread` (crash risk) and leaves
       partial files on disk with no warning. — plan §2
-- [ ] No widget/thread-level regression tests exist for any of the above
-      — current suite (405 tests) is 100% pure-function/dataclass level. — plan §3
-- [ ] README.md documents only the CLI; the PySide6 GUI (`gui_app.py`)
-      is misfiled under "Future work" as not-yet-built, along with
-      drag-and-drop PDFs and interactive calibration — both also
-      already shipped. — plan §4
+- [ ] No widget/thread-level regression tests exist for `closeEvent`
+      above — `tests/test_export_workspace.py` (new, see Accomplished) is
+      the suite's first widget-level test; it covers the completion
+      message fix and the export thread-sync fixes (see Accomplished),
+      but not `closeEvent`. — plan §3
 - [ ] No version identity for the GUI anywhere (window title, about box,
       etc.) — CLI engine has `__version__ = "0.1.0"`, GUI has nothing. — plan §5
 - [ ] No crash/error logging anywhere in the GUI — an uncaught exception
@@ -153,7 +144,57 @@ _Bugs found during manual alpha testing:_
   1-based `"row,col"` pair (e.g. `2,1`) and states the first card's
   row/column for reference; internal storage stays 0-based -- see
   DEVELOPER.md's "Cell-label prompt uses human, not internal, numbering."
-- 469 passing unit tests across engine + GUI state/logic layers.
+- **README rewritten as a GUI-first product landing page.** README.md
+  previously documented only the CLI, with the PySide6 GUI, drag-and-drop
+  PDFs, and interactive calibration all misfiled under "Future work" even
+  though all three had already shipped. Rewritten around the actual
+  six-step GUI workflow (Deck → Select Card Pages → Fronts → Shared Back
+  → Review Cards → Export) with a new "Current Status" section (Windows
+  alpha, under active development) and a placeholder Screenshots section.
+  The CLI's full profile-JSON/grid-math/command reference (~470 lines)
+  moved out to the new `docs/CLI_REFERENCE.md` rather than being
+  incrementally edited in place, keeping README readable as a landing
+  page; `DEVELOPER.md`'s project-structure tree and architecture
+  rationale were dropped from README rather than duplicated. See plan §4.
+- **Fixed "Exported N files to None."** Switching PDFs mid-export
+  (`ExportWorkspace.set_pdf()`) reset `self._destination` to `None`
+  before the still-running background worker's completion handler
+  (`_on_export_succeeded`) read it to build the message — files landed
+  correctly, only the message was wrong. Fixed worker-centrically:
+  `_ExportWorker.succeeded` now carries the destination it actually wrote
+  to as part of its signal payload (`Signal(list, Path)`), so the slot
+  never re-reads mutable workspace state after the background operation
+  finishes. `tests/test_export_workspace.py` (new) covers this directly —
+  the suite's first widget-level test. See plan §1.
+- **Hardened export state across navigation (plan §1 risks 1, 2, 4).**
+  Found while manually verifying the destination-message fix above, then
+  reviewed as its own change before landing in the same commit. A
+  `self._pdf_generation` counter on `ExportWorkspace`, bumped on every
+  `set_pdf()` call and stamped onto each `_ExportWorker` at dispatch
+  time, gives every place that handles a worker's signal (or decides
+  whether to rebuild) a way to tell "this describes the deck currently on
+  screen" from "this is a stale signal/UI state left over from an
+  abandoned PDF":
+  - `on_shown()` now leaves an active same-generation worker's
+    in-progress UI untouched instead of rebuilding over it — closes both
+    the cross-thread `PDFRenderer` access during an active export (risk
+    1) and the stale "Exporting…"/progress-bar state after a revisit
+    (risk 2).
+  - `_on_export_succeeded()`/`_on_export_failed()` no-op on a
+    generation mismatch, so a worker whose PDF was abandoned via
+    `set_pdf()` can never mark a *different*, later deck's Export as
+    complete or show its file count/destination (risk 4).
+  - A legitimate completion (`_completed_plan`/`_completed_result_message`)
+    is restored verbatim on a plain revisit, but clears itself if what
+    Review Cards would actually export has changed since — so the
+    completion banner never survives a config change, and never leaks
+    from one deck to another via `set_pdf()`.
+  `TestExportReentry` in `tests/test_export_workspace.py` drives a real
+  `PDFRenderer`/`QThread`/`export_cells()` pipeline (not a synthetic slot
+  call) to cover all four scenarios. See plan §1.
+- 478 passing unit tests across engine + GUI state/logic layers (469
+  pre-existing + 9 new in `tests/test_export_workspace.py`, the suite's
+  first widget-level tests — see the two bullets above).
 
 ---
 

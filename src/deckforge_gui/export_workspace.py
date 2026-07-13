@@ -141,7 +141,12 @@ class _ExportWorker(QThread):
     called exactly as ExportWorkspace._on_export_clicked() used to call
     it inline; nothing about the export itself changes."""
 
-    succeeded = Signal(list)
+    # Carries the destination the worker actually wrote to, not just the
+    # written-files list -- ExportWorkspace._on_export_succeeded must not
+    # re-read self._destination after the fact, since a user who switches
+    # PDFs (set_pdf()) while this worker is still running resets that
+    # instance attribute out from under it (see "N files to None" fix).
+    succeeded = Signal(list, Path)
     failed = Signal(str)
 
     def __init__(
@@ -152,6 +157,7 @@ class _ExportWorker(QThread):
         cells: list[tuple[int, int, int]],
         destination: Path,
         back: Optional[tuple[int, GridGeometry]],
+        pdf_generation: int,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -161,6 +167,13 @@ class _ExportWorker(QThread):
         self._cells = cells
         self._destination = destination
         self._back = back
+        # Stamped with ExportWorkspace._pdf_generation at dispatch time --
+        # set_pdf() bumps that counter on every (re)load, so a completion
+        # signal that arrives after the user has already switched to a
+        # different PDF can be told apart from one for the PDF still
+        # loaded, regardless of how long this worker was already running
+        # (see ExportWorkspace._is_stale_worker_signal()).
+        self.pdf_generation = pdf_generation
 
     def run(self) -> None:
         try:
@@ -171,7 +184,7 @@ class _ExportWorker(QThread):
         except (OSError, PDFRenderError) as exc:
             self.failed.emit(str(exc))
             return
-        self.succeeded.emit(written)
+        self.succeeded.emit(written, self._destination)
 
 
 class ExportWorkspace(QWidget):
@@ -199,6 +212,30 @@ class ExportWorkspace(QWidget):
         self._plan: Optional[ExportPlan] = None
         self._worker: Optional[_ExportWorker] = None
         self._export_complete = False
+        # The plan that was actually exported when _export_complete last
+        # became True -- _show_ready() compares this against the freshly
+        # rebuilt plan so a completion banner never survives a config
+        # change (e.g. toggling a card back in Review Cards) that makes it
+        # describe a plan that's no longer the one on screen.
+        self._completed_plan: Optional[ExportPlan] = None
+        # The result message shown when that export completed -- restored
+        # verbatim (never recomputed) whenever _show_ready() decides the
+        # completion banner still legitimately applies, so re-entering the
+        # Export step doesn't silently drop the "Exported N files to
+        # <destination>." confirmation that _on_export_succeeded() showed.
+        self._completed_result_message: Optional[str] = None
+        # Ownership model: an export operation belongs to the deck that was
+        # loaded when it began, for as long as it runs -- never to whatever
+        # deck happens to be loaded by the time its results arrive.
+        # _pdf_generation is that ownership epoch, bumped on every
+        # set_pdf(); each _ExportWorker is stamped with it at dispatch time
+        # and carries that stamp for its whole life. Every place that would
+        # otherwise trust "a worker exists" or "a worker's signal fired" as
+        # meaning "this describes the deck on screen" must instead compare
+        # generations -- see on_shown()'s guard and
+        # _is_stale_worker_signal(), which are this invariant's two
+        # enforcement points.
+        self._pdf_generation = 0
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"background: {BG_WORKSPACE};")
@@ -330,10 +367,22 @@ class ExportWorkspace(QWidget):
     # -- PDF loading -------------------------------------------------------
 
     def set_pdf(self, pdf_path: Path, page_count: int) -> None:
+        # Bumped before _close_renderer() waits on any still-running worker,
+        # so that worker's succeeded/failed signal -- already queued for
+        # delivery once we're back in the event loop -- is recognizable as
+        # stale by the time it arrives (see _is_stale_worker_signal()).
+        self._pdf_generation += 1
         self._close_renderer()
         self._renderer = PDFRenderer(pdf_path)
         self._destination = None
         self._plan = None
+        # A completed export (or one in whatever state _export_complete was
+        # in) belongs to the PDF that was just replaced -- never carry it
+        # forward to describe this new one, even if this new plan later
+        # happens to look identical.
+        self._export_complete = False
+        self._completed_plan = None
+        self._completed_result_message = None
 
     def _close_renderer(self) -> None:
         if self._worker is not None:
@@ -351,7 +400,19 @@ class ExportWorkspace(QWidget):
 
     def on_shown(self) -> None:
         self._result_label.setVisible(False)
-        self._export_complete = False
+        if self._worker is not None and self._worker.pdf_generation == self._pdf_generation:
+            # An export for this same PDF is still running in the
+            # background -- leave the in-progress UI (_on_export_clicked()
+            # set it up) alone rather than rebuilding the ready panel over
+            # it, which would re-enable Export and hide the progress bar
+            # out from under a worker that's still writing files.
+            # _on_export_succeeded()/_on_export_worker_finished() will
+            # update the view normally once it finishes, same as if Export
+            # had stayed the visible page the whole time. A self._worker
+            # from a previous generation (set_pdf() was called since it was
+            # dispatched, but its finished signal hasn't drained yet) is
+            # not this case -- fall through to the normal rebuild below.
+            return
         self._rebuild()
 
     def set_pan_active(self, active: bool) -> None:
@@ -404,8 +465,27 @@ class ExportWorkspace(QWidget):
     ) -> None:
         self._blocked_label.setVisible(False)
         self._ready_panel.setVisible(True)
+        # Only reachable when on_shown()'s guard has already established
+        # there's no active same-generation worker (see _pdf_generation) --
+        # so any "Exporting..."/progress-bar state still visible here is
+        # necessarily left over from an abandoned PDF's worker whose
+        # finished signal hasn't drained yet, and must not bleed into this
+        # (possibly different) deck's ready panel.
+        self._exporting_label.setVisible(False)
+        self._progress_bar.setVisible(False)
 
         self._plan = build_export_plan(self.review_state, cards_target, back_target, shared_back_status)
+        if self._export_complete and self._plan != self._completed_plan:
+            # Something changed (e.g. a card toggled back in Review Cards)
+            # since the export that completed -- the completion banner
+            # would otherwise describe a plan no longer shown below it.
+            self._export_complete = False
+        elif self._export_complete:
+            # Legitimate re-entry (e.g. a trip to Review Cards and back
+            # with nothing changed) -- restore the exact message shown when
+            # the export finished rather than leaving it hidden (on_shown()
+            # unconditionally hides _result_label) or recomputing it.
+            self._show_result(self._completed_result_message, is_error=False)
         noun = "card" if self._plan.card_count == 1 else "cards"
         back_clause = " plus a shared back" if self._plan.has_back else " (this deck has no Shared Back)"
         self._summary_label.setText(f"{self._plan.card_count} {noun}{back_clause}, saved as individual PNG files.")
@@ -493,20 +573,42 @@ class ExportWorkspace(QWidget):
 
         self._worker = _ExportWorker(
             self._renderer, EXPORT_RENDER_SCALE, self._plan.front_geometry,
-            cells, self._destination, self._plan.back, parent=self,
+            cells, self._destination, self._plan.back,
+            pdf_generation=self._pdf_generation, parent=self,
         )
         self._worker.succeeded.connect(self._on_export_succeeded)
         self._worker.failed.connect(self._on_export_failed)
         self._worker.finished.connect(self._on_export_worker_finished)
         self._worker.start()
 
-    def _on_export_succeeded(self, written: list) -> None:
+    def _is_stale_worker_signal(self) -> bool:
+        """True if the worker whose signal is currently being handled was
+        dispatched for a PDF the user has since switched away from via
+        set_pdf() -- that worker's succeeded/failed payload describes a
+        deck that's no longer loaded and must not touch _export_complete,
+        the completion banner, or the result message. self.sender() is the
+        _ExportWorker that emitted the signal being handled, valid for a
+        queued cross-thread connection same as a direct one."""
+        worker = self.sender()
+        return isinstance(worker, _ExportWorker) and worker.pdf_generation != self._pdf_generation
+
+    def _on_export_succeeded(self, written: list, destination: Path) -> None:
+        if self._is_stale_worker_signal():
+            return
+        # destination is the worker's own snapshot, not self._destination --
+        # see _ExportWorker.succeeded's docstring comment for why re-reading
+        # the live instance attribute here would be wrong.
         plural = "s" if len(written) != 1 else ""
-        self._show_result(f"Exported {len(written)} file{plural} to {self._destination}.", is_error=False)
+        message = f"Exported {len(written)} file{plural} to {destination}."
+        self._show_result(message, is_error=False)
         self._export_complete = True
+        self._completed_plan = self._plan
+        self._completed_result_message = message
         self._apply_completion_visibility()
 
     def _on_export_failed(self, message: str) -> None:
+        if self._is_stale_worker_signal():
+            return
         self._show_result(f"Couldn't finish exporting: {message}", is_error=True)
 
     def _on_export_worker_finished(self) -> None:
