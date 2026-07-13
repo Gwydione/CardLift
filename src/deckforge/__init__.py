@@ -8,4 +8,4 @@ orchestrating the whole thing) can be tested, replaced, or extended on its
 own. See README.md for the full architecture rationale.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.0-alpha"

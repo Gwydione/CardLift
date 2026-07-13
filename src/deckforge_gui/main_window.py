@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from deckforge import __version__
+
 from .app_state import AppState, WORKFLOW_ORDER, WorkflowStep, CALIBRATE_STEPS
 from .calibrate_state import CalibrateState, calibrate_status_text
 from .calibrate_toolbar import CalibrateToolbar
@@ -33,7 +35,17 @@ from .guidance_panel import GuidancePanel
 from .review_state import ReviewCardsState, review_status_text
 from .session import DeckLoadError, DeckSession
 from .sidebar import Sidebar
-from .theme import ACCENT, BG_TOPBAR, BG_WORKSPACE, BORDER_CARD, FONT_BODY_SM, TEXT_BODY, TEXT_NAV
+from .theme import (
+    ACCENT,
+    BG_TOPBAR,
+    BG_WORKSPACE,
+    BORDER_CARD,
+    FONT_BODY_SM,
+    FONT_CAPTION,
+    TEXT_BODY,
+    TEXT_CAPTION_MUTED,
+    TEXT_NAV,
+)
 from .workspaces import build_workspaces
 
 SIDEBAR_WIDTH = 220
@@ -58,6 +70,11 @@ class TopBar(QWidget):
         brand = QLabel("DeckForge")
         brand.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {ACCENT};")
         layout.addWidget(brand)
+
+        version = QLabel(f"v{__version__}")
+        version.setStyleSheet(f"font-size: {FONT_CAPTION}px; color: {TEXT_CAPTION_MUTED}; margin-left: 8px;")
+        layout.addWidget(version)
+
         layout.addStretch(1)
 
         overflow = QToolButton()
@@ -71,7 +88,7 @@ class TopBar(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("DeckForge")
+        self.setWindowTitle(f"DeckForge v{__version__}")
         self.resize(1200, 800)
         self.setMinimumSize(720, 480)
 
