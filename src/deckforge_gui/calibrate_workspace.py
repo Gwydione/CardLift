@@ -45,7 +45,6 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent, QWheelEvent
 from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from deckforge.measure import CARD_SPEC_RE
 from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 
 from .app_state import AppState, WorkflowStep
@@ -55,6 +54,7 @@ from .calibrate_state import (
     ClickOutcome,
     calibrate_guidance_text,
     calibrate_status_text,
+    parse_human_cell_label,
     predicted_neighbor_box,
     suggested_grid,
     suggested_second_card_offset,
@@ -519,25 +519,59 @@ class CalibrateWorkspace(QWidget):
             return  # click landed outside the rendered page
 
         x_pt, y_pt = img_x / self.render_scale, img_y / self.render_scale
-        outcome = self.calibrate_state.record_click(self.target_step, x_pt, y_pt)
+        hint_col_offset, hint_row_offset = self._hint_offsets_for_conflict_check()
+        outcome = self.calibrate_state.record_click(
+            self.target_step, x_pt, y_pt,
+            hint_col_offset=hint_col_offset, hint_row_offset=hint_row_offset,
+        )
 
         if outcome is ClickOutcome.NEEDS_CELL_LABEL:
             self._prompt_for_cell_label()
         self._after_state_change()
 
+    def _hint_offsets_for_conflict_check(self) -> tuple[Optional[int], Optional[int]]:
+        """The same independent, page-bounds-based estimate
+        suggested_second_card_offsets() draws as a hint, reused here as
+        plain data for CalibrateState.record_click()'s hint-vs-click
+        agreement check (see infer_second_cell()'s docstring). Only
+        meaningful right when a second card's box is about to complete --
+        i.e. exactly one measurement recorded so far -- so this returns
+        (None, None) otherwise, which record_click() treats as "no hint
+        available" and skips the check entirely, identical to today's
+        behavior. Deliberately does NOT reuse suggested_second_card_
+        offsets()'s (1, 1) drawing fallback for an unknown page size: that
+        fallback exists so the hint has *something* to draw, not because
+        "1" is a genuine independent estimate worth cross-checking a click
+        against -- injecting it here could flag a spurious conflict for a
+        reason that has nothing to do with the click itself."""
+        target = self.current_target()
+        if len(target.measurements) != 1:
+            return (None, None)
+        first = target.measurements[0]
+        page_size = self._current_page_size()
+        if page_size is None:
+            return (None, None)
+        card_width = first.x2 - first.x1
+        card_height = first.y2 - first.y1
+        page_width_pt, page_height_pt = page_size
+        return suggested_second_card_offset(card_width, card_height, page_width_pt, page_height_pt, first.as_tuple())
+
     def _prompt_for_cell_label(self) -> None:
+        first = self.current_target().measurements[0]
+        prompt = (
+            "Couldn't tell which grid cell that is from where you clicked.\n"
+            f"The first card you marked is Row {first.row + 1}, Column {first.col + 1}.\n"
+            "What row and column is this second card? (e.g. 2,1 for row 2, "
+            "column 1 -- must differ from the first card's row and/or column):"
+        )
         while True:
-            text, ok = QInputDialog.getText(
-                self, "Which card is this?",
-                "Couldn't tell which grid cell that is from where you clicked.\n"
-                "Row/column of this card, e.g. r0c1 (must differ from the first card's row and/or column):",
-            )
+            text, ok = QInputDialog.getText(self, "Which card is this?", prompt)
             if not ok:
                 self.calibrate_state.cancel_ambiguous_second_card(self.target_step)
                 return
-            match = CARD_SPEC_RE.match(text.strip())
-            if match:
-                row, col = int(match.group(1)), int(match.group(2))
+            cell = parse_human_cell_label(text.strip())
+            if cell is not None:
+                row, col = cell
                 self.calibrate_state.add_measurement_with_cell(self.target_step, row, col)
                 return
             # Invalid label -- loop and ask again, same as the CLI.

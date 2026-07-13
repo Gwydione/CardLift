@@ -36,10 +36,15 @@ _Calibration geometry follow-up (not yet implemented):_
 - [ ] The CLI's own `--calibrate` window (`src/deckforge/calibrate_ui.py`)
       has the same structural issues as items now fixed in the GUI (see
       `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s "Recommended smallest
-      coherent change") — it's a separate Tkinter port, not shared code,
-      so it wasn't touched by that fix. Not currently prioritized: the CLI
-      engine is documented as stable and this alpha's testing surface is
-      the GUI.
+      coherent change" and its grid-inference-conflict addendum,
+      including its own separate `infer_second_cell()` with the identical
+      `round(dx/cell_width)` wrong-cell-count exposure) — it's a separate
+      Tkinter port, not shared code, so none of these fixes were applied
+      to it. Its cell-label prompt (`_prompt_cell_label()`) also still
+      asks for the internal 0-based `rNcN` form the GUI's dialog moved
+      away from (see DEVELOPER.md's "Cell-label prompt uses human, not
+      internal, numbering"). Not currently prioritized: the CLI engine is
+      documented as stable and this alpha's testing surface is the GUI.
 
 _Design review findings (not yet implemented):_
 
@@ -75,6 +80,18 @@ _Bugs found during manual alpha testing:_
       defect. Resolved by running DeckForge from a normal, non-elevated
       PowerShell; manually verified with a real PDF from Explorer. See
       `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
+- [x] Calibrating a real 3×3 deck ("DP Pocket 20 pages for centered
+      bothsided print.pdf") by clicking the upper-left and lower-right
+      cards produced 12 suggested cells (3×4) instead of 9 (3×3). Traced
+      to `infer_second_cell()` silently mislabeling the second card as
+      `(2,3)` instead of `(2,2)` — the deck's real column gutter (~27% of
+      card_width) tips `round(dx/card_width)` past its rounding boundary.
+      A distinct failure mode from item 1's Effects A/B (a wrong *cell*,
+      not a wrong *gap*) — see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s
+      addendum. Fixed by cross-checking the click against the
+      already-computed, independent second-card hint and asking for
+      clarification (existing `NEEDS_CELL_LABEL` prompt) on disagreement,
+      rather than a new tuned threshold.
 
 ---
 
@@ -121,7 +138,22 @@ _Bugs found during manual alpha testing:_
   blocks with a confirmation dialog (Cancel is the default/safe choice)
   instead of silently overwriting existing files. See DEVELOPER.md's
   "Alpha Polish: export overwrite confirmation."
-- 440 passing unit tests across engine + GUI state/logic layers.
+- **Grid-inference conflict detection (Doom Pilgrim).** A second-card
+  click that disagrees with the already-computed, independent
+  second-card hint now asks for clarification instead of silently
+  completing with a wrong cell — see
+  `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s addendum. This is
+  conflict *detection*, not a guarantee against every theoretically
+  ambiguous grid: agreement between the click and the hint is treated as
+  sufficient confidence to proceed automatically, not as proof of
+  correctness.
+- **Cell-label prompt now uses human numbering.** The clarification
+  dialog above asked for the ambiguous card's cell in internal 0-based
+  `r2c2` form, confusing during manual validation. Now asks for a plain
+  1-based `"row,col"` pair (e.g. `2,1`) and states the first card's
+  row/column for reference; internal storage stays 0-based -- see
+  DEVELOPER.md's "Cell-label prompt uses human, not internal, numbering."
+- 469 passing unit tests across engine + GUI state/logic layers.
 
 ---
 

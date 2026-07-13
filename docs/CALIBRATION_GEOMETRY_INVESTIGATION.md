@@ -282,3 +282,96 @@ neighbors measurably reduced the residual error, since nothing in
 `derive_geometry()` actually requires the two
 measured cells to be neighbors — that's purely a UI hinting convention,
 not a math constraint.
+
+---
+
+## Addendum: grid-inference conflict detection (Doom Pilgrim, implemented)
+
+A distinct, later finding — **not** a variant of Effects A or B above.
+Effects A and B are *continuous magnitude* errors: the inferred `(row,
+col)` was always correct, and only the derived `gap_x`/`gap_y` value was
+off by some amount that grew with distance. This finding is a *discrete*
+error: `infer_second_cell()` assigns the **wrong cell** before any gap
+math even runs, because `round(dx / card_width)` and `round(dy /
+card_height)` implicitly assume the real gap is small relative to the
+card. On a real reproduction PDF ("DP Pocket 20 pages for centered
+bothsided print.pdf") with a 3×3 grid and a genuine two-column click —
+upper-left card at internal `(0,0)`, lower-right at intended `(2,2)` —
+the deck's real `gap_x` (~40.6pt) is ~27% of `card_width` (149.5pt),
+just over the `1/(2·2) = 25%` threshold at which `round(dx/card_width)`
+tips from 2 to 3. The result: the second card was silently labeled
+`(2,3)` instead of `(2,2)`, and Review Cards suggested 12 cells in a
+3×4 layout instead of 9 in the correct 3×3.
+
+**Why this can't be fixed by a smarter rounding rule.** For *any*
+candidate integer offset `n`, `derive_geometry()`'s
+`gap = (bx0-ax0)/n - card_width` reproduces the two clicked points
+**exactly**, by construction — there is no formula that recovers a
+unique `(interval count, gap)` pair from two boxes alone; page bounds
+narrow the plausible range but do not resolve it in general (both `n=2`
+and `n=3` are independently page-bounds-plausible for this exact deck).
+This is a genuine information shortfall, not a tuning problem — the only
+way to close it is to ask.
+
+**The fix: cross-check the click against the independent hint, not a
+tuned ratio threshold.** `CalibrateWorkspace` already computes
+`suggested_second_card_offset()` — a page-bounds estimate, derived from
+card size and page dimensions alone, entirely independent of where the
+second click lands — to draw the farther-card hint from fix (2) above.
+`infer_second_cell()` (`calibrate_state.py`) now accepts that same value
+as an optional `hint_col_offset`/`hint_row_offset`, passed through
+`CalibrateState.record_click()` as plain data (page bounds live behind
+`PDFRenderer`, which `calibrate_state.py` deliberately never imports —
+see this module's docstring). For each axis the second card actually
+differs on, if the click-derived offset and the hint-derived offset
+**agree**, the click is used exactly as before, automatically — this is
+still the overwhelming common case, since guidance already nudges users
+toward the hinted card. If they **disagree**, `infer_second_cell()`
+returns `None`, which `record_click()` already turns into
+`ClickOutcome.NEEDS_CELL_LABEL` — the same clarification prompt that has
+always handled an ambiguous (near-identical) click. No new dialog, no new
+workflow step, no tunable "how close to a rounding boundary" margin: the
+check is an equality comparison between two independently-derived
+integers.
+
+An axis whose click-derived offset is `0` (a same-row or same-column
+measurement) is never checked against the hint, even if the hint's value
+for that axis is nonzero — the hint is drawn for a *general* two-axis
+suggestion, and a same-row/-column click never touched that axis at all.
+
+**What this guarantees, and what it doesn't.** Agreement between the two
+estimates is treated as sufficient confidence to proceed automatically —
+it is **not** proof the resulting label is correct. Both estimates share
+the same "gap is small enough not to matter" assumption, and it is
+possible (if unlikely) for both to be wrong in the same way at once, in
+which case this change provides no protection. What it does guarantee is
+narrower and concrete: it detects and escalates the specific class of
+conflict this investigation found — a click-derived offset that
+disagrees with an independently-computed, already-displayed estimate —
+rather than silently trusting whichever one the rounding happened to
+produce. It is conflict detection and human clarification, not a claim
+of universal correctness for every theoretically ambiguous grid.
+
+**Verified against the real PDF**, not just synthetic numbers: an
+end-to-end smoke test drives the actual `CalibrateWorkspace` (real
+`PDFRenderer`, real `ViewTransform`, real click handling) against "DP
+Pocket 20 pages for centered bothsided print.pdf", confirms the
+cell-label prompt fires for the conflicting click, and confirms that
+resolving it with `r2c2` produces a correct 3×3 suggested grid (9 cells)
+in Review Cards. See `tests/test_calibrate_state.py`'s
+`TestDoomPilgrimGridInferenceConflict` for the state-layer regression
+coverage of the same scenario.
+
+**Follow-up: the clarification prompt itself was confusing.** Manual
+validation of the above surfaced a separate issue with the prompt this
+conflict routes to -- it asked the user to type the internal 0-based
+`r2c2` form shown throughout this document, developer/CLI syntax never
+meant to reach the GUI. `calibrate_state.py`'s new
+`parse_human_cell_label()` now accepts a plain 1-based `"row,col"` pair
+(e.g. `"3,3"` for the same lower-right card described above) instead;
+internal storage is unaffected. Re-verified end-to-end against this same
+PDF and click coordinates with the new prompt: the dialog states the
+first card's 1-based row/column, rejects both free-text garbage and the
+old `r2c2` form (retries as before), accepts `"3,3"`, and still produces
+the correct 3×3 / 9-card grid. See DEVELOPER.md's "Cell-label prompt uses
+human, not internal, numbering."

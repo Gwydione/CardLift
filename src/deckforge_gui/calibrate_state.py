@@ -62,6 +62,7 @@ where an earlier revision collapsed the two.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, Sequence
@@ -86,6 +87,11 @@ CALIBRATE_RENDER_SCALE = 4.0
 # rather than a measured card (see record_click's REJECTED_DEGENERATE).
 _MIN_BOX_POINTS = 1.0
 
+# User-facing "row,col" cell label, 1-based (see parse_human_cell_label) --
+# deliberately distinct from measure.CARD_SPEC_RE's "rNcN", which is
+# 0-based developer/CLI syntax that must never reach this GUI's dialogs.
+_HUMAN_CELL_LABEL_RE = re.compile(r"^\s*(\d+)\s*,\s*(\d+)\s*$")
+
 
 def normalize_box(x1: float, y1: float, x2: float, y2: float) -> tuple[float, float, float, float]:
     """Orders two arbitrary corner points into (x1,y1,x2,y2) with x2>x1,
@@ -94,11 +100,28 @@ def normalize_box(x1: float, y1: float, x2: float, y2: float) -> tuple[float, fl
     return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
 
 
+def parse_human_cell_label(text: str) -> Optional[tuple[int, int]]:
+    """Parses a 1-based "row,col" cell label typed by the user (e.g. "2,1"
+    for row 2, column 1) into a 0-based (row, col) pair for internal
+    storage, or None if the text isn't a valid label. Row/col must each be
+    1 or greater -- "0,1" is rejected rather than silently treated as row
+    0, since a user typing a human row number would never mean 0."""
+    match = _HUMAN_CELL_LABEL_RE.match(text)
+    if not match:
+        return None
+    row, col = int(match.group(1)), int(match.group(2))
+    if row < 1 or col < 1:
+        return None
+    return (row - 1, col - 1)
+
+
 def infer_second_cell(
     first_row: int, first_col: int,
     first_box: tuple[float, float, float, float],
     second_box: tuple[float, float, float, float],
     cell_width: float, cell_height: float,
+    hint_col_offset: Optional[int] = None,
+    hint_row_offset: Optional[int] = None,
 ) -> Optional[tuple[int, int]]:
     """Figures out a second measured card's (row, col) from where it sits
     relative to the first card, so the user doesn't have to label the
@@ -116,11 +139,48 @@ def infer_second_cell(
     moved" unit, so a genuine diagonal click yields nonzero offsets on
     both axes independently.
 
-    Returns None only when neither axis rounds to a nonzero cell offset
-    (the two clicks are essentially the same point) -- callers should fall
-    back to asking. Unit-agnostic (works the same in points or pixels,
-    since only ratios matter), so this needs no adaptation from
-    calibrate_ui.py's pixel-space original."""
+    Returns None when neither axis rounds to a nonzero cell offset (the
+    two clicks are essentially the same point) -- callers should fall back
+    to asking. Unit-agnostic (works the same in points or pixels, since
+    only ratios matter), so this needs no adaptation from
+    calibrate_ui.py's pixel-space original.
+
+    HINT-VS-CLICK CONFLICT DETECTION
+    ----------------------------------
+    round(dx / cell_width) silently assumes the two measured cells are
+    exactly `col_offset` cells apart with a *negligible* gap -- true for
+    most decks, but wrong whenever the real column gutter is a large
+    enough fraction of card_width to tip the ratio past a rounding
+    boundary (see CALIBRATION_GEOMETRY_INVESTIGATION.md's Doom Pilgrim
+    case: a genuine 2-column click rounds to 3 because the deck's real
+    gap_x is ~27% of card_width). Nothing about the two clicked boxes
+    alone can distinguish "genuinely 3 columns apart" from "2 columns
+    apart with a wide gutter" -- both are exactly consistent with
+    whatever gap derive_geometry() would back-solve for either integer.
+
+    `hint_col_offset`/`hint_row_offset`, if given, are the *independently*
+    computed page-bounds estimate (suggested_second_card_offset() --
+    derived from card size and page dimensions, known before this click
+    ever happened, not from dx/dy at all). When the click-derived offset
+    on an axis the second card actually differs on disagrees with that
+    independent estimate, this returns None (routing the caller to
+    ClickOutcome.NEEDS_CELL_LABEL) instead of silently picking one of the
+    two guesses. When they agree, that agreement is treated as good
+    enough confidence for the normal automatic path -- it is NOT proof
+    the inferred label is correct (both estimates share the same
+    small-gap assumption and could in principle both be wrong at once);
+    the purpose of this check is to catch the specific, real conflicts
+    this data actually reveals, not to guarantee correctness for every
+    theoretically possible grid.
+
+    An axis is only checked when the second card actually differs on it
+    (col_offset != 0 / row_offset != 0) -- a same-row or same-column
+    measurement never gets flagged just because the *general* hint (drawn
+    for a two-axis diagonal suggestion) happened to have a nonzero value
+    for the untouched axis. hint_col_offset/hint_row_offset are omitted
+    (None) entirely when no independent estimate is available (e.g. page
+    size couldn't be read), which reproduces the pre-existing behavior
+    exactly -- this parameter is purely additive."""
     if cell_width <= 0 or cell_height <= 0:
         return None
     fx1, fy1, fx2, fy2 = first_box
@@ -130,6 +190,10 @@ def infer_second_cell(
     col_offset = round(dx / cell_width)
     row_offset = round(dy / cell_height)
     if col_offset == 0 and row_offset == 0:
+        return None
+    if col_offset != 0 and hint_col_offset is not None and abs(col_offset) != hint_col_offset:
+        return None
+    if row_offset != 0 and hint_row_offset is not None and abs(row_offset) != hint_row_offset:
         return None
     return (first_row + row_offset, first_col + col_offset)
 
@@ -359,7 +423,16 @@ class CalibrateState:
 
     # -- click handling ---------------------------------------------------
 
-    def record_click(self, step: WorkflowStep, x_pt: float, y_pt: float) -> ClickOutcome:
+    def record_click(
+        self, step: WorkflowStep, x_pt: float, y_pt: float,
+        hint_col_offset: Optional[int] = None, hint_row_offset: Optional[int] = None,
+    ) -> ClickOutcome:
+        """hint_col_offset/hint_row_offset are the workspace's already-drawn
+        second-card hint (suggested_second_card_offset()), passed through
+        as plain data -- this module stays free of any PDF/Qt import, so
+        it cannot compute a page-bounds estimate itself. Omit both (the
+        default) when no hint is available; see infer_second_cell()'s
+        docstring for what they change."""
         target = self.target_for(step)
         if target.is_complete or len(target.measurements) >= 2:
             return ClickOutcome.IGNORED_ALREADY_COMPLETE
@@ -384,7 +457,10 @@ class CalibrateState:
         first = target.measurements[0]
         cell_width = first.x2 - first.x1
         cell_height = first.y2 - first.y1
-        cell = infer_second_cell(first.row, first.col, first.as_tuple(), box, cell_width, cell_height)
+        cell = infer_second_cell(
+            first.row, first.col, first.as_tuple(), box, cell_width, cell_height,
+            hint_col_offset=hint_col_offset, hint_row_offset=hint_row_offset,
+        )
         if cell is None:
             target._pending_second_box = box
             return ClickOutcome.NEEDS_CELL_LABEL

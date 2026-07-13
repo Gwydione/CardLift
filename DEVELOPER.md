@@ -452,6 +452,49 @@ a straight port" above for why), and the CLI engine is documented
 elsewhere in this file as stable. Left as a follow-up rather than folded
 into this pass; see `docs/RELEASE_READINESS.md`'s Open section.
 
+**Grid-inference conflict detection (Doom Pilgrim).** A real 3×3 deck
+surfaced a distinct failure mode from the one above: `infer_second_cell()`
+assigning the *wrong cell* (not just a wrong gap) when a real column or
+row gutter is large enough relative to card size to tip
+`round(dx/card_width)`/`round(dy/card_height)` past a rounding boundary --
+see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s addendum for the full
+trace. Fixed by cross-checking the click-derived offset against
+`suggested_second_card_offset()`'s independent, page-bounds-based
+estimate -- already computed to draw the second-card hint, now also
+threaded into `CalibrateState.record_click()` as plain
+`hint_col_offset`/`hint_row_offset` data (`calibrate_workspace.py`'s new
+`_hint_offsets_for_conflict_check()` is the only place that reads page
+size; `calibrate_state.py` stays free of any PDF/Qt import, per this
+file's "WHY THIS DOESN'T MIRROR..." family of module docstrings). An axis
+is only checked when the click actually differs on it, so a same-row or
+same-column measurement is never flagged just because the hint's
+(unrelated) value on the untouched axis differs. Agreement completes
+automatically exactly as before; disagreement returns `None` from
+`infer_second_cell()`, which `record_click()` already turns into
+`ClickOutcome.NEEDS_CELL_LABEL` -- the pre-existing clarification prompt,
+not a new dialog or workflow step. This is deliberately framed as
+**conflict detection**, not a correctness guarantee: two independently-
+derived estimates agreeing is good evidence, not proof, since both share
+the same "gap is small" assumption that could in principle be wrong on
+both sides at once.
+
+**Cell-label prompt uses human, not internal, numbering.** Manual
+validation of the conflict-detection prompt above found it asking the
+user for the ambiguous card's cell as `r2c2` -- this project's internal
+0-based row/col convention (also `--card`'s CLI syntax, `measure.
+CARD_SPEC_RE`), never meant to be user-facing. `calibrate_state.py`'s new
+`parse_human_cell_label()` accepts a plain 1-based `"row,col"` pair (e.g.
+`"2,1"` for row 2, column 1) and returns the 0-based tuple `record_click()`/
+`add_measurement_with_cell()` already expect -- no change to internal
+storage or the click-resolution workflow, only the text at this one
+boundary. `calibrate_workspace.py`'s dialog also now states the first
+card's row/column (converted to 1-based for display) so the user has a
+concrete anchor for what "differs from the first card" means, rather than
+having to remember an unlabeled rectangle. Deliberately not touched: the
+CLI's `--card`/`--measure` syntax and the separate Tkinter `calibrate_ui.py`
+prompt (same rationale as the "Deliberately not touched" note above --
+developer-facing, not shared code with the GUI).
+
 **Review Cards milestone.** The last checkpoint before Export: every
 suggested card is rendered as a clickable thumbnail so the user can catch
 a miscount or a bad crop before anything is written to disk -- CORE_CONCEPTS.md's

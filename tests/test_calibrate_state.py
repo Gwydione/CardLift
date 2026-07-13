@@ -9,6 +9,7 @@ from deckforge_gui.calibrate_state import (
     calibrate_status_text,
     infer_second_cell,
     normalize_box,
+    parse_human_cell_label,
     predicted_neighbor_box,
     suggested_grid,
     suggested_second_card_offset,
@@ -37,6 +38,44 @@ class TestNormalizeBox:
 
     def test_mixed_order_corners_are_reordered(self) -> None:
         assert normalize_box(10, 220, 110, 20) == (10, 20, 110, 220)
+
+
+class TestParseHumanCellLabel:
+    def test_parses_1_based_pair_into_0_based_row_col(self) -> None:
+        assert parse_human_cell_label("2,1") == (1, 0)
+
+    def test_parses_row_1_col_1_as_0_0(self) -> None:
+        assert parse_human_cell_label("1,1") == (0, 0)
+
+    def test_tolerates_surrounding_and_internal_whitespace(self) -> None:
+        assert parse_human_cell_label(" 3 , 4 ") == (2, 3)
+
+    def test_multi_digit_numbers(self) -> None:
+        assert parse_human_cell_label("12,10") == (11, 9)
+
+    def test_rejects_row_zero(self) -> None:
+        assert parse_human_cell_label("0,1") is None
+
+    def test_rejects_col_zero(self) -> None:
+        assert parse_human_cell_label("1,0") is None
+
+    def test_rejects_negative_numbers(self) -> None:
+        assert parse_human_cell_label("-1,1") is None
+
+    def test_rejects_developer_rnc_n_syntax(self) -> None:
+        assert parse_human_cell_label("r1c0") is None
+
+    def test_rejects_missing_comma(self) -> None:
+        assert parse_human_cell_label("2 1") is None
+
+    def test_rejects_non_numeric(self) -> None:
+        assert parse_human_cell_label("a,b") is None
+
+    def test_rejects_empty_string(self) -> None:
+        assert parse_human_cell_label("") is None
+
+    def test_rejects_extra_fields(self) -> None:
+        assert parse_human_cell_label("2,1,3") is None
 
 
 class TestInferSecondCell:
@@ -105,6 +144,84 @@ class TestInferSecondCell:
         first = (0.0, 0.0, 100.0, 300.0)
         second = (2.0, 2.0, 102.0, 302.0)
         assert infer_second_cell(0, 0, first, second, cell_width=100.0, cell_height=300.0) is None
+
+
+class TestInferSecondCellHintAgreement:
+    """suggested_second_card_offset()'s independent, page-bounds-based
+    estimate cross-checks the click-derived rounding -- see
+    CALIBRATION_GEOMETRY_INVESTIGATION.md's Doom Pilgrim case, where a
+    genuine 2-column click rounds to 3 because the deck's real gap_x is
+    ~27% of card_width. Agreement is treated as sufficient confidence for
+    the automatic path, NOT as proof the result is correct -- these tests
+    only cover conflict *detection*, not universal correctness."""
+
+    def test_no_hint_preserves_pre_existing_behavior(self) -> None:
+        # Same wide-gutter shape as Doom Pilgrim, reproduced with round
+        # numbers: true offset is 2 columns, but round(260/100)=3.
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (260.0, 0.0, 360.0, 100.0)
+        assert infer_second_cell(0, 0, first, second, cell_width=100.0, cell_height=100.0) == (0, 3)
+
+    def test_agreement_on_column_axis_is_used_normally(self) -> None:
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (260.0, 0.0, 360.0, 100.0)  # round(260/100) = 3
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=3, hint_row_offset=None,
+        ) == (0, 3)
+
+    def test_disagreement_on_column_axis_returns_none(self) -> None:
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (260.0, 0.0, 360.0, 100.0)  # round(260/100) = 3, hint says 2
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=2, hint_row_offset=None,
+        ) is None
+
+    def test_disagreement_on_row_axis_returns_none(self) -> None:
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (0.0, 260.0, 100.0, 360.0)  # round(260/100) = 3, hint says 2
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=None, hint_row_offset=2,
+        ) is None
+
+    def test_disagreement_on_both_axes_returns_none(self) -> None:
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (260.0, 260.0, 360.0, 360.0)
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=2, hint_row_offset=2,
+        ) is None
+
+    def test_same_row_measurement_ignores_hint_on_the_untouched_row_axis(self) -> None:
+        # row_offset is 0 here (same row) -- a general two-axis hint (e.g.
+        # sized for a diagonal suggestion) may carry an unrelated nonzero
+        # row_offset, which must never be treated as a conflict for a
+        # click that never touched that axis.
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (200.0, 0.0, 300.0, 100.0)  # exact, same row, 2 columns over
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=2, hint_row_offset=3,  # row hint irrelevant here
+        ) == (0, 2)
+
+    def test_same_column_measurement_ignores_hint_on_the_untouched_column_axis(self) -> None:
+        first = (0.0, 0.0, 100.0, 100.0)
+        second = (0.0, 200.0, 100.0, 300.0)  # exact, same column, 2 rows down
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=100.0, cell_height=100.0,
+            hint_col_offset=5, hint_row_offset=2,  # column hint irrelevant here
+        ) == (2, 0)
+
+    def test_adjacent_diagonal_with_agreeing_hint_is_unaffected(self) -> None:
+        cw, ch = 174.58, 239.75
+        first = (0.0, 0.0, cw, ch)
+        second = (cw, ch, 2 * cw, 2 * ch)
+        assert infer_second_cell(
+            0, 0, first, second, cell_width=cw, cell_height=ch,
+            hint_col_offset=1, hint_row_offset=1,
+        ) == (1, 1)
 
 
 class TestPredictedNeighborBox:
@@ -267,6 +384,167 @@ class TestRecordClickTwoCards:
         assert outcome is ClickOutcome.IGNORED_ALREADY_COMPLETE
         assert state.cards.geometry is geometry_before
         assert state.cards.pending_point is None
+
+
+class TestRecordClickHintConflict:
+    """record_click()-level coverage for the hint-vs-click agreement
+    check (see TestInferSecondCellHintAgreement for the pure-function
+    cases) -- confirms the conflict actually routes through
+    ClickOutcome.NEEDS_CELL_LABEL and resolves via the existing
+    add_measurement_with_cell() clarification path, with no new
+    workflow/dialog involved."""
+
+    def test_far_diagonal_agreement_completes_automatically(self) -> None:
+        # Zero gap, so both estimates are unambiguous and agree -- the
+        # ordinary case, and it must stay a single automatic completion.
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 200.0, 300.0)
+        outcome = state.record_click(
+            CARDS, 400.0, 900.0, hint_col_offset=2, hint_row_offset=3,
+        )
+        assert outcome is ClickOutcome.PENDING_SET
+        outcome = state.record_click(
+            CARDS, 600.0, 1200.0, hint_col_offset=2, hint_row_offset=3,
+        )
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (3, 2)
+
+    def test_same_row_far_measurement_completes_despite_irrelevant_row_hint(self) -> None:
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 200.0, 0.0, hint_col_offset=2, hint_row_offset=5)
+        outcome = state.record_click(CARDS, 300.0, 100.0, hint_col_offset=2, hint_row_offset=5)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (0, 2)
+
+    def test_same_column_far_measurement_completes_despite_irrelevant_column_hint(self) -> None:
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 0.0, 200.0, hint_col_offset=5, hint_row_offset=2)
+        outcome = state.record_click(CARDS, 100.0, 300.0, hint_col_offset=5, hint_row_offset=2)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (2, 0)
+
+    def test_row_axis_conflict_needs_a_cell_label_and_resolves(self) -> None:
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 0.0, 260.0, hint_col_offset=None, hint_row_offset=2)
+        outcome = state.record_click(CARDS, 100.0, 360.0, hint_col_offset=None, hint_row_offset=2)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+        assert len(state.cards.measurements) == 1
+
+        outcome = state.add_measurement_with_cell(CARDS, row=2, col=0)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (2, 0)
+
+    def test_both_axes_conflict_needs_a_cell_label_and_resolves(self) -> None:
+        state = CalibrateState()
+        state.record_click(CARDS, 0.0, 0.0)
+        state.record_click(CARDS, 100.0, 100.0)
+        state.record_click(CARDS, 260.0, 260.0, hint_col_offset=2, hint_row_offset=2)
+        outcome = state.record_click(CARDS, 360.0, 360.0, hint_col_offset=2, hint_row_offset=2)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+        assert len(state.cards.measurements) == 1
+
+        outcome = state.add_measurement_with_cell(CARDS, row=2, col=2)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (2, 2)
+
+
+class TestDoomPilgrimGridInferenceConflict:
+    """End-to-end reproduction of the real Doom Pilgrim PDF's grid-
+    inference bug (docs/CALIBRATION_GEOMETRY_INVESTIGATION.md): clicking
+    the visually-correct upper-left (r0c0) and lower-right (r2c2) cards'
+    crosshairs -- measured directly off "DP Pocket 20 pages for centered
+    bothsided print.pdf" page 1, rendered at CALIBRATE_RENDER_SCALE=4.0,
+    pixel coordinates divided by 4.0 -- infers (2,3) instead of (2,2)
+    because the deck's real column gutter (~40.6pt) is ~27% of
+    card_width (149.5pt), just over the 1/(2*2)=25% rounding-danger
+    threshold for a 2-column offset. suggested_second_card_offset()'s
+    independent page-bounds estimate still correctly predicts
+    col_offset=2, so passing it into record_click() must surface the
+    conflict instead of silently completing with the wrong grid."""
+
+    FIRST_BOX = (31.5, 17.75, 181.0, 266.5)       # r0c0 crosshairs, PDF points
+    SECOND_BOX = (411.75, 521.5, 561.25, 776.75)  # r2c2 crosshairs, PDF points
+    PAGE_WIDTH_PT = 595.19
+    PAGE_HEIGHT_PT = 792.00
+
+    def _click_both_cards(self, state: CalibrateState, with_hint: bool) -> ClickOutcome:
+        state.record_click(CARDS, self.FIRST_BOX[0], self.FIRST_BOX[1])
+        state.record_click(CARDS, self.FIRST_BOX[2], self.FIRST_BOX[3])
+        first = state.cards.measurements[0]
+        hint_col_offset = hint_row_offset = None
+        if with_hint:
+            hint_col_offset, hint_row_offset = suggested_second_card_offset(
+                first.x2 - first.x1, first.y2 - first.y1,
+                self.PAGE_WIDTH_PT, self.PAGE_HEIGHT_PT, first.as_tuple(),
+            )
+        state.record_click(
+            CARDS, self.SECOND_BOX[0], self.SECOND_BOX[1],
+            hint_col_offset=hint_col_offset, hint_row_offset=hint_row_offset,
+        )
+        return state.record_click(
+            CARDS, self.SECOND_BOX[2], self.SECOND_BOX[3],
+            hint_col_offset=hint_col_offset, hint_row_offset=hint_row_offset,
+        )
+
+    def test_without_hint_reproduces_the_original_bug(self) -> None:
+        """Documents the pre-fix behavior for contrast -- not the
+        recommended path; the real GUI always supplies a hint once a
+        page's size is known (see CalibrateWorkspace._hint_offsets_for_
+        conflict_check())."""
+        state = CalibrateState(render_scale=4.0)
+        outcome = self._click_both_cards(state, with_hint=False)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (2, 3)
+        rows, cols = suggested_grid(state.cards.geometry, self.PAGE_WIDTH_PT, self.PAGE_HEIGHT_PT)
+        assert (rows, cols) == (3, 4)
+
+    def test_with_hint_requests_cell_label_instead_of_guessing(self) -> None:
+        state = CalibrateState(render_scale=4.0)
+        outcome = self._click_both_cards(state, with_hint=True)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+        assert len(state.cards.measurements) == 1  # second card not yet appended
+        assert state.cards.geometry is None
+
+    def test_clarifying_with_the_correct_cell_yields_a_3x3_grid(self) -> None:
+        state = CalibrateState(render_scale=4.0)
+        outcome = self._click_both_cards(state, with_hint=True)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+
+        outcome = state.add_measurement_with_cell(CARDS, row=2, col=2)
+        assert outcome is ClickOutcome.COMPLETE
+        assert (state.cards.measurements[1].row, state.cards.measurements[1].col) == (2, 2)
+
+        geo = state.cards.geometry
+        assert geo is not None
+        assert geo.gap_x == pytest.approx(40.625, abs=0.01)
+        rows, cols = suggested_grid(geo, self.PAGE_WIDTH_PT, self.PAGE_HEIGHT_PT)
+        assert (rows, cols) == (3, 3)
+
+    def test_no_regression_to_ungauged_axis_warning_after_clarification(self) -> None:
+        """Both axes were genuinely measured (different row AND column),
+        so the completion text must stay free of the "wasn't measured"
+        warning -- confirms the clarification path doesn't reintroduce
+        Effect A from CALIBRATION_GEOMETRY_INVESTIGATION.md."""
+        state = CalibrateState(render_scale=4.0)
+        self._click_both_cards(state, with_hint=True)
+        state.add_measurement_with_cell(CARDS, row=2, col=2)
+
+        geo = state.cards.geometry
+        assert geo.gap_x_derived is True
+        assert geo.gap_y_derived is True
+
+        page_size = (self.PAGE_WIDTH_PT, self.PAGE_HEIGHT_PT)
+        _, body = calibrate_guidance_text(CARDS, state.cards, page_size=page_size)
+        status = calibrate_status_text(CARDS, state.cards, page_size=page_size)
+        assert "wasn't measured" not in body
+        assert "wasn't measured" not in status
 
 
 class TestSharedBackIsSingleCardOnly:
