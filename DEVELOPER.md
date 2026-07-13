@@ -1036,6 +1036,12 @@ miss, like one page's grid drifting relative to the others.
   duplicates something already done. This project's existing log
   (`git log --oneline`) is a good model for commit message style —
   short, milestone-based, present tense.
+- **Version bump.** `deckforge.__version__` (`src/deckforge/__init__.py`)
+  is the single authoritative version string — the GUI's window title and
+  `TopBar` label both read it directly rather than carrying their own
+  copy. Bump the pre-release number (e.g. `0.1.0-alpha` → `0.1.0-alpha.2`)
+  each time a build goes out for alpha testing, so a bug report can be
+  tied to the exact build it came from. See `docs/ALPHA_HARDENING_PLAN.md` §5.
 
 ## Project Structure
 

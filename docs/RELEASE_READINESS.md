@@ -20,7 +20,7 @@ Ranked by risk, not by discovery order.
 | 3 | Safe shutdown during export | Closing the app mid-export can destroy a running `QThread` — known Qt crash pattern, plus silent partial file writes | Planned — §2 |
 | 4 | Crash logging | Zero diagnostic trail today; every other bug found during alpha testing is harder to fix without this | Planned — §6 |
 | 5 | Regression testing for the above | Confirms 2 & 3 are actually fixed and stay fixed | Planned — §3 |
-| 6 | Release versioning | Bug reports currently can't be tied to a build | Planned — §5 |
+| 6 | Release versioning | Bug reports currently can't be tied to a build | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §5 |
 | 7 | README accuracy | Alpha testers' entry point currently hides the GUI entirely | Implemented — see below |
 
 Full design review, risk tracing, and implementation plan for items 2-7:
@@ -56,8 +56,6 @@ _Design review findings (not yet implemented):_
       the suite's first widget-level test; it covers the completion
       message fix and the export thread-sync fixes (see Accomplished),
       but not `closeEvent`. — plan §3
-- [ ] No version identity for the GUI anywhere (window title, about box,
-      etc.) — CLI engine has `__version__ = "0.1.0"`, GUI has nothing. — plan §5
 - [ ] No crash/error logging anywhere in the GUI — an uncaught exception
       (especially inside the export worker thread) is currently
       invisible outside a live terminal. — plan §6
@@ -138,6 +136,12 @@ _Bugs found during manual alpha testing:_
   ambiguous grid: agreement between the click and the hint is treated as
   sufficient confidence to proceed automatically, not as proof of
   correctness.
+- **Release versioning (GUI version identity).** `deckforge.__version__`
+  (now `0.1.0-alpha`) is the single authoritative version constant; the
+  GUI had no version display anywhere. `MainWindow`'s window title and a
+  new muted `TopBar` label both import and display it directly, so bug
+  reports/screenshots can be tied to a build. See `docs/ALPHA_HARDENING_PLAN.md`
+  §5 and DEVELOPER.md's "Git Workflow" for the bump convention.
 - **Cell-label prompt now uses human numbering.** The clarification
   dialog above asked for the ambiguous card's cell in internal 0-based
   `r2c2` form, confusing during manual validation. Now asks for a plain
