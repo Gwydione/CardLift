@@ -11,12 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeyEvent, QResizeEvent
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QCloseEvent, QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
@@ -168,6 +169,10 @@ class MainWindow(QMainWindow):
         self.export_workspace = self.workspaces[WorkflowStep.EXPORT]
         self.export_workspace.back_to_review_clicked.connect(self._on_export_back_to_review)
         self.export_workspace.start_new_deck_clicked.connect(self._on_start_new_deck)
+        self.export_workspace.export_finished.connect(self._on_export_finished_while_closing)
+        # True exactly while a "Finish Export, Then Close" close is
+        # pending -- see closeEvent()/_on_export_finished_while_closing().
+        self._close_after_export = False
 
         self.guidance_panel = GuidancePanel(
             self.state, self.calibrate_state, self.find_cards_state, self.review_cards_state,
@@ -366,3 +371,119 @@ class MainWindow(QMainWindow):
             self._refresh_current_workspace()
             return
         super().keyPressEvent(event)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # export_workspace.is_exporting() reflects the live QThread's
+        # actual running state directly -- it doesn't matter whether Export
+        # is the step currently shown (self.state.current_step): a worker
+        # is only ever created for, and always belongs to, whatever PDF is
+        # currently loaded (set_pdf() blocks on any prior worker before a
+        # new one can start -- see export_workspace.py's _pdf_generation
+        # docstring), so there is never an orphaned worker for a deck that
+        # isn't the one on screen.
+        #
+        # This never blocks: a live export is never joined here (that was
+        # the earlier, rejected design -- an unbounded QThread.wait() on
+        # the GUI thread leaves the real window Windows-hung for the whole
+        # remaining export, confirmed via IsHungAppWindow() during
+        # investigation). "Finish Export, Then Close" instead ignores this
+        # close and records a pending request; _on_export_finished_while_
+        # closing() -- driven by export_workspace's own post-cleanup
+        # export_finished signal, not by polling -- issues the real close
+        # once the export actually finishes.
+        #
+        # Scope note: this only guarantees a clean shutdown for normal
+        # in-app close (title-bar X, Alt+F4, taskbar close), which all
+        # route through this override. It does not, and cannot, make the
+        # export atomic against a forced process kill (Task Manager),
+        # system shutdown/logoff, or a mid-write OSError -- none of those
+        # go through Qt's close machinery at all, and true export
+        # cancellation remains explicitly out of scope (see
+        # docs/ALPHA_HARDENING_PLAN.md §2).
+        if not self.export_workspace.is_exporting():
+            # Covers both ordinary close-with-nothing-running, and the
+            # second, automatic close request _on_export_finished_while_
+            # closing() issues after a successful deferred export -- by
+            # then the worker is already cleared, so this accepts it
+            # immediately with no dialog.
+            return
+        if self._close_after_export:
+            # A deferred close is already pending from an earlier "Finish
+            # Export, Then Close" -- an impatient repeat close attempt (X
+            # again, Alt+F4 again) must not stack another confirmation
+            # dialog or another pending request, just keep waiting quietly.
+            event.ignore()
+            return
+        if self._confirm_quit_during_export():
+            # _confirm_quit_during_export()'s QMessageBox.exec() runs a
+            # real nested event loop -- the export can finish (and
+            # export_finished can already have fired, back while
+            # _close_after_export was still False, so it will never fire
+            # again for this worker) before the user answers it. Re-check
+            # is_exporting() with fresh eyes rather than trusting the
+            # snapshot from the top of this method: if the export is
+            # already done, close immediately via the ordinary no-export
+            # path instead of deferring on a signal that has already come
+            # and gone, which would otherwise leave the close pending
+            # forever (until some later, unrelated close attempt).
+            if self.export_workspace.is_exporting():
+                self._close_after_export = True
+                event.ignore()
+            else:
+                return
+        else:
+            event.ignore()
+
+    def _on_export_finished_while_closing(self, succeeded: bool) -> None:
+        """The export_workspace.export_finished consumer: fires once, right
+        after export_workspace's own success/failure handling and worker
+        cleanup (_on_export_worker_finished) have completed for the
+        worker a pending deferred close was waiting on. A no-op unless
+        that close is actually pending, so this is safe to leave connected
+        unconditionally rather than wiring/unwiring it per-export."""
+        if not self._close_after_export:
+            return
+        self._close_after_export = False
+        if succeeded:
+            # Not self.close() directly: this runs from inside the queued
+            # signal delivery for export_finished, and scheduling the real
+            # close for the next event-loop turn (rather than re-entering
+            # Qt's close machinery from within this slot) keeps the second
+            # close attempt an ordinary, fresh one -- handled by the
+            # `not is_exporting()` branch above like any other close.
+            QTimer.singleShot(0, self.close)
+        # Failure: leave the pending request cleared and the window open --
+        # export_workspace's own _on_export_failed() has already shown the
+        # failure state; quitting anyway would silently conceal it.
+
+    def _confirm_quit_during_export(self) -> bool:
+        """Shows the export-in-progress close confirmation. Returns True if
+        the user chose to finish the export and then close, False if they
+        chose to keep the app open. A separate method (not inlined into
+        closeEvent()) so tests can drive the decision directly rather than
+        simulating a QMessageBox click, the same reason
+        export_workspace.py's _confirm_overwrite_if_needed() is its own
+        method.
+
+        The wording is deliberate: it tells the user up front that this is
+        a one-way choice (no cancellation exists once it's made -- see
+        closeEvent()/_on_export_finished_while_closing()) and that
+        choosing it does not freeze the application, since that freeze --
+        not the crash it was mistaken for -- was the actual defect this
+        replaced (see docs/ALPHA_HARDENING_PLAN.md §2)."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Export in progress")
+        box.setText(
+            "An export is still in progress.\n\n"
+            "DeckForge can remain open, or it can finish the export and "
+            "then close automatically once it's done. The application "
+            "stays fully responsive the whole time the export is "
+            "finishing."
+        )
+        keep_open_btn = box.addButton("Keep DeckForge Open", QMessageBox.ButtonRole.RejectRole)
+        finish_close_btn = box.addButton("Finish Export, Then Close", QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(keep_open_btn)
+        box.setEscapeButton(keep_open_btn)
+        box.exec()
+        return box.clickedButton() is finish_close_btn

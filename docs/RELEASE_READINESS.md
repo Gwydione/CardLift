@@ -5,7 +5,7 @@ priority before DeckForge's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
-Last updated: 2026-07-13.
+Last updated: 2026-07-14.
 
 ---
 
@@ -17,9 +17,9 @@ Ranked by risk, not by discovery order.
 |---|---|---|---|
 | 1 | **Calibration geometry robustness** (different calibration-click choices produce systematically different, sometimes-clipping grids) | Correctness of the core "click two corners, get a grid" promise — the product's central value proposition. Flagged by alpha testing as the current highest-priority issue. | Implemented — see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md` |
 | 2 | Export thread synchronization (renderer race, stale in-progress UI, destination-message race, stale cross-deck completion) | Real crash/corruption risk during the app's core "write files to disk" action | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §1 |
-| 3 | Safe shutdown during export | Closing the app mid-export can destroy a running `QThread` — known Qt crash pattern, plus silent partial file writes | Planned — §2 |
+| 3 | Safe shutdown during export | Closing the app mid-export can destroy a running `QThread` — known Qt crash pattern, plus silent partial file writes | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §2 |
 | 4 | Crash logging | Zero diagnostic trail today; every other bug found during alpha testing is harder to fix without this | Planned — §6 |
-| 5 | Regression testing for the above | Confirms 2 & 3 are actually fixed and stay fixed | Planned — §3 |
+| 5 | Regression testing for the above | Confirms 2 & 3 are actually fixed and stay fixed | Mostly implemented — §3 (worker-failure test still not started) |
 | 6 | Release versioning | Bug reports currently can't be tied to a build | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §5 |
 | 7 | README accuracy | Alpha testers' entry point currently hides the GUI entirely | Implemented — see below |
 
@@ -48,14 +48,6 @@ _Calibration geometry follow-up (not yet implemented):_
 
 _Design review findings (not yet implemented):_
 
-- [ ] No `closeEvent` handling: quitting the app while an export is
-      running can destroy a live `QThread` (crash risk) and leaves
-      partial files on disk with no warning. — plan §2
-- [ ] No widget/thread-level regression tests exist for `closeEvent`
-      above — `tests/test_export_workspace.py` (new, see Accomplished) is
-      the suite's first widget-level test; it covers the completion
-      message fix and the export thread-sync fixes (see Accomplished),
-      but not `closeEvent`. — plan §3
 - [ ] No crash/error logging anywhere in the GUI — an uncaught exception
       (especially inside the export worker thread) is currently
       invisible outside a live terminal. — plan §6
@@ -196,9 +188,49 @@ _Bugs found during manual alpha testing:_
   `TestExportReentry` in `tests/test_export_workspace.py` drives a real
   `PDFRenderer`/`QThread`/`export_cells()` pipeline (not a synthetic slot
   call) to cover all four scenarios. See plan §1.
-- 478 passing unit tests across engine + GUI state/logic layers (469
-  pre-existing + 9 new in `tests/test_export_workspace.py`, the suite's
-  first widget-level tests — see the two bullets above).
+- **Safe, non-blocking shutdown during export.** `MainWindow.closeEvent()`
+  no longer leaves quitting mid-export to Qt's default teardown, which
+  could destroy a live `_ExportWorker` `QThread` (a well-known hard-crash
+  pattern) and leave a partial, unlabeled file set with no warning.
+  Closing with no export running is unchanged. Closing during an export
+  shows a choice — **Keep DeckForge Open** (default/Escape, ignores the
+  close, export keeps running) or **Finish Export, Then Close** (defers
+  the close via a `_close_after_export` flag and `event.ignore()` —
+  never a blocking join on the GUI thread). An earlier version of this
+  design did block on `.wait()` inside `closeEvent()`; manual acceptance
+  testing against a real large export showed that this leaves the real
+  window genuinely Windows-hung (confirmed via the Win32
+  `IsHungAppWindow()` API) for however long the export takes, since
+  Windows flags an unresponsive window after ~5 seconds — a hung
+  foreground window being force-closed by the user or the OS is what the
+  manual crash actually was. The shipped design instead waits on
+  `ExportWorkspace.export_finished`, a signal emitted only after the
+  worker's own success/failure handling and cleanup are complete, and
+  schedules the real close via `QTimer.singleShot(0, self.close)` once it
+  fires — so the GUI event loop keeps running normally for the whole
+  export, and a failed export clears the pending close and leaves the
+  window open with its normal failure message rather than concealing the
+  failure by quitting anyway. A repeat close attempt while a close is
+  already deferred is silently ignored rather than showing another
+  dialog. A second race, caught in review before this shipped: the
+  confirmation dialog's own `QMessageBox.exec()` runs a real nested event
+  loop, so the export can finish — and `export_finished` can already have
+  fired, back while `_close_after_export` was still `False` — before the
+  user answers it; `closeEvent()` re-checks `is_exporting()` right after
+  the dialog returns and, if the export is already done, closes
+  immediately via the ordinary no-export path instead of arming a
+  deferred close that would then wait forever on a signal that already
+  came and went. No cancellation was added — once "Finish Export, Then
+  Close" is chosen, it cannot be undone, by design. This guarantees clean,
+  responsive behavior only for normal in-app close (title-bar X, Alt+F4,
+  taskbar close) — it makes no claim about a forced process kill, an OS
+  shutdown that bypasses Qt's close machinery, or a write failure
+  mid-export. See `docs/ALPHA_HARDENING_PLAN.md` §2.
+- 486 passing unit tests across engine + GUI state/logic layers (469
+  pre-existing + 9 in `tests/test_export_workspace.py` + 8 in
+  `tests/test_main_window.py`, the suite's first `MainWindow`-level tests,
+  driven through a real `QApplication.exec()` loop rather than a synthetic
+  direct `closeEvent()` call — see the bullets above).
 
 ---
 

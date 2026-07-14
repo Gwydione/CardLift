@@ -6,7 +6,9 @@ completion) are all implemented and committed together (see
 `docs/RELEASE_READINESS.md`'s Accomplished section) — risk 4 was found
 while manually verifying risk 3's fix, and risks 1/2/4's fix was
 deliberately reviewed as its own change before being folded into the
-same commit as risk 3. Everything else in this plan
+same commit as risk 3. §2 (safe shutdown during export) is also now
+implemented, with its own regression tests (`tests/test_main_window.py`).
+Everything else in this plan
 has not been started.** Scope is deliberately
 limited to six areas: export thread synchronization,
 safe shutdown during export, regression testing, README accuracy, release
@@ -170,28 +172,107 @@ recoverable warning. Even short of a hard crash, `export_cells()` writes
 leaves a partial, unlabeled file set in the destination folder with
 nothing telling the user the export didn't finish.
 
-**Smallest coherent implementation:**
+**First attempt, tried and rejected:** the first implementation made
+`MainWindow.closeEvent()` call a new `ExportWorkspace.wait_for_export()`
+that blocked the GUI thread on the live `QThread.wait()` until `run()`
+returned, then accepted the close. Manual acceptance testing against a
+real, large export then hit a real crash this design didn't predict.
+Runtime diagnostics (thread IDs, signal-delivery order, and polling the
+real Win32 `IsHungAppWindow()` API — the same check Task Manager/DWM use)
+showed the actual mechanism: an unbounded, non-pumping `QThread.wait()`
+call on the GUI thread leaves the real window in a genuine Windows-hung
+state (`IsHungAppWindow()` → `True`) for the entire remaining export once
+it runs past Windows' ~5 second hang-detection threshold — trivially true
+for any real large export. A hung foreground window can be force-
+terminated by the user or the OS, which is indistinguishable from a crash
+and was the actual failure the manual test hit. None of the originally
+listed hypotheses (queued-slot ordering, widget teardown races, double
+renderer close, modal-dialog reentrancy) reproduced under a real
+`QApplication.exec()` loop — the defect was the blocking wait itself, not
+a race.
 
-- Add two small methods to `ExportWorkspace`: `is_exporting() -> bool`
-  (`self._worker is not None`) and reuse the existing wait-for-worker
-  logic already in `_close_renderer()` (extract it to a
-  `wait_for_export()` method so both call sites share it).
-- Override `MainWindow.closeEvent(event)`: if
-  `self.export_workspace.is_exporting()`, show a blocking `QMessageBox`
-  ("An export is still in progress. Quit now? Files being written may be
-  incomplete." — Wait / Quit Anyway). "Wait" calls `event.ignore()` and
-  does nothing else (user stays in the app, worker keeps running,
-  re-close is always available). "Quit Anyway" calls
-  `export_workspace.wait_for_export()` (same blocking `.wait()` pattern
-  already used for the PDF-switch case) and then `event.accept()`.
-- This guarantees the `QThread` is always fully finished before its
-  owning widgets are destroyed — the crash is eliminated — and the user
-  is told honestly when files might be incomplete, instead of silent
-  corruption. No cancellation support is added; not needed to close the
-  crash risk, and `export_cells()` has no interrupt hook to cancel into
-  without an engine-layer change, which is out of scope here.
+**Implemented (deferred, asynchronous close):** `ExportWorkspace` gained a
+narrowly scoped `export_finished = Signal(bool)`, emitted from
+`_on_export_worker_finished()` — i.e. strictly after whichever of
+`_on_export_succeeded()`/`_on_export_failed()` applies has already run,
+and only for the worker matching the current `_pdf_generation` (a stale
+worker's completion never emits it, reusing `_is_stale_worker_signal()`).
+`wait_for_export()` and its blocking `.wait()` are unchanged, but are no
+longer called from `MainWindow.closeEvent()` at all — they still back
+`_close_renderer()`'s PDF-switch-mid-export case, a much shorter,
+pre-existing join outside this feature's scope.
 
-**Test plan:** see §3.
+`MainWindow.closeEvent(event)` is a no-op (default accept, unchanged) when
+`export_workspace.is_exporting()` is `False` — which also covers the
+automatic second close described below, since by then the worker is
+already cleared. Otherwise it shows a `QMessageBox` — **Keep DeckForge
+Open** (default and Escape button) vs. **Finish Export, Then Close** — via
+`_confirm_quit_during_export()` (still its own method, same reason
+`export_workspace._confirm_overwrite_if_needed()` is). "Keep DeckForge
+Open" calls `event.ignore()` and does nothing else. "Finish Export, Then
+Close" sets a `MainWindow._close_after_export` flag and calls
+`event.ignore()` — never a blocking join — so the close is deferred, not
+denied, and the GUI event loop keeps running normally for the rest of the
+export. A repeat close attempt while that flag is already set is silently
+ignored (no second dialog, no second pending request). Once
+`export_finished` fires: `_on_export_finished_while_closing()` clears the
+flag and, only on success, schedules `QTimer.singleShot(0, self.close)` —
+a fresh close on the next event-loop turn, handled by the ordinary
+"nothing exporting" branch above, so it needs no special-casing and no
+second dialog. On failure, the flag is cleared and nothing else happens:
+the window stays open and `_on_export_failed()`'s existing failure
+message is what the user sees, rather than the failure being concealed by
+quitting anyway. No cancellation support exists once "Finish Export, Then
+Close" has been chosen — confirmed as an intentional alpha scope decision,
+not an oversight.
+
+**Second race, caught in review before this shipped:**
+`_confirm_quit_during_export()`'s `QMessageBox.exec()` runs a real nested
+event loop, so the export can finish — and `export_finished` can already
+have fired, back while `_close_after_export` was still `False` — before
+the user answers the dialog. Naively arming the deferred-close flag on
+that stale assumption would wait forever on a signal that already came
+and went. `closeEvent()` instead re-checks `is_exporting()` immediately
+after `_confirm_quit_during_export()` returns `True`: if the export is
+already done, it closes immediately via the ordinary no-export path
+instead of deferring.
+
+**Scope of the guarantee — read narrowly:** this covers *normal in-app
+shutdown* (title-bar X, Alt+F4, taskbar close), all of which route through
+`QMainWindow.closeEvent()`. It says nothing about, and does not claim
+anything about, a forced process kill (Task Manager/`taskkill`), an OS
+shutdown/logoff that terminates the process outside Qt's close machinery,
+or a write failure mid-export (`export_cells()`'s existing
+`except (OSError, PDFRenderError)` handling is unchanged) — none of those
+are new risks introduced or claimed to be closed by this change, and true
+export cancellation remains explicitly out of scope, unchanged from the
+original plan.
+
+**Regression tests:** `tests/test_main_window.py` drives a real
+`QApplication.exec()` loop with a deliberately delayed `export_cells()`
+pipeline (not a synthetic direct `closeEvent()` call, which cannot detect
+an unresponsive GUI thread at all) —
+`TestCloseEventNoActiveExport` (no export running: dialog never shown,
+close proceeds normally), `TestKeepDeckForgeOpen` (Keep DeckForge Open
+leaves the worker running and ignores the close; a worker left referenced
+but no longer running, the exact race `is_exporting()` is defined
+against, does not trigger the confirmation),
+`TestDeferredCloseResponsiveness` (a periodic `QTimer` keeps ticking
+throughout a real, multi-second delayed export — proving the GUI thread
+was never blocked — and the window only actually closes, with the
+`export_cells()` output file verified on disk, once that export finishes;
+plus repeated close attempts while deferred do not stack dialogs or
+closes), `TestExportFinishesWhileConfirmationDialogIsStillOpen` (the
+second race above: an export that completes while the confirmation
+dialog's own nested loop is still pumping events, before the user
+answers it, closes immediately rather than arming a deferred close that
+would never be released), `TestFailedExportDoesNotConcealFailureByQuitting`
+(a failed export leaves the window open, clears the pending-close flag,
+and shows the normal failure message), and `TestNoBlockingWaitDuringClose`
+(asserts `QThread.wait()` is never called on the worker from
+`closeEvent()` or the deferred path). Same real
+`PDFRenderer`/`QThread`/`export_cells()` pattern as `TestExportReentry` in
+`tests/test_export_workspace.py`, no `pytest-qt`.
 
 ---
 
@@ -412,8 +493,8 @@ own section for exactly what landed vs. what's still only proposed.
 | Area | Core fix | New files | Touches | Status |
 |---|---|---|---|---|
 | Export thread sync | guard `_rebuild()`/`on_shown()` during an active worker; carry destination + a `pdf_generation` stamp on the worker | — | `export_workspace.py` | Risks 1, 2, 3, 4 implemented |
-| Safe shutdown | `closeEvent` confirmation + guaranteed `wait()` before teardown | — | `main_window.py`, `export_workspace.py` | Not started |
-| Regression testing | `pytest-qt` + targeted widget/thread tests for the two fixes above | `tests/test_export_workspace.py` | `requirements-dev.txt` | Risk 3 test done; risk 1/2/4 tests done; worker-failure/`closeEvent` tests not started |
+| Safe shutdown | `closeEvent` confirmation + guaranteed `wait()` before teardown | `tests/test_main_window.py` | `main_window.py`, `export_workspace.py` | Implemented |
+| Regression testing | `pytest-qt` + targeted widget/thread tests for the two fixes above | `tests/test_export_workspace.py`, `tests/test_main_window.py` | `requirements-dev.txt` | Risk 3 test done; risk 1/2/4 tests done; `closeEvent` tests done (no `pytest-qt` needed); worker-failure test not started |
 | README accuracy | add GUI entry point, remove stale Future-work bullet | — | `README.md` | Implemented — see `docs/RELEASE_READINESS.md` |
 | Release versioning | one version constant, shown in window title | `deckforge_gui/_version.py` | `main_window.py`, `DEVELOPER.md` | Not started |
 | Crash logging | rotating local log file + excepthook + widened worker try/except | — | `gui_app.py`, `export_workspace.py` | Not started |

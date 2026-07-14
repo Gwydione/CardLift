@@ -830,6 +830,98 @@ widget-level test infrastructure yet (see "Regression testing" in
 `docs/ALPHA_HARDENING_PLAN.md` §3, not yet implemented) -- verified
 manually instead.
 
+**Safe, non-blocking shutdown during export.** Before this, `MainWindow`
+had no `closeEvent` override at all -- closing the window (title-bar X,
+Alt+F4, taskbar close) while `_ExportWorker` was running let Qt tear down
+the widget tree, and therefore the `QThread` it owns as a child `QObject`,
+while `run()` was still live on another thread: undefined behavior in Qt,
+typically a hard crash. `ExportWorkspace.is_exporting()` checks the
+worker's actual `isRunning()` state, not just whether `self._worker` is
+still referenced, since `self._worker` stays set for one queued
+event-loop turn after `run()` returns, until `_on_export_worker_finished()`
+resets it.
+
+A first version had `closeEvent()` call `wait_for_export()` -- a blocking
+`.wait()` join -- and accept the close once it returned. A manual
+acceptance test against a real, large export crashed anyway. Runtime
+diagnostics (thread IDs, queued-signal delivery order, and polling the
+real Win32 `IsHungAppWindow()` API, the same hang check Task Manager/DWM
+use) showed why: an unbounded, non-pumping `.wait()` on the GUI thread
+leaves the real window genuinely Windows-hung for the entire remaining
+export once it runs past Windows' ~5 second hang-detection threshold --
+trivially true for any real large export -- and a hung foreground window
+being force-terminated by the user or the OS is indistinguishable from a
+crash. None of the signal-ordering/reentrancy hypotheses reproduced under
+a real `QApplication.exec()` loop; the blocking wait itself was the
+defect.
+
+The shipped design defers instead of blocking. `MainWindow.closeEvent()`
+is still a no-op when nothing is exporting -- ordinary shutdown is
+completely unchanged, and this also covers the automatic second close
+described below, since by then the worker is already cleared. Otherwise
+it shows a `QMessageBox` with **Keep DeckForge Open** (default and Escape
+button, same "default to the safe/reversible choice" convention as the
+overwrite-confirmation dialog above) and **Finish Export, Then Close**.
+The choice lives behind `MainWindow._confirm_quit_during_export()`, its
+own method (same reason `_confirm_overwrite_if_needed()` above is its
+own) so tests can drive the decision directly rather than simulating a
+dialog click. "Keep DeckForge Open" calls `event.ignore()` and does
+nothing else. "Finish Export, Then Close" sets a
+`MainWindow._close_after_export` flag and calls `event.ignore()` --
+never a blocking join -- so the export keeps running and the GUI event
+loop stays fully responsive. `ExportWorkspace.export_finished`, a signal
+emitted from `_on_export_worker_finished()` only for the current (non-
+stale) worker -- i.e. strictly after whichever of
+`_on_export_succeeded()`/`_on_export_failed()` applies has already run --
+is what `MainWindow._on_export_finished_while_closing()` waits on instead
+of polling or joining anything. On success it clears the flag and
+schedules `QTimer.singleShot(0, self.close)`, a fresh close on the next
+event-loop turn that the ordinary "nothing exporting" branch handles with
+no special-casing. On failure it just clears the flag: the window stays
+open and `_on_export_failed()`'s existing message is what the user sees,
+rather than the failure being concealed by quitting anyway. A repeat
+close attempt while a close is already deferred is silently ignored --
+no second dialog, no second pending request. No cancellation exists once
+"Finish Export, Then Close" has been chosen -- confirmed as an
+intentional alpha scope decision, not an oversight.
+
+A second race turned up in review before this shipped:
+`_confirm_quit_during_export()`'s `QMessageBox.exec()` runs a real nested
+event loop, so the export can finish -- and `export_finished` can already
+have fired, back while `_close_after_export` was still `False` -- before
+the user answers the dialog. Naively arming the deferred-close flag on
+that stale assumption would wait forever on a signal that already came
+and went. `closeEvent()` re-checks `is_exporting()` immediately after
+`_confirm_quit_during_export()` returns `True`: if the export is already
+done, it closes immediately via the ordinary no-export path instead of
+deferring.
+
+This closes the crash risk for *normal in-app shutdown* only, and is
+documented that narrowly: it says nothing about, and does not make export
+writes atomic against, a forced process kill (Task Manager), an OS
+shutdown/logoff that terminates the process outside Qt's close machinery,
+or a mid-write `OSError` (unchanged, still handled by `_ExportWorker.run()`'s
+existing `except (OSError, PDFRenderError)`). `tests/test_main_window.py`
+drives a real `QApplication.exec()` loop with a deliberately delayed
+`export_cells()` pipeline (a synthetic direct `closeEvent()` call, used by
+an earlier version of this test file, cannot detect an unresponsive GUI
+thread at all) and covers: no dialog when nothing is exporting; Keep
+DeckForge Open leaves the worker running and ignores the close; a worker
+object left referenced but no longer running (the exact race
+`is_exporting()` is defined against) does not trigger the confirmation; a
+periodic `QTimer` keeps ticking throughout a real, multi-second delayed
+export, proving the GUI thread was never blocked, and the window only
+actually closes -- with the real `export_cells()` output file verified on
+disk -- once that export finishes; repeated close attempts while deferred
+do not stack dialogs or closes; an export that completes while the
+confirmation dialog's own nested loop is still pumping events, before the
+user answers it, closes immediately rather than arming a deferred close
+that would never be released; a failed export leaves the window open
+and clears the pending close; and `QThread.wait()` is asserted to never
+be called on the worker from `closeEvent()` or the deferred path. Same
+real `PDFRenderer`/`QThread`/`export_cells()` pattern `TestExportReentry`
+established, no `pytest-qt` needed. See `docs/ALPHA_HARDENING_PLAN.md` §2.
+
 ## Common Commands
 
 All commands go through `extract.py` and require `--profile <name>`

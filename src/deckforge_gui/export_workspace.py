@@ -194,6 +194,18 @@ class ExportWorkspace(QWidget):
 
     back_to_review_clicked = Signal()
     start_new_deck_clicked = Signal()
+    # Emitted once per dispatched export, exactly when _on_export_worker_
+    # finished() (this workspace's own cleanup) has finished running for
+    # that export's worker -- i.e. strictly after whichever of
+    # _on_export_succeeded()/_on_export_failed() applies has already run.
+    # carries True for success, False for failure. MainWindow's deferred
+    # close (see closeEvent()) is the only consumer: it waits for this
+    # signal instead of joining the worker thread directly, so it never has
+    # to duplicate _is_stale_worker_signal()'s generation bookkeeping (a
+    # stale worker's finished signal, from a PDF the user has since switched
+    # away from, does not emit this at all -- see _on_export_worker_
+    # finished()).
+    export_finished = Signal(bool)
 
     def __init__(
         self,
@@ -224,6 +236,11 @@ class ExportWorkspace(QWidget):
         # Export step doesn't silently drop the "Exported N files to
         # <destination>." confirmation that _on_export_succeeded() showed.
         self._completed_result_message: Optional[str] = None
+        # Set by _on_export_succeeded()/_on_export_failed() for the current
+        # (non-stale) dispatched worker only -- read by _on_export_worker_
+        # finished() when it emits export_finished, so that signal always
+        # reflects the outcome of the run it's reporting on.
+        self._last_export_succeeded = False
         # Ownership model: an export operation belongs to the deck that was
         # loaded when it began, for as long as it runs -- never to whatever
         # deck happens to be loaded by the time its results arrive.
@@ -384,14 +401,42 @@ class ExportWorkspace(QWidget):
         self._completed_plan = None
         self._completed_result_message = None
 
-    def _close_renderer(self) -> None:
-        if self._worker is not None:
-            # A new PDF was chosen while a background export was still
-            # running (e.g. via the sidebar, mid-export) -- wait for it to
-            # finish before the renderer it's reading from is closed out
-            # from under it, rather than racing a close against PyMuPDF
-            # calls on another thread.
+    def is_exporting(self) -> bool:
+        """True only while a background export is actually live -- checks
+        the underlying QThread's real running state (isRunning()), not
+        just "a worker object exists": self._worker is only cleared back
+        to None from _on_export_worker_finished(), a queued cross-thread
+        slot, so there is a brief window after run() returns where a
+        finished-but-not-yet-running worker object is still referenced.
+        Callers (MainWindow.closeEvent()) must not treat that window as
+        "still exporting"."""
+        return self._worker is not None and self._worker.isRunning()
+
+    def wait_for_export(self) -> None:
+        """Blocks the calling (GUI) thread until the live export worker's
+        run() has returned -- the same join _close_renderer() already used
+        for the PDF-switch-mid-export case, now shared rather than
+        duplicated. A no-op when is_exporting() is False, so it's safe to
+        call unconditionally.
+
+        Not used by MainWindow.closeEvent() -- an unbounded join on the GUI
+        thread leaves the real window Windows-hung for however long the
+        export takes (confirmed via IsHungAppWindow() during
+        investigation). closeEvent()'s deferred close instead waits on
+        export_finished, which fires from the GUI thread's own event loop
+        once the worker is actually done, never blocking it. This method
+        still only fits the PDF-switch-mid-export case, where a
+        genuinely brief join is acceptable."""
+        if self.is_exporting():
             self._worker.wait()
+
+    def _close_renderer(self) -> None:
+        # A new PDF was chosen while a background export was still running
+        # (e.g. via the sidebar, mid-export) -- wait for it to finish
+        # before the renderer it's reading from is closed out from under
+        # it, rather than racing a close against PyMuPDF calls on another
+        # thread.
+        self.wait_for_export()
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None
@@ -604,23 +649,33 @@ class ExportWorkspace(QWidget):
         self._export_complete = True
         self._completed_plan = self._plan
         self._completed_result_message = message
+        self._last_export_succeeded = True
         self._apply_completion_visibility()
 
     def _on_export_failed(self, message: str) -> None:
         if self._is_stale_worker_signal():
             return
         self._show_result(f"Couldn't finish exporting: {message}", is_error=True)
+        self._last_export_succeeded = False
 
     def _on_export_worker_finished(self) -> None:
         # Runs after _on_export_succeeded/_on_export_failed either way --
         # QThread.finished always follows run() returning, regardless of
         # which signal it emitted first.
+        is_current = not self._is_stale_worker_signal()
         self._exporting_label.setVisible(False)
         self._progress_bar.setVisible(False)
         self._choose_folder_btn.setEnabled(True)
         if not self._export_complete:
             self._export_btn.setEnabled(self._destination is not None)
         self._worker = None
+        if is_current:
+            # A stale worker (pdf_generation from a PDF the user has since
+            # switched away from) never reaches here as "current" -- no
+            # deferred close is ever waiting on it, since MainWindow only
+            # ever observes is_exporting() for the worker matching today's
+            # PDF.
+            self.export_finished.emit(self._last_export_succeeded)
 
     def _open_destination_folder(self) -> None:
         if self._destination is None:
