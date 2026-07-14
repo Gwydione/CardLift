@@ -8,11 +8,11 @@ into platforms like PlayingCards.io or Tabletop Simulator.
 DeckForge is a **Windows alpha desktop application, under active
 development.** The core workflow — open a PDF, calibrate its card grid,
 review, and export — is complete and has been manually tested end to
-end against real decks. It isn't packaged as an installer yet (run it
-from source), and some hardening work (crash logging, export-reliability
-edge cases, version identity) is still in progress. See
-[docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for the current,
-live list of what's shipped and what's still open.
+end against real decks, including safe, non-blocking shutdown mid-export
+and a version identity shown in the window title. It isn't packaged as
+an installer yet (run it from source), and crash/error logging is still
+in progress. See [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md)
+for the current, live list of what's shipped and what's still open.
 
 ## What DeckForge does
 
@@ -116,10 +116,7 @@ Remaining work before DeckForge leaves alpha (see
 [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for the full,
 prioritized, and current list):
 
-- Export reliability hardening (background-thread race conditions, safe
-  shutdown mid-export)
 - Crash and error logging
-- Release versioning
 - A real installer/packaged build (currently run from source)
 
 Further out, and not yet started: automatic grid/edge detection,
