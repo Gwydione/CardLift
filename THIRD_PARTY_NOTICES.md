@@ -33,6 +33,12 @@ https://pymupdf.readthedocs.io/
 
 GNU Affero General Public License v3.0 (AGPL-3.0) or Commercial License.
 
+**DeckForge's choice**
+
+DeckForge uses PyMuPDF under its AGPL-3.0 option, which is why DeckForge
+itself is distributed under the GNU AGPLv3 (see `LICENSE`). Full
+research and reasoning: `docs/LICENSE_RESEARCH.md`.
+
 ------------------------------------------------------------------------
 
 ## Pillow

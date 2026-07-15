@@ -42,10 +42,9 @@ pip install -r requirements-gui.txt
 python gui_app.py
 ```
 
-Drop a PDF onto the window (or use the bundled sample deck — see below)
-and follow the guided steps in the sidebar. Each step tells you what to
-do next and when you're ready to move on; you can always come back to an
-earlier step later.
+Drop a PDF onto the window and follow the guided steps in the sidebar.
+Each step tells you what to do next and when you're ready to move on;
+you can always come back to an earlier step later.
 
 ## The workflow
 
@@ -71,14 +70,6 @@ If a click is genuinely ambiguous — for example, a wide gap between
 cards could plausibly mean two different grid sizes — DeckForge asks you
 to confirm which card you meant instead of silently guessing.
 
-## Included sample deck
-
-`sample_decks/Solo-cards-digital.pdf` is a 54-card solo-RPG oracle deck:
-page 1 is instructions, pages 2–7 are fronts (a 3×3 grid, 54 cards
-total), and page 8 is the back — one shared back design for the whole
-deck. It's a quick way to try the full workflow before calibrating your
-own deck.
-
 ## Advanced: scripting via the CLI
 
 The same engine that powers the GUI is also available as a command-line
@@ -88,6 +79,16 @@ processing, or automation. See
 profile reference.
 
 ## Project documentation
+
+### Legal & Privacy
+
+- [LICENSE](LICENSE) — DeckForge's own license (GNU AGPLv3)
+- [LICENSE_EXPLAINED.md](LICENSE_EXPLAINED.md) — what the license means
+  for you, in plain language
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — open-source
+  software DeckForge depends on
+- [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md) — what DeckForge
+  does and doesn't do with your files
 
 ### Product
 
@@ -123,8 +124,10 @@ prioritized, and current list):
 
 Further out, and not yet started: automatic grid/edge detection,
 exporting directly to a PlayingCards.io or Tabletop Simulator package,
-and support for multiple saved deck profiles browsed from within the
-app.
+support for multiple saved deck profiles browsed from within the app,
+and an official DeckForge Demo Deck (authored for this project, to
+replace the third-party PDF currently used only for development and
+testing).
 
 ## Contributing
 

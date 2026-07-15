@@ -5,7 +5,36 @@ priority before DeckForge's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
-Last updated: 2026-07-14.
+Last updated: 2026-07-15.
+
+## Current phase: Alpha Release Preparation
+
+Engineering hardening (the seven items in the priorities table below) is
+implemented. The project has moved into release-preparation work:
+non-code items that stand between here and handing DeckForge to a
+private alpha tester. See `docs/ALPHA_RELEASE_REVIEW.md` for the release
+review this phase is responding to.
+
+- **Governance documentation: substantially complete.** `LICENSE_EXPLAINED.md`,
+  `THIRD_PARTY_NOTICES.md`, `docs/PROJECT_PHILOSOPHY.md`, and
+  `docs/LICENSE_RESEARCH.md` are written and committed. A `LICENSE` file
+  (GNU AGPLv3) exists in the working tree but **is not yet committed to
+  git** — closing that gap is the single remaining governance item.
+- **Packaging: not started.** No `.spec` file, installer script, or
+  packaging tool is present. Still open, per `docs/ALPHA_RELEASE_REVIEW.md`
+  §5C/§6.
+- **Clean-machine validation: not done.** The documented from-source
+  tester path (`git clone` → `pip install -r requirements-gui.txt` →
+  `python gui_app.py`) has not yet been verified on a machine without
+  the existing development environment. Still open, per
+  `docs/ALPHA_RELEASE_REVIEW.md` §5H.
+- **Sample deck: scheduled for replacement.** `sample_decks/Solo-cards-digital.pdf`
+  is a third-party PDF. Product decision: it will not ship as part of
+  Alpha 1 and will be replaced by an official DeckForge Demo Deck
+  authored for this project. It remains in the repository for now only
+  because six test files depend on it as a real-PDF fixture (see those
+  files' `SAMPLE_PDF` constants); migrating those fixtures to the new
+  Demo Deck is tracked as an open item below, not yet implemented.
 
 ---
 
@@ -30,6 +59,28 @@ analysis, and recommended fix for item 1: `docs/CALIBRATION_GEOMETRY_INVESTIGATI
 ---
 
 ## Open
+
+_Release preparation (not yet implemented):_
+
+- [ ] Commit the `LICENSE` file — it exists in the working tree (GNU
+      AGPLv3) but is currently untracked by git.
+- [ ] Packaging (installer/portable build) — not started; see
+      `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6 for the open decisions
+      (one-file vs. one-folder, code signing, dependency bundling).
+- [ ] Clean-machine validation of the from-source tester instructions —
+      not yet run on a machine without the existing dev environment; see
+      `docs/ALPHA_RELEASE_REVIEW.md` §5H.
+- [ ] Migrate the six test files that depend on
+      `sample_decks/Solo-cards-digital.pdf` as a real-PDF fixture
+      (`tests/test_cell_export.py`, `tests/test_export_workspace.py`,
+      `tests/test_main_window.py`, `tests/test_pdf_renderer.py`,
+      `tests/test_review_workspace.py`, `tests/test_session.py`) and the
+      matching `profiles/solo_cards.json` calibration profile to the
+      future DeckForge Demo Deck once it's authored, then remove the
+      third-party PDF from the repository.
+- [ ] Confirm `sample_decks/Solo-cards-digital.pdf`'s redistribution
+      rights are moot once the Demo Deck migration above lands (the file
+      is being retired rather than cleared for redistribution).
 
 _Calibration geometry follow-up (not yet implemented):_
 

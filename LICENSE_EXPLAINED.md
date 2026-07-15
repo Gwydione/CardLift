@@ -131,7 +131,8 @@ If you're curious about the legal details, please read the `LICENSE`
 file.
 
 If you're considering contributing to DeckForge, we'd love to have you
-involved. Please see `CONTRIBUTING.md` for information about the
-project's engineering standards and contribution process.
+involved. Please see `ENGINEERING_STANDARDS.md` for the project's
+engineering priorities and definition of done, and `DEVELOPER.md` to get
+a development environment running.
 
 Thank you for being part of the DeckForge community.
