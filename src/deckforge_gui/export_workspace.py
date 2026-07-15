@@ -670,7 +670,15 @@ class ExportWorkspace(QWidget):
     def _on_export_failed(self, message: str) -> None:
         if self._is_stale_worker_signal():
             return
-        _logger.warning("Export failed: %s", message)
+        # message can be an arbitrary exception's str() (e.g. an OSError
+        # from a failed file write), which may embed the full destination
+        # path the user chose -- fine to show them in-app (their own
+        # folder), but not to log: _ExportWorker.run() already logged this
+        # same failure with full traceback context via _logger.exception()
+        # (see logging_setup.py's privacy stance -- name-only, not full
+        # paths, in normal-operation log lines), so repeating `message`
+        # here would just be a second, path-carrying copy of it.
+        _logger.warning("Export failed")
         self._show_result(f"Couldn't finish exporting: {message}", is_error=True)
         self._last_export_succeeded = False
 

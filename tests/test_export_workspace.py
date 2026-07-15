@@ -124,6 +124,28 @@ class TestExportCompletionMessageUsesSignalPayload:
         assert workspace._export_complete is True
 
 
+class TestExportFailureLogging:
+    """Regression coverage for a privacy leak: _on_export_failed() used to
+    re-log the worker's raw exception message via _logger.warning(), which
+    can be an arbitrary OSError whose str() embeds the full destination
+    path -- e.g. a failed write partway through export. The in-app message
+    is allowed to show the user their own path; the persistent log file is
+    not (see logging_setup.py's privacy stance and pdf_renderer.py's
+    matching fix for the equivalent PDF-load-failure leak)."""
+
+    def test_failure_message_is_shown_to_the_user_but_not_logged(
+        self, workspace: ExportWorkspace, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        sensitive_message = "[Errno 13] Permission denied: 'C:\\Users\\someone\\private_project\\front_001.png'"
+
+        with caplog.at_level("WARNING"):
+            workspace._on_export_failed(sensitive_message)
+
+        assert sensitive_message in workspace._result_label.text()
+        assert not any(sensitive_message in record.getMessage() for record in caplog.records)
+        assert not any("private_project" in record.getMessage() for record in caplog.records)
+
+
 class TestExportReentry:
     """Regression coverage for the Export re-entry bug found while manually
     verifying the destination-message fix above: starting an export, then

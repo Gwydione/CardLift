@@ -25,6 +25,22 @@ def test_page_size_out_of_range_raises():
             renderer.page_size(99)
 
 
+def test_missing_pdf_error_names_the_file_not_its_full_path(tmp_path):
+    # Regression test for a privacy leak: this message is logged verbatim
+    # by deckforge_gui (main_window.py, via DeckLoadError), whose stated
+    # policy is to log filenames, never full paths -- a full tmp_path
+    # here stands in for a real absolute path that could embed personal
+    # folder names.
+    missing = tmp_path / "some_users_private_folder" / "deck.pdf"
+
+    with pytest.raises(PDFRenderError) as excinfo:
+        PDFRenderer(missing)
+
+    assert "deck.pdf" in str(excinfo.value)
+    assert "some_users_private_folder" not in str(excinfo.value)
+    assert str(missing) not in str(excinfo.value)
+
+
 def test_page_size_reflects_rotation(tmp_path):
     import fitz
 

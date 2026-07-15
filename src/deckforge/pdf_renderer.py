@@ -27,7 +27,11 @@ class PDFRenderer:
 
     def __init__(self, pdf_path: Path):
         if not pdf_path.exists():
-            raise PDFRenderError(f"PDF not found: {pdf_path}")
+            # Name only, not the full path -- this message is logged
+            # verbatim by deckforge_gui (via DeckLoadError), and
+            # logging_setup.py's privacy stance is name-only, not full
+            # paths. Matches _load_page_checked()'s message below.
+            raise PDFRenderError(f"PDF not found: {pdf_path.name}")
         self._path = pdf_path
         self._doc = fitz.open(pdf_path)
 
