@@ -11,6 +11,8 @@ about the mechanics of working on the code.
 
 The core DeckForge workflow is local-first and must not require network access. Do not add telemetry, uploads, update checks, licensing calls, or other outbound communication without an explicit product decision, clear user disclosure, and documentation.
 
+Before making a change that touches networking, file I/O, or logging, check it against [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md)'s contributor checklist -- that document, not this section, is the canonical source for what DeckForge currently promises and how to evaluate a change against it.
+
 ## First Five Minutes
 
 The fastest path back to a working mental model after time away. Do

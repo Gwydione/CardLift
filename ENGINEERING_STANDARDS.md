@@ -119,6 +119,12 @@ Unless explicitly approved, do not introduce:
 Users should be able to trust that their PDFs remain on their own
 computer.
 
+See [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md) for the
+user-facing commitments this principle exists to support, and the
+concrete checklist a change should be checked against before this
+Definition of Done's "privacy implications have been considered" is
+satisfied.
+
 ---
 
 # Dependencies

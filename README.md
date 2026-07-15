@@ -93,6 +93,8 @@ profile reference.
 
 - [docs/CORE_CONCEPTS.md](docs/CORE_CONCEPTS.md) — the vocabulary and
   concepts behind the workflow
+- [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md) — what DeckForge
+  does and doesn't do with your files, in plain language
 
 ### User Experience
 
