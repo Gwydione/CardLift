@@ -91,6 +91,17 @@ class AppState:
     pan_mode: bool = False
     guidance_collapsed: bool = False
 
+    def reset_to_start(self) -> None:
+        """Returns navigation to a freshly-launched-app state -- current
+        and furthest step both back to Deck, sidebar re-gated accordingly.
+        Used when a session (the Demo Deck) explicitly ends rather than
+        being superseded by a new PDF. Deliberately leaves
+        guidance_collapsed untouched: that's a window-chrome preference,
+        not part of the deck session."""
+        self.current_step = WorkflowStep.DECK
+        self.furthest_step = WorkflowStep.DECK
+        self.pan_mode = False
+
     def select_step(self, step: WorkflowStep) -> None:
         self.current_step = step
         if WORKFLOW_ORDER.index(step) > WORKFLOW_ORDER.index(self.furthest_step):

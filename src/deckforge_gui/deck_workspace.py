@@ -57,6 +57,11 @@ _REPLACE_DROP_TEXT = "Drop a new PDF to replace it"
 _DEFAULT_BUTTON_TEXT = "Choose PDF"
 _CHANGE_BUTTON_TEXT = "Change PDF"
 
+_DEFAULT_HEADING = "Turn a Print-and-Play PDF\ninto individual cards."
+_DEFAULT_SUBHEADING = "DeckForge finds, crops, and prepares your cards so you can print with confidence."
+_DEMO_COMPLETE_HEADING = "Nice — that's how DeckForge works."
+_DEMO_COMPLETE_SUBHEADING = "Bring in your own PDF whenever you're ready."
+
 _DROPZONE_STYLE = f"""
 QFrame#dropZone {{
     background: #f1effa;
@@ -107,6 +112,22 @@ QPushButton#choosePdfButton {{
 }}
 QPushButton#choosePdfButton:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton#choosePdfButton:pressed {{ background: {ACCENT_PRESSED}; }}
+"""
+
+# Flat, chrome-free "link" -- deliberately lighter than choosePdfButton
+# (which stays the one primary action on this screen): trying the Demo
+# Deck is an invitation, not a second competing call-to-action.
+def _demo_link_style(font_size: int) -> str:
+    return f"""
+QPushButton#demoDeckLink {{
+    background: transparent;
+    border: none;
+    color: {ACCENT};
+    font-size: {font_size}px;
+    font-weight: 600;
+}}
+QPushButton#demoDeckLink:hover {{ color: {ACCENT_HOVER}; }}
+QPushButton#demoDeckLink:pressed {{ color: {ACCENT_PRESSED}; }}
 """
 
 
@@ -188,6 +209,7 @@ class DeckWorkspace(QWidget):
     """Central Deck page: drop or browse for a PDF to start a new deck."""
 
     pdf_chosen = Signal(Path)
+    demo_deck_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -197,13 +219,11 @@ class DeckWorkspace(QWidget):
         self._outer = QVBoxLayout(self)
         self._outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._heading = QLabel("Turn a Print-and-Play PDF\ninto individual cards.")
+        self._heading = QLabel(_DEFAULT_HEADING)
         self._heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._outer.addWidget(self._heading)
 
-        self._subheading = QLabel(
-            "DeckForge finds, crops, and prepares your cards so you can print with confidence."
-        )
+        self._subheading = QLabel(_DEFAULT_SUBHEADING)
         self._subheading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._subheading.setWordWrap(True)
         self._outer.addWidget(self._subheading)
@@ -259,6 +279,22 @@ class DeckWorkspace(QWidget):
         self._reassurance.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._reassurance.setStyleSheet(f"color: {TEXT_CAPTION_MUTED}; background: transparent;")
         self._outer.addWidget(self._reassurance)
+
+        # Secondary onboarding path -- deliberately a plain link, not a
+        # second button, so the drop zone above stays the one primary
+        # action on this screen (see _DEMO_LINK_STYLE).
+        self._demo_caption = QLabel("New to DeckForge?")
+        self._demo_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._demo_caption.setStyleSheet(f"color: {TEXT_CAPTION_MUTED}; background: transparent;")
+        self._outer.addWidget(self._demo_caption)
+
+        self._demo_link = QPushButton("Try the Demo Deck")
+        self._demo_link.setObjectName("demoDeckLink")
+        self._demo_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._demo_link.setAutoDefault(False)
+        self._demo_link.setFlat(True)
+        self._demo_link.clicked.connect(self.demo_deck_requested.emit)
+        self._outer.addWidget(self._demo_link, 0, Qt.AlignmentFlag.AlignCenter)
 
         self._error_label = QLabel("")
         self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -336,6 +372,11 @@ class DeckWorkspace(QWidget):
             f"font-size: {caption_font}px; color: {TEXT_CAPTION_MUTED}; background: transparent;"
         )
 
+        self._demo_caption.setStyleSheet(
+            f"font-size: {caption_font}px; color: {TEXT_CAPTION_MUTED}; background: transparent;"
+        )
+        self._demo_link.setStyleSheet(_demo_link_style(secondary_font))
+
         self._error_label.setMaximumWidth(scale(_REASSURANCE_MAX_WIDTH))
         self._error_label.setStyleSheet(
             f"font-size: {secondary_font}px; color: {ERROR_TEXT}; font-weight: 600;"
@@ -364,7 +405,15 @@ class DeckWorkspace(QWidget):
     def set_loaded(self, filename: str, page_count: int) -> None:
         """Reflect whether a PDF is already loaded -- the drop zone and its
         button double as the "Change PDF" affordance; picking another file
-        replaces the current one (DeckSession.load_pdf already does this)."""
+        replaces the current one (DeckSession.load_pdf already does this).
+
+        Always restores the default heading/subheading first: this is the
+        single place the Deck step is (re)shown for *any* reason, so it's
+        also the natural place a one-shot override like
+        show_demo_completed() gets superseded -- callers that want that
+        override visible call it right after, not before, this method."""
+        self._heading.setText(_DEFAULT_HEADING)
+        self._subheading.setText(_DEFAULT_SUBHEADING)
         if filename:
             self._loaded_label.setText(f"✓ Loaded: {filename}  •  {page_count} pages")
             self._loaded_label.show()
@@ -374,6 +423,16 @@ class DeckWorkspace(QWidget):
             self._loaded_label.hide()
             self._drop_text.setText(_DEFAULT_DROP_TEXT)
             self._choose_btn.setText(_DEFAULT_BUTTON_TEXT)
+
+    def show_demo_completed(self) -> None:
+        """Overrides the heading/subheading for this one visit -- called by
+        MainWindow right after ending a Demo Deck session (see
+        MainWindow._end_demo_session). Naturally superseded the next time
+        this screen is shown for any other reason, since set_loaded()
+        (called on every Deck-step visit) always restores the default
+        copy first."""
+        self._heading.setText(_DEMO_COMPLETE_HEADING)
+        self._subheading.setText(_DEMO_COMPLETE_SUBHEADING)
 
     def set_pan_active(self, active: bool) -> None:
         """No-op: the Deck page has no page canvas to pan."""

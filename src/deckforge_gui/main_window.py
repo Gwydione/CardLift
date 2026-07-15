@@ -57,6 +57,13 @@ GUIDANCE_MIN_WINDOW_WIDTH = 860
 _NO_TOOLBAR_INDEX = 0
 _CALIBRATE_TOOLBAR_INDEX = 1
 
+# Assumes a source checkout (src/deckforge_gui/main_window.py two levels
+# under the repo root) -- the same assumption gui_app.py's own docstring
+# already makes ("pip install -r requirements-gui.txt / python
+# gui_app.py"), since there is no packaging/bundling step in this repo
+# yet. Revisit this path once real packaging exists.
+DEMO_DECK_PATH = Path(__file__).resolve().parents[2] / "docs" / "ui" / "DeckForge_Demo_Deck.pdf"
+
 
 class TopBar(QWidget):
     """Minimal top bar: DeckForge branding + an overflow/settings placeholder."""
@@ -154,6 +161,17 @@ class MainWindow(QMainWindow):
 
         self.deck_workspace = self.workspaces[WorkflowStep.DECK]
         self.deck_workspace.pdf_chosen.connect(self._on_pdf_chosen)
+        self.deck_workspace.demo_deck_requested.connect(self._on_demo_deck_requested)
+        # True only while the *currently loaded* deck is the bundled Demo
+        # Deck -- set exclusively by _on_demo_deck_requested(), cleared by
+        # every ordinary _on_pdf_chosen() call (a real PDF supersedes it
+        # immediately) and by _end_demo_session() itself. Read in exactly
+        # one place (_on_start_new_deck()) -- deliberately not threaded
+        # into find_cards_state/calibrate_state/review_cards_state/
+        # export_state, none of which need to know or behave differently
+        # for the Demo Deck (see docs/ui/DEMO_DECK.md: "no special Demo
+        # mode").
+        self._is_demo_session = False
         self.find_cards_workspace = self.workspaces[WorkflowStep.FIND_CARDS]
         self.find_cards_workspace.continue_clicked.connect(self._on_find_cards_continue)
         self.find_cards_workspace.state_changed.connect(self._on_workspace_state_changed)
@@ -201,7 +219,17 @@ class MainWindow(QMainWindow):
         self.state.select_step(step)
         self._apply_step(step)
 
-    def _on_pdf_chosen(self, path: Path) -> None:
+    def _on_demo_deck_requested(self) -> None:
+        if not DEMO_DECK_PATH.exists():
+            # Defensive only -- expected to be unreachable in a normal
+            # source checkout; guards against a future packaging change
+            # that moves or omits the bundled asset.
+            _logger.warning("Demo Deck asset not found at %s", DEMO_DECK_PATH)
+            self.deck_workspace.show_error("The bundled Demo Deck could not be found.")
+            return
+        self._on_pdf_chosen(DEMO_DECK_PATH, is_demo=True)
+
+    def _on_pdf_chosen(self, path: Path, is_demo: bool = False) -> None:
         try:
             self.session.load_pdf(path)
         except DeckLoadError as exc:
@@ -209,6 +237,7 @@ class MainWindow(QMainWindow):
             self.deck_workspace.show_error(str(exc))
             return
         _logger.info("PDF loaded: %s (%d pages)", path.name, self.session.page_count)
+        self._is_demo_session = is_demo
         self._update_deck_status_label()
         # A newly (or re-)loaded PDF invalidates any previous markers/
         # calibration -- page N in a different PDF has no relationship to
@@ -249,7 +278,37 @@ class MainWindow(QMainWindow):
         # choosing a PDF there already clears find_cards_state/
         # calibrate_state/review_cards_state via _on_pdf_chosen -- no
         # separate app-wide "start over" reset needed here.
+        #
+        # The Demo Deck is the one exception: DEMO_DECK.md's "quiet
+        # handoff" means that session should actually end (a clean Deck
+        # screen, not the Demo Deck still shown as "Loaded") rather than
+        # linger until the user happens to pick a new PDF -- see
+        # _end_demo_session(). An ordinary deck's session deliberately
+        # keeps lingering as-is; that behavior is unchanged.
+        if self._is_demo_session:
+            self._end_demo_session()
+        else:
+            self._on_step_selected(WorkflowStep.DECK)
+
+    def _end_demo_session(self) -> None:
+        """Ends the Demo Deck session: returns every piece of session
+        state to its just-launched-app shape (in place -- see
+        AppState.reset_to_start()'s docstring for why these are mutated
+        rather than replaced) and shows a one-shot acknowledgment on the
+        Deck screen. Deliberately does not touch any Calibrate/Review/
+        Export widget's own cached PDFRenderer -- AppState.furthest_step
+        resetting to DECK already makes them unreachable via the sidebar
+        until a new PDF is loaded, at which point set_pdf() replaces
+        those renderers the same way it always does."""
+        self._is_demo_session = False
+        self.session.unload()
+        self.find_cards_state.clear_all()
+        self.calibrate_state.reset_all()
+        self.review_cards_state.clear()
+        self.state.reset_to_start()
+        self._update_deck_status_label()
         self._on_step_selected(WorkflowStep.DECK)
+        self.deck_workspace.show_demo_completed()
 
     def _update_deck_status_label(self) -> None:
         if self.session.is_loaded:

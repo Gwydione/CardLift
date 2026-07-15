@@ -55,3 +55,10 @@ class DeckSession:
 
         self.pdf_path = path
         self.page_count = page_count
+
+    def unload(self) -> None:
+        """Clears the loaded PDF without replacing it with another one --
+        used when a session (the Demo Deck) explicitly ends rather than
+        being superseded by the next load_pdf() call."""
+        self.pdf_path = None
+        self.page_count = 0
