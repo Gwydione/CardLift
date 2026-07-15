@@ -159,6 +159,56 @@ Where appropriate:
 
 ---
 
+# Card Inspection
+
+Review Cards' grid thumbnails are intentionally small (150px, a lower
+render scale than Calibrate) -- enough to judge inclusion (is there a
+card here at all?) but not enough to judge whether a crop is actually
+correct. Card Inspection closes that gap: clicking a small "look closer"
+affordance on a tile opens an overlay showing that one card at high
+fidelity, with a margin of surrounding page content so the crop boundary
+(drawn in DeckForge's own accent color) is visible in context rather than
+isolated. This ports the CLI's already-proven `--preview` (macro) /
+`--inspect` (micro) split into the GUI, rather than inventing a new idea.
+
+Deliberately not a general zoom/pan viewer: Review Cards exists to build
+confidence through representative sampling, not to demand exhaustive
+inspection, and calibration is uniform across a page/arrangement, so
+checking a card and its neighbors is representative of the whole page
+rather than a partial audit. Concretely, this means:
+
+- No interactive zoom, zoom percentage, or persistent pan mode --
+  inspection shows the card at a fixed high-fidelity scale, fit to the
+  available space, not a manipulable canvas.
+- No thumbnail filmstrip -- Next/Previous (plus Left/Right arrow keys)
+  step through cards in the grid's own reading order, so comparing a card
+  against its immediate neighbor (where alignment problems actually
+  cluster) costs one keypress.
+- No "inspected" marking on tiles and no deck-wide "card N of M" count --
+  either would read as a completion target, which contradicts sampling
+  being sufficient. Position is instead conveyed only by which of
+  Previous/Next is enabled and by the source page label.
+- Opening/closing the inspector never rebuilds the grid, so the scroll
+  position the user opened it from is exactly where they land back.
+- High-fidelity renders are generated on demand, per page, only for pages
+  the user actually opens -- never pre-rendered for the whole deck.
+
+The overlay itself is a full-workspace overlay, not a modal dialog --
+DeckForge is "a workspace application, not a dialog application"
+(DESIGN_SYSTEM.md), so it should read as the workspace focusing on one
+card, not a separate application opening on top of it.
+
+**Discoverability is a provisional decision, not a resolved one.** The
+"look closer" affordance is a small, always-visible (not hover-only) icon
+in a tile corner, distinct from the existing include/exclude click, so
+the existing toggle-inclusion interaction is completely unchanged. It's
+always visible rather than hover-gated because a feature whose entire
+purpose is building confidence shouldn't depend on a user incidentally
+discovering it. This is the one part of the design explicitly flagged for
+alpha-testing feedback -- see "Open Questions" below.
+
+---
+
 # Open Questions
 
 The following topics intentionally remain open until validated through
@@ -167,9 +217,13 @@ prototype testing:
 - Final visual theme and typography
 - Keyboard shortcut set
 - Compact sidebar mode for smaller displays
-- Review Cards layout
 - Export workspace layout
 - Future support for multiple layouts and profile management
+- Card Inspection's discoverability affordance: whether the tile's
+  primary click should stay as include/exclude with inspection as a
+  secondary corner affordance (current implementation), or whether the
+  two should swap. Ship the current design as the default; treat alpha
+  feedback on this specifically as the thing most likely to change.
 
 These should be resolved through iterative testing rather than
 speculation.

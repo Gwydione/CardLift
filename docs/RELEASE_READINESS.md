@@ -225,6 +225,31 @@ _Bugs found during manual alpha testing:_
   `tests/test_main_window.py`, the suite's first `MainWindow`-level tests,
   driven through a real `QApplication.exec()` loop rather than a synthetic
   direct `closeEvent()` call — see the bullets above).
+- **Card Inspection (implemented, not yet decided).** Replaces the
+  originally-planned "Zoom/Pan" milestone -- design review concluded
+  Review Cards' actual need was a closer, high-fidelity look at one
+  already-identified card (porting the CLI's `--preview`/`--inspect`
+  split into the GUI), not a general zoom/pan canvas. A "look closer"
+  tile affordance opens a full-workspace overlay showing one card with a
+  margin of surrounding page content and an accent-colored crop boundary;
+  Next/Previous (plus arrow keys) step through cards without leaving the
+  overlay; include/exclude is reachable from inside it. Deliberately
+  excludes interactive zoom, persistent pan, a thumbnail filmstrip, and
+  any "inspected" tracking or deck-wide count, since the guiding
+  principle is representative-sampling confidence, not exhaustive
+  inspection -- see `docs/ui/UI_DECISIONS.md`'s "Card Inspection" section
+  for the full design reasoning, including the one part (the
+  discoverability affordance) explicitly left open for alpha feedback.
+  New engine primitive: `CardCropper.crop_card_with_margin()`
+  (`tests/test_cropper.py`), undecorated counterpart to the existing
+  CLI-only `crop_inspect()`. `tests/test_review_workspace.py` (new)
+  covers scroll-position preservation, on-demand/cached rendering,
+  next/previous clamping, and include/exclude sync against a real
+  PDFRenderer pipeline. **Code-complete and unit-tested, but not yet
+  manually verified in the running app or decided as a permanent feature
+  -- awaiting your own use and alpha-tester feedback before being
+  considered part of the product**, per this milestone's own explicit
+  scope (build small, learn from real use, iterate).
 - **Privacy-conscious crash logging.** New `deckforge_gui/logging_setup.py`
   configures a rotating local log file
   (`%LOCALAPPDATA%\DeckForge\logs\deckforge.log`, 1 MB × 3 backups) in

@@ -133,3 +133,38 @@ class CardCropper:
         )
         draw.text((6, 6), f"r{row}c{col}", fill=(255, 255, 0))
         return region
+
+    def crop_card_with_margin(
+        self,
+        page_image: Image.Image,
+        geometry: GridGeometry,
+        trim: TrimValues,
+        row: int,
+        col: int,
+        margin_pt: float,
+    ) -> tuple[Image.Image, tuple[int, int, int, int]]:
+        """Crops a card plus a surrounding margin of page content, with no
+        debug markup drawn -- unlike crop_inspect(), this is meant for a
+        polished, presentation-facing view (the GUI's card inspector), not
+        a calibration debugging aid, so it leaves annotation entirely to
+        the caller. Returns the cropped region and the card's own box
+        within it (pixels, relative to the returned image's origin), so a
+        caller can draw its own boundary indicator in its own visual
+        language instead of this module's CLI-only blue/red convention.
+
+        `page_image` must already be rendered at this instance's
+        render_scale.
+        """
+        box = self.trimmed_box_for(geometry, trim, row, col)
+        box_px = box.to_pixels(self._render_scale)
+        margin_px = round(margin_pt * self._render_scale)
+
+        page_w, page_h = page_image.size
+        ox0 = max(box_px[0] - margin_px, 0)
+        oy0 = max(box_px[1] - margin_px, 0)
+        ox1 = min(box_px[2] + margin_px, page_w)
+        oy1 = min(box_px[3] + margin_px, page_h)
+
+        region = page_image.crop((ox0, oy0, ox1, oy1))
+        card_rect = (box_px[0] - ox0, box_px[1] - oy0, box_px[2] - ox0, box_px[3] - oy0)
+        return region, card_rect
