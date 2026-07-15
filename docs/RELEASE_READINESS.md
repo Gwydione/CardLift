@@ -28,13 +28,20 @@ review this phase is responding to.
   `python gui_app.py`) has not yet been verified on a machine without
   the existing development environment. Still open, per
   `docs/ALPHA_RELEASE_REVIEW.md` §5H.
-- **Sample deck: scheduled for replacement.** `sample_decks/Solo-cards-digital.pdf`
-  is a third-party PDF. Product decision: it will not ship as part of
-  Alpha 1 and will be replaced by an official DeckForge Demo Deck
-  authored for this project. It remains in the repository for now only
-  because six test files depend on it as a real-PDF fixture (see those
-  files' `SAMPLE_PDF` constants); migrating those fixtures to the new
-  Demo Deck is tracked as an open item below, not yet implemented.
+- **Sample deck: migrated.** The third-party `sample_decks/Solo-cards-digital.pdf`
+  has been removed from the repository and replaced by
+  `sample_decks/DeckForge_Demo_Deck.pdf`, an official DeckForge Demo Deck
+  authored for this project (design doc: `docs/ui/DEMO_DECK.md`). The GUI's
+  bundled onboarding path (`MainWindow.DEMO_DECK_PATH`), the six test files
+  that depend on a real-PDF fixture (`tests/test_cell_export.py`,
+  `tests/test_export_workspace.py`, `tests/test_main_window.py`,
+  `tests/test_pdf_renderer.py`, `tests/test_review_workspace.py`,
+  `tests/test_session.py`), and the calibration profile (now
+  `profiles/demo_deck.json`, replacing `profiles/solo_cards.json`) have all
+  been repointed at it and validated against the real PDF via `--preview`/
+  `--overlay`/`--export`. The redistribution-rights question this raised
+  (see `docs/ALPHA_RELEASE_REVIEW.md` §5H/§10.1) is now moot: the
+  third-party file is gone rather than cleared for redistribution.
 
 ---
 
@@ -70,17 +77,26 @@ _Release preparation (not yet implemented):_
 - [ ] Clean-machine validation of the from-source tester instructions —
       not yet run on a machine without the existing dev environment; see
       `docs/ALPHA_RELEASE_REVIEW.md` §5H.
-- [ ] Migrate the six test files that depend on
+- [x] Migrate the six test files that depended on
       `sample_decks/Solo-cards-digital.pdf` as a real-PDF fixture
       (`tests/test_cell_export.py`, `tests/test_export_workspace.py`,
       `tests/test_main_window.py`, `tests/test_pdf_renderer.py`,
       `tests/test_review_workspace.py`, `tests/test_session.py`) and the
-      matching `profiles/solo_cards.json` calibration profile to the
-      future DeckForge Demo Deck once it's authored, then remove the
-      third-party PDF from the repository.
-- [ ] Confirm `sample_decks/Solo-cards-digital.pdf`'s redistribution
-      rights are moot once the Demo Deck migration above lands (the file
-      is being retired rather than cleared for redistribution).
+      matching calibration profile (`profiles/solo_cards.json` ->
+      `profiles/demo_deck.json`) to `sample_decks/DeckForge_Demo_Deck.pdf`,
+      then remove the third-party PDF from the repository.
+- [x] `sample_decks/Solo-cards-digital.pdf`'s redistribution rights are
+      now moot -- the file has been removed rather than cleared for
+      redistribution.
+- [ ] `DEVELOPER.md`, `docs/CLI_REFERENCE.md`, `extract.py`, and
+      `.claude/settings.local.json`'s Bash allowlist still use
+      `solo_cards`/`Solo-cards-digital.pdf` as the CLI's example profile
+      and PDF. Deliberately deferred: the CLI is documented as stable and
+      out of this alpha's GUI testing surface (see the calibration-geometry
+      follow-up item below), and these examples have no runtime dependency
+      on the removed file until someone actually runs them. Repoint at
+      `demo_deck`/`DeckForge_Demo_Deck.pdf` (or a dedicated CLI fixture) in
+      a follow-up pass.
 
 _Calibration geometry follow-up (not yet implemented):_
 

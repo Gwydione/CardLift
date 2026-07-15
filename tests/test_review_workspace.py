@@ -30,14 +30,14 @@ from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.review_state import ReviewCard, ReviewCardsState
 from deckforge_gui.review_workspace import INSPECT_RENDER_SCALE, REVIEW_RENDER_SCALE, ReviewWorkspace, _CardTile
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "Solo-cards-digital.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
-# Real, --preview-verified geometry from profiles/solo_cards.json (same
-# constant test_export_workspace.py uses against this sample PDF) -- a 3x3
+# Real, --preview-verified geometry from profiles/demo_deck.json (same
+# constant test_export_workspace.py uses against this sample PDF) -- a 2x3
 # grid on page 2, giving several same-page neighbors to navigate between.
 FRONT_GEOMETRY = CalibratedGeometry(
-    left=35.75, top=61.25, card_width=174.58, card_height=239.75,
-    gap_x=0.0, gap_y=0.0, gap_x_derived=False, gap_y_derived=False,
+    left=27.0, top=139.5, card_width=180.0, card_height=252.0,
+    gap_x=9.0, gap_y=9.0, gap_x_derived=False, gap_y_derived=False,
 )
 FRONT_PAGE = 2
 
@@ -246,7 +246,7 @@ class TestOnDemandCachedRendering:
         workspace._renderer.render_page = spy
 
         first, second = workspace._card_list[0], workspace._card_list[1]
-        assert first.page_num == second.page_num  # both on the 3x3 page-2 grid
+        assert first.page_num == second.page_num  # both on the 2x3 page-2 grid
 
         workspace._on_look_closer_requested(first)
         workspace._inspect_next()  # moves to `second`, same page

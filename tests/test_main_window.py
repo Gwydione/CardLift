@@ -20,7 +20,7 @@ until the export finishes, etc.).
 
 Same underlying pipeline as tests/test_export_workspace.py's
 TestExportReentry: a real PDFRenderer/QThread/export_cells() run against
-the sample deck, under QT_QPA_PLATFORM=offscreen, no pytest-qt.
+the Demo Deck, under QT_QPA_PLATFORM=offscreen, no pytest-qt.
 """
 import os
 import sys
@@ -43,13 +43,13 @@ from deckforge_gui.main_window import MainWindow
 from deckforge_gui.review_state import build_review_cards
 import deckforge_gui.export_workspace as export_workspace_mod
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "Solo-cards-digital.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
 # Same real, --preview-verified geometry test_export_workspace.py uses
 # against this sample PDF.
 FRONT_GEOMETRY = CalibratedGeometry(
-    left=35.75, top=61.25, card_width=174.58, card_height=239.75,
-    gap_x=0.0, gap_y=0.0, gap_x_derived=False, gap_y_derived=False,
+    left=27.0, top=139.5, card_width=180.0, card_height=252.0,
+    gap_x=9.0, gap_y=9.0, gap_x_derived=False, gap_y_derived=False,
 )
 FRONT_PAGE = 2
 

@@ -4,19 +4,19 @@ import pytest
 
 from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "Solo-cards-digital.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
 
 def test_page_size_matches_the_actual_page():
     with PDFRenderer(SAMPLE_PDF) as renderer:
-        width_pt, height_pt = renderer.page_size(2)
-    assert width_pt == pytest.approx(595.276, abs=0.01)
-    assert height_pt == pytest.approx(841.89, abs=0.01)
+        width_pt, height_pt = renderer.page_size(1)
+    assert width_pt == pytest.approx(612.0, abs=0.01)
+    assert height_pt == pytest.approx(792.0, abs=0.01)
 
 
 def test_page_size_is_consistent_across_pages_for_this_deck():
     with PDFRenderer(SAMPLE_PDF) as renderer:
-        assert renderer.page_size(2) == renderer.page_size(8)
+        assert renderer.page_size(1) == renderer.page_size(3)
 
 
 def test_page_size_out_of_range_raises():

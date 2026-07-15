@@ -30,15 +30,15 @@ from deckforge_gui.export_workspace import ExportWorkspace
 from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.review_state import ReviewCardsState, build_review_cards
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "Solo-cards-digital.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
-# Real, --preview-verified geometry from profiles/solo_cards.json (same
+# Real, --preview-verified geometry from profiles/demo_deck.json (same
 # constant test_cell_export.py uses against this sample PDF), so the
 # reentry tests below exercise a real PDFRenderer/QThread/export_cells()
 # pipeline rather than a synthetic one.
 FRONT_GEOMETRY = CalibratedGeometry(
-    left=35.75, top=61.25, card_width=174.58, card_height=239.75,
-    gap_x=0.0, gap_y=0.0, gap_x_derived=False, gap_y_derived=False,
+    left=27.0, top=139.5, card_width=180.0, card_height=252.0,
+    gap_x=9.0, gap_y=9.0, gap_x_derived=False, gap_y_derived=False,
 )
 FRONT_PAGE = 2
 

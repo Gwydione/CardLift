@@ -6,19 +6,19 @@ from deckforge.cropper import CardCropper
 from deckforge.pdf_renderer import PDFRenderer
 from deckforge.profile import GridGeometry, TrimValues
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "Solo-cards-digital.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
-# Real, --preview-verified geometry from profiles/solo_cards.json, minus
+# Real, --preview-verified geometry from profiles/demo_deck.json, minus
 # trim (cell_export.py always crops at zero trim -- see its module
 # docstring), so tests exercise real page/card dimensions rather than
 # synthetic numbers.
 FRONT_GEOMETRY = GridGeometry(
-    left=35.75, top=61.25, card_width=174.58, card_height=239.75, gap_x=0.0, gap_y=0.0,
+    left=27.0, top=139.5, card_width=180.0, card_height=252.0, gap_x=9.0, gap_y=9.0,
 )
 BACK_GEOMETRY = GridGeometry(
-    left=46.0, top=71.75, card_width=153.62, card_height=218.75, gap_x=21.0, gap_y=21.0,
+    left=216.0, top=270.0, card_width=180.0, card_height=252.0, gap_x=0.0, gap_y=0.0,
 )
-BACK_PAGE = 8
+BACK_PAGE = 3
 RENDER_SCALE = 1.0
 _ZERO_TRIM = TrimValues(0.0, 0.0, 0.0, 0.0)
 
@@ -126,17 +126,17 @@ class TestBackHandling:
 
 class TestPageRenderCaching:
     def test_each_distinct_page_rendered_at_most_once(self, tmp_path: Path) -> None:
-        # Interleaved, non-page-grouped cells across pages 2 and 3, plus a
-        # back on page 8 -- each page number must still only be rendered
+        # Interleaved, non-page-grouped cells across pages 1 and 2, plus a
+        # back on page 3 -- each page number must still only be rendered
         # once (see cell_export.export_cells()'s internal page cache).
-        cells = [(2, 0, 0), (3, 0, 0), (2, 0, 1), (3, 0, 1), (2, 0, 2)]
+        cells = [(1, 0, 0), (2, 0, 0), (1, 0, 1), (2, 0, 1), (1, 0, 2)]
         with PDFRenderer(SAMPLE_PDF) as real:
             counting = _CountingRenderer(real)
             export_cells(
                 counting, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path,
                 back=(BACK_PAGE, BACK_GEOMETRY),
             )
-        assert Counter(counting.calls) == Counter({2: 1, 3: 1, 8: 1})
+        assert Counter(counting.calls) == Counter({1: 1, 2: 1, 3: 1})
 
 
 class TestOutputDirectory:

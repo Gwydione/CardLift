@@ -62,7 +62,7 @@ _CALIBRATE_TOOLBAR_INDEX = 1
 # already makes ("pip install -r requirements-gui.txt / python
 # gui_app.py"), since there is no packaging/bundling step in this repo
 # yet. Revisit this path once real packaging exists.
-DEMO_DECK_PATH = Path(__file__).resolve().parents[2] / "docs" / "ui" / "DeckForge_Demo_Deck.pdf"
+DEMO_DECK_PATH = Path(__file__).resolve().parents[2] / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
 
 class TopBar(QWidget):
