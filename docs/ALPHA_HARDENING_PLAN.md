@@ -8,6 +8,9 @@ while manually verifying risk 3's fix, and risks 1/2/4's fix was
 deliberately reviewed as its own change before being folded into the
 same commit as risk 3. §2 (safe shutdown during export) is also now
 implemented, with its own regression tests (`tests/test_main_window.py`).
+§6 (crash logging) is also now implemented, with a privacy pass folded in
+(see §6's own status note) — no new regression tests, since it's a
+side-effecting logging call, not new application logic.
 Everything else in this plan
 has not been started.** Scope is deliberately
 limited to six areas: export thread synchronization,
@@ -434,7 +437,7 @@ shows up in bug reports."
 
 ---
 
-## 6. Crash logging
+## 6. Crash logging — IMPLEMENTED
 
 **Traced:** grepped `src/` for `logging`/`excepthook`/`traceback` — the
 only hits are `deckforge/cli.py`'s existing `try/except Exception` blocks
@@ -483,6 +486,39 @@ button this milestone — the log existing and being inspectable by you on
 disk is enough for alpha; a UI affordance for it is a reasonable later
 addition once you know what testers actually need from it.
 
+**Implemented, as planned above, plus a privacy pass done as its own
+follow-up review** (`deckforge_gui/logging_setup.py`, new;
+`export_workspace.py`, `main_window.py`, `gui_app.py`): all three
+smallest-coherent-implementation bullets landed as described — rotating
+local `RotatingFileHandler` (`%LOCALAPPDATA%\DeckForge\logs\deckforge.log`,
+1 MB × 3 backups) configured in `gui_app.main()` before `MainWindow()` is
+constructed, session header stamped with `deckforge.__version__`
+(see §5's actual outcome — the single authoritative constant, not a
+separate `_version.py`) plus `platform.platform()`/Python version,
+`sys.excepthook` logging uncaught GUI-thread exceptions with full
+traceback and falling through to the previous hook, and
+`_ExportWorker.run()`'s except widened from `(OSError, PDFRenderError)` to
+a blanket `Exception` logged via `_logger.exception()` before still
+emitting `failed`. On top of that: a review pass on the milestone
+INFO/WARNING logs found two paths logged in full — the export destination
+folder (`self._destination`) and, on load failure, the source PDF path —
+both now logged as `.name` only (folder/file name, not the full path,
+since a full path can embed unrelated personal folder names from
+elsewhere in the tree); the export-succeeded log's destination was also
+found to just repeat what export-started already logged for the same
+export and was dropped rather than kept redundant. Exception/traceback
+content itself (both the `excepthook` path and `_logger.exception`/
+`_logger.warning("Export failed: %s", ...)`, whose `message` argument can
+be an `OSError`'s `str()`, which embeds the failing filename in full) is
+deliberately left unredacted for this alpha — no `_redact_home()` or
+custom traceback rewriting was added — and `logging_setup.py`'s module
+docstring now documents that this can still reveal the tester's Windows
+username via the install path, so `deckforge.log` should be reviewed
+before being shared publicly. No telemetry, no network calls, no new
+regression tests (side-effecting logging calls, not new application
+logic) — existing 486-test suite unaffected. See
+`docs/RELEASE_READINESS.md`'s Accomplished section.
+
 ---
 
 ## Summary of what's proposed
@@ -497,7 +533,7 @@ own section for exactly what landed vs. what's still only proposed.
 | Regression testing | `pytest-qt` + targeted widget/thread tests for the two fixes above | `tests/test_export_workspace.py`, `tests/test_main_window.py` | `requirements-dev.txt` | Risk 3 test done; risk 1/2/4 tests done; `closeEvent` tests done (no `pytest-qt` needed); worker-failure test not started |
 | README accuracy | add GUI entry point, remove stale Future-work bullet | — | `README.md` | Implemented — see `docs/RELEASE_READINESS.md` |
 | Release versioning | one version constant, shown in window title | `deckforge_gui/_version.py` | `main_window.py`, `DEVELOPER.md` | Not started |
-| Crash logging | rotating local log file + excepthook + widened worker try/except | — | `gui_app.py`, `export_workspace.py` | Not started |
+| Crash logging | rotating local log file + excepthook + widened worker try/except, plus a privacy pass (path→name, dropped redundant destination, documented exception-content limitation) | `deckforge_gui/logging_setup.py` | `gui_app.py`, `export_workspace.py`, `main_window.py` | Implemented |
 
 All six are additive/local edits to existing files (no architectural
 change), consistent with ENGINEERING_STANDARDS.md's "smallest change that

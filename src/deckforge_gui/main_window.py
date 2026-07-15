@@ -9,6 +9,7 @@ that knows about Qt.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -48,6 +49,8 @@ from .theme import (
     TEXT_NAV,
 )
 from .workspaces import build_workspaces
+
+_logger = logging.getLogger(__name__)
 
 SIDEBAR_WIDTH = 220
 GUIDANCE_MIN_WINDOW_WIDTH = 860
@@ -194,6 +197,7 @@ class MainWindow(QMainWindow):
         self._update_guidance_visibility()
 
     def _on_step_selected(self, step: WorkflowStep) -> None:
+        _logger.info("Step changed: %s", step.name)
         self.state.select_step(step)
         self._apply_step(step)
 
@@ -201,8 +205,10 @@ class MainWindow(QMainWindow):
         try:
             self.session.load_pdf(path)
         except DeckLoadError as exc:
+            _logger.warning("Failed to load PDF %s: %s", path.name, exc)
             self.deck_workspace.show_error(str(exc))
             return
+        _logger.info("PDF loaded: %s (%d pages)", path.name, self.session.page_count)
         self._update_deck_status_label()
         # A newly (or re-)loaded PDF invalidates any previous markers/
         # calibration -- page N in a different PDF has no relationship to
@@ -406,6 +412,7 @@ class MainWindow(QMainWindow):
             # closing() issues after a successful deferred export -- by
             # then the worker is already cleared, so this accepts it
             # immediately with no dialog.
+            _logger.info("Application closing")
             return
         if self._close_after_export:
             # A deferred close is already pending from an earlier "Finish
@@ -427,9 +434,11 @@ class MainWindow(QMainWindow):
             # and gone, which would otherwise leave the close pending
             # forever (until some later, unrelated close attempt).
             if self.export_workspace.is_exporting():
+                _logger.info("Close deferred until export finishes")
                 self._close_after_export = True
                 event.ignore()
             else:
+                _logger.info("Application closing")
                 return
         else:
             event.ignore()

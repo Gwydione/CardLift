@@ -39,6 +39,7 @@ guarantee holds regardless.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 from deckforge.cell_export import export_cells
-from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
+from deckforge.pdf_renderer import PDFRenderer
 from deckforge.profile import GridGeometry
 
 from .calibrate_state import CalibrateState, CalibrationTarget
@@ -120,6 +121,8 @@ QPushButton:pressed {{ background: {ACCENT_PRESSED}; }}
 QPushButton:disabled {{ background: #cfc9e8; color: #f4f2fb; }}
 """
 
+_logger = logging.getLogger(__name__)
+
 _PROGRESS_STYLE = f"""
 QProgressBar {{
     border: 1px solid {BORDER_CARD};
@@ -181,7 +184,13 @@ class _ExportWorker(QThread):
                 self._renderer, self._render_scale, self._front_geometry,
                 self._cells, self._destination, back=self._back,
             )
-        except (OSError, PDFRenderError) as exc:
+        except Exception as exc:
+            # Blanket, not just (OSError, PDFRenderError): this is a thread
+            # boundary sys.excepthook cannot be relied on to substitute for
+            # -- without this, an unexpected exception here leaves the
+            # worker dead with neither succeeded nor failed emitted, so the
+            # user just watches the progress bar vanish with no message.
+            _logger.exception("Export raised an exception")
             self.failed.emit(str(exc))
             return
         self.succeeded.emit(written, self._destination)
@@ -621,6 +630,9 @@ class ExportWorkspace(QWidget):
             cells, self._destination, self._plan.back,
             pdf_generation=self._pdf_generation, parent=self,
         )
+        _logger.info(
+            "Export started: %d cards -> %s", self._plan.card_count, self._destination.name,
+        )
         self._worker.succeeded.connect(self._on_export_succeeded)
         self._worker.failed.connect(self._on_export_failed)
         self._worker.finished.connect(self._on_export_worker_finished)
@@ -645,6 +657,9 @@ class ExportWorkspace(QWidget):
         # the live instance attribute here would be wrong.
         plural = "s" if len(written) != 1 else ""
         message = f"Exported {len(written)} file{plural} to {destination}."
+        # Destination is already logged at export start (_on_export_clicked)
+        # and doesn't change mid-export, so it's not repeated here.
+        _logger.info("Export succeeded: %d files", len(written))
         self._show_result(message, is_error=False)
         self._export_complete = True
         self._completed_plan = self._plan
@@ -655,6 +670,7 @@ class ExportWorkspace(QWidget):
     def _on_export_failed(self, message: str) -> None:
         if self._is_stale_worker_signal():
             return
+        _logger.warning("Export failed: %s", message)
         self._show_result(f"Couldn't finish exporting: {message}", is_error=True)
         self._last_export_succeeded = False
 

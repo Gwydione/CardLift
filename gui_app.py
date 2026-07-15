@@ -20,10 +20,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from deckforge_gui.logging_setup import configure_logging  # noqa: E402
 from deckforge_gui.main_window import MainWindow  # noqa: E402
 
 
 def main() -> int:
+    configure_logging()
     app = QApplication(sys.argv)
     app.setApplicationName("DeckForge")
     window = MainWindow()

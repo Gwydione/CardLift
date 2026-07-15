@@ -18,7 +18,7 @@ Ranked by risk, not by discovery order.
 | 1 | **Calibration geometry robustness** (different calibration-click choices produce systematically different, sometimes-clipping grids) | Correctness of the core "click two corners, get a grid" promise — the product's central value proposition. Flagged by alpha testing as the current highest-priority issue. | Implemented — see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md` |
 | 2 | Export thread synchronization (renderer race, stale in-progress UI, destination-message race, stale cross-deck completion) | Real crash/corruption risk during the app's core "write files to disk" action | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §1 |
 | 3 | Safe shutdown during export | Closing the app mid-export can destroy a running `QThread` — known Qt crash pattern, plus silent partial file writes | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §2 |
-| 4 | Crash logging | Zero diagnostic trail today; every other bug found during alpha testing is harder to fix without this | Planned — §6 |
+| 4 | Crash logging | Zero diagnostic trail today; every other bug found during alpha testing is harder to fix without this | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §6 |
 | 5 | Regression testing for the above | Confirms 2 & 3 are actually fixed and stay fixed | Mostly implemented — §3 (worker-failure test still not started) |
 | 6 | Release versioning | Bug reports currently can't be tied to a build | Implemented — see `docs/ALPHA_HARDENING_PLAN.md` §5 |
 | 7 | README accuracy | Alpha testers' entry point currently hides the GUI entirely | Implemented — see below |
@@ -45,12 +45,6 @@ _Calibration geometry follow-up (not yet implemented):_
       away from (see DEVELOPER.md's "Cell-label prompt uses human, not
       internal, numbering"). Not currently prioritized: the CLI engine is
       documented as stable and this alpha's testing surface is the GUI.
-
-_Design review findings (not yet implemented):_
-
-- [ ] No crash/error logging anywhere in the GUI — an uncaught exception
-      (especially inside the export worker thread) is currently
-      invisible outside a live terminal. — plan §6
 
 _Bugs found during manual alpha testing:_
 
@@ -231,6 +225,30 @@ _Bugs found during manual alpha testing:_
   `tests/test_main_window.py`, the suite's first `MainWindow`-level tests,
   driven through a real `QApplication.exec()` loop rather than a synthetic
   direct `closeEvent()` call — see the bullets above).
+- **Privacy-conscious crash logging.** New `deckforge_gui/logging_setup.py`
+  configures a rotating local log file
+  (`%LOCALAPPDATA%\DeckForge\logs\deckforge.log`, 1 MB × 3 backups) in
+  `gui_app.main()` before `MainWindow()` is constructed, with a session
+  header stamping `deckforge.__version__` plus platform/Python version.
+  `sys.excepthook` now logs uncaught GUI-thread exceptions with full
+  traceback before falling through to the previous hook, and
+  `_ExportWorker.run()`'s except was widened from
+  `(OSError, PDFRenderError)` to a blanket `Exception`, logged via
+  `_logger.exception()`, since a worker-thread exception outside that
+  narrow pair previously died silently with neither `succeeded` nor
+  `failed` emitted; the existing `failed` signal (and its user-facing
+  message) is unchanged either way. Milestone INFO/WARNING logs (export
+  start/success/failure, PDF load success/failure, step changes, close
+  events) log PDF and export-destination references as `.name` only, not
+  the full path, and the export-succeeded log no longer repeats the
+  destination already logged at export start. Exception/traceback content
+  itself is intentionally left unredacted for this alpha — no
+  `_redact_home()` or custom traceback rewriting — since a full traceback
+  or an `OSError`'s message can still embed the tester's Windows username
+  via the install path; `logging_setup.py`'s module docstring documents
+  this so `deckforge.log` is reviewed before being shared publicly. No
+  telemetry, no network calls, local file only. See
+  `docs/ALPHA_HARDENING_PLAN.md` §6.
 
 ---
 
