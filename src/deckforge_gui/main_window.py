@@ -10,6 +10,7 @@ that knows about Qt.
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -57,12 +58,27 @@ GUIDANCE_MIN_WINDOW_WIDTH = 860
 _NO_TOOLBAR_INDEX = 0
 _CALIBRATE_TOOLBAR_INDEX = 1
 
-# Assumes a source checkout (src/deckforge_gui/main_window.py two levels
-# under the repo root) -- the same assumption gui_app.py's own docstring
-# already makes ("pip install -r requirements-gui.txt / python
-# gui_app.py"), since there is no packaging/bundling step in this repo
-# yet. Revisit this path once real packaging exists.
-DEMO_DECK_PATH = Path(__file__).resolve().parents[2] / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+def _resource_root() -> Path:
+    """Where bundled, non-user-selected files (currently just the Demo
+    Deck PDF) live, relative to how the app is currently running.
+
+    Frozen (PyInstaller): sys.frozen + sys._MEIPASS are set by PyInstaller's
+    bootloader and point at the unpacked bundle directory (commonly
+    _internal/ for a one-folder build) -- not necessarily beside the .exe --
+    so bundled data must be located there, not via sys.executable's parent.
+    Source checkout: this file lives at src/deckforge_gui/main_window.py,
+    two levels under the repo root.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[2]
+
+
+def demo_deck_path() -> Path:
+    """Resolved fresh on every call (not cached at import time) so tests
+    can simulate frozen vs. source execution without reloading this
+    module."""
+    return _resource_root() / "sample_decks" / "DeckForge_Demo_Deck.pdf"
 
 
 class TopBar(QWidget):
@@ -220,14 +236,16 @@ class MainWindow(QMainWindow):
         self._apply_step(step)
 
     def _on_demo_deck_requested(self) -> None:
-        if not DEMO_DECK_PATH.exists():
-            # Defensive only -- expected to be unreachable in a normal
-            # source checkout; guards against a future packaging change
-            # that moves or omits the bundled asset.
-            _logger.warning("Demo Deck asset not found at %s", DEMO_DECK_PATH)
+        path = demo_deck_path()
+        if not path.exists():
+            # Guards against a packaging regression -- a frozen build whose
+            # .spec doesn't actually bundle sample_decks/, or a source
+            # checkout missing the file -- rather than an expected case in
+            # normal operation.
+            _logger.warning("Demo Deck asset not found at %s", path)
             self.deck_workspace.show_error("The bundled Demo Deck could not be found.")
             return
-        self._on_pdf_chosen(DEMO_DECK_PATH, is_demo=True)
+        self._on_pdf_chosen(path, is_demo=True)
 
     def _on_pdf_chosen(self, path: Path, is_demo: bool = False) -> None:
         try:
