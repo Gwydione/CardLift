@@ -15,11 +15,10 @@ non-code items that stand between here and handing CardLift to a
 private alpha tester. See `docs/ALPHA_RELEASE_REVIEW.md` for the release
 review this phase is responding to.
 
-- **Governance documentation: substantially complete.** `LICENSE_EXPLAINED.md`,
-  `THIRD_PARTY_NOTICES.md`, `docs/PROJECT_PHILOSOPHY.md`, and
-  `docs/LICENSE_RESEARCH.md` are written and committed. A `LICENSE` file
-  (GNU AGPLv3) exists in the working tree but **is not yet committed to
-  git** — closing that gap is the single remaining governance item.
+- **Governance documentation: complete.** `LICENSE_EXPLAINED.md`,
+  `THIRD_PARTY_NOTICES.md`, `docs/PROJECT_PHILOSOPHY.md`,
+  `docs/LICENSE_RESEARCH.md`, and the `LICENSE` file (GNU AGPLv3) are all
+  written and committed to git.
 - **Packaging: discovery build only.** `deckforge_gui.spec` (one-folder
   PyInstaller build) exists and produces a working `dist/CardLift/`
   bundle, manually smoke-tested through Demo Deck load → Calibrate
@@ -72,8 +71,7 @@ analysis, and recommended fix for item 1: `docs/CALIBRATION_GEOMETRY_INVESTIGATI
 
 _Release preparation (not yet implemented):_
 
-- [ ] Commit the `LICENSE` file — it exists in the working tree (GNU
-      AGPLv3) but is currently untracked by git.
+- [x] Commit the `LICENSE` file — GNU AGPLv3, committed to git.
 - [ ] Packaging (installer/portable build) — first one-folder PyInstaller
       build done (`deckforge_gui.spec`), smoke-tested manually. Still
       open: installer, code signing, version/icon metadata; see
@@ -92,15 +90,14 @@ _Release preparation (not yet implemented):_
 - [x] `sample_decks/Solo-cards-digital.pdf`'s redistribution rights are
       now moot -- the file has been removed rather than cleared for
       redistribution.
-- [ ] `DEVELOPER.md`, `docs/CLI_REFERENCE.md`, `extract.py`, and
-      `.claude/settings.local.json`'s Bash allowlist still use
-      `solo_cards`/`Solo-cards-digital.pdf` as the CLI's example profile
-      and PDF. Deliberately deferred: the CLI is documented as stable and
-      out of this alpha's GUI testing surface (see the calibration-geometry
-      follow-up item below), and these examples have no runtime dependency
-      on the removed file until someone actually runs them. Repoint at
-      `demo_deck`/`CardLift_Demo_Deck.pdf` (or a dedicated CLI fixture) in
-      a follow-up pass.
+- [ ] `.claude/settings.local.json`'s Bash allowlist still uses
+      `solo_cards`/`Solo-cards-digital.pdf` as its example profile and PDF
+      (`DEVELOPER.md`, `docs/CLI_REFERENCE.md`, and `extract.py` have
+      since been repointed at `demo_deck`/`CardLift_Demo_Deck.pdf`).
+      Deliberately deferred: it's an internal Bash-permission allowlist
+      entry, not user-facing documentation, and has no runtime dependency
+      on the removed file until someone actually runs the allowlisted
+      command.
 
 _Calibration geometry follow-up (not yet implemented):_
 

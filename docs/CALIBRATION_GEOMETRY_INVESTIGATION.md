@@ -10,6 +10,10 @@ recommended smallest-coherent fix, which has since been implemented in
 "Recommended smallest coherent change" below for what shipped and what's
 still a follow-up).
 
+_This document reflects the repository state at the time it was written
+and is preserved for historical context; see `docs/RELEASE_READINESS.md`
+for current status._
+
 ---
 
 ## 1. How row/column spacing is computed

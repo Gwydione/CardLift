@@ -36,6 +36,6 @@ It does not:
 - run background services
 - check for updates automatically
 
-See `PRIVACY.md` for more information.
+See `PRIVACY.md` (in the source repository: `docs/PRIVACY_PROMISES.md`) for more information.
 
 Thank you for helping shape CardLift.

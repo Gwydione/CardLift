@@ -22,6 +22,11 @@ into this plan's scope.
 Each section: current state (traced from code), risks, smallest coherent
 implementation, and a test plan.
 
+_This document reflects the repository state at the time it was written
+(including test counts and other point-in-time figures) and is preserved
+for historical context; see `docs/RELEASE_READINESS.md` for current
+status._
+
 ---
 
 ## 1. Export thread synchronization

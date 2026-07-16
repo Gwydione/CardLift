@@ -1,17 +1,17 @@
-# DeckForge Developer Handbook
+# CardLift Developer Handbook
 
 This document exists so that you (or anyone else) can come back to
-DeckForge after weeks away and be productive again in five minutes,
+CardLift after weeks away and be productive again in five minutes,
 without having to re-derive how the project is organized or how to run
-it. If you're looking for _what DeckForge is_ and _how the calibration
+it. If you're looking for _what CardLift is_ and _how the calibration
 model works conceptually_, see [README.md](README.md) — this file is
 about the mechanics of working on the code.
 
 ## Security and Network Access
 
-The core DeckForge workflow is local-first and must not require network access. Do not add telemetry, uploads, update checks, licensing calls, or other outbound communication without an explicit product decision, clear user disclosure, and documentation.
+The core CardLift workflow is local-first and must not require network access. Do not add telemetry, uploads, update checks, licensing calls, or other outbound communication without an explicit product decision, clear user disclosure, and documentation.
 
-Before making a change that touches networking, file I/O, or logging, check it against [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md)'s contributor checklist -- that document, not this section, is the canonical source for what DeckForge currently promises and how to evaluate a change against it.
+Before making a change that touches networking, file I/O, or logging, check it against [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md)'s contributor checklist -- that document, not this section, is the canonical source for what CardLift currently promises and how to evaluate a change against it.
 
 ## First Five Minutes
 
@@ -20,7 +20,7 @@ these in order; each one is also covered in more depth further down.
 
 1. **Open PowerShell** in the project folder:
    ```powershell
-   cd C:\Users\adodg\OneDrive\Documents\deckforge
+   cd C:\Users\adodg\OneDrive\Documents\deckforge-rewrite
    ```
 2. **Activate the virtual environment:**
    ```powershell
@@ -36,17 +36,17 @@ these in order; each one is also covered in more depth further down.
    git status
    git log --oneline -10
    ```
-5. **Skim `profiles/solo_cards.json`** and re-read README's "How the
+5. **Skim `profiles/demo_deck.json`** and re-read README's "How the
    grid math works" if the `left`/`top`/`trim_*` fields don't
    immediately make sense — this is the part that's easiest to forget.
-   `solo_cards.json` uses the legacy flat-field form; see README
+   `demo_deck.json` uses the legacy flat-field form; see README
    "Profiles" for the `layouts`-list form a multi-grid deck would use
    instead, and `DeckProfile.layouts` (always populated, either way) is
    what downstream code actually reads.
 6. **Run a sanity-check command** against the sample deck to see
-   DeckForge actually do something before you start changing code:
+   CardLift actually do something before you start changing code:
    ```powershell
-   python extract.py --profile solo_cards --preview
+   python extract.py --profile demo_deck --preview
    ```
    Then open `preview/calibration_overlay.png` to see the current
    calibration.
@@ -59,10 +59,10 @@ At that point you're caught up — pick up wherever you left off, or see
 **Open the project**
 
 ```powershell
-cd C:\Users\adodg\OneDrive\Documents\deckforge
+cd C:\Users\adodg\OneDrive\Documents\deckforge-rewrite
 ```
 
-There's nothing to "launch" — DeckForge is a CLI tool, not a server. You
+There's nothing to "launch" — CardLift is a CLI tool, not a server. You
 work on it in an editor and run `extract.py` from a terminal.
 
 **Activate the virtual environment**
@@ -76,7 +76,7 @@ A venv already exists at `.venv/`. Activate it per-session:
 (If you're in Git Bash instead of PowerShell: `source .venv/Scripts/activate`.)
 
 You'll know it worked because your prompt gets a `(.venv)` prefix. Do
-this every time you open a new terminal to work on DeckForge — nothing
+this every time you open a new terminal to work on CardLift — nothing
 below (`pytest`, `python extract.py ...`) will find the right
 dependencies without it.
 
@@ -131,7 +131,7 @@ import so they're unit tested directly without opening a window:
 
 **Welcome Experience milestone.** The first real workflow: launch → open
 a PDF on the Deck page (drag-and-drop onto the dashed drop zone, or the
-"Choose PDF" button) → DeckForge reads the page count via `PDFRenderer`
+"Choose PDF" button) → CardLift reads the page count via `PDFRenderer`
 → the Deck step is marked complete and the app auto-advances to Find
 Cards. `deck_workspace.py` (`DeckWorkspace`) owns the drop
 zone/click-to-browse/error-display UI but never decides whether a file
@@ -163,7 +163,7 @@ The documented workflow order is Deck -> Select Card Pages -> Calibrate ->
 Review Cards -> Export (docs/ui/UI_DECISIONS.md), so this step runs
 _before_ any calibration profile exists. It is deliberately a coarse,
 page-level scoping step, not detection or calibration: there is no
-automatic card-detection algorithm anywhere in DeckForge (README's MVP is
+automatic card-detection algorithm anywhere in CardLift (README's MVP is
 manual-calibration-only), and Calibrate's own two-corner-click flow (the
 CLI's `--calibrate`, via `measure.derive_geometry()`) already owns
 deriving precise card geometry later -- redoing that work here would just
@@ -861,13 +861,13 @@ The shipped design defers instead of blocking. `MainWindow.closeEvent()`
 is still a no-op when nothing is exporting -- ordinary shutdown is
 completely unchanged, and this also covers the automatic second close
 described below, since by then the worker is already cleared. Otherwise
-it shows a `QMessageBox` with **Keep DeckForge Open** (default and Escape
+it shows a `QMessageBox` with **Keep CardLift Open** (default and Escape
 button, same "default to the safe/reversible choice" convention as the
 overwrite-confirmation dialog above) and **Finish Export, Then Close**.
 The choice lives behind `MainWindow._confirm_quit_during_export()`, its
 own method (same reason `_confirm_overwrite_if_needed()` above is its
 own) so tests can drive the decision directly rather than simulating a
-dialog click. "Keep DeckForge Open" calls `event.ignore()` and does
+dialog click. "Keep CardLift Open" calls `event.ignore()` and does
 nothing else. "Finish Export, Then Close" sets a
 `MainWindow._close_after_export` flag and calls `event.ignore()` --
 never a blocking join -- so the export keeps running and the GUI event
@@ -908,7 +908,7 @@ drives a real `QApplication.exec()` loop with a deliberately delayed
 `export_cells()` pipeline (a synthetic direct `closeEvent()` call, used by
 an earlier version of this test file, cannot detect an unresponsive GUI
 thread at all) and covers: no dialog when nothing is exporting; Keep
-DeckForge Open leaves the worker running and ignores the close; a worker
+CardLift Open leaves the worker running and ignores the close; a worker
 object left referenced but no longer running (the exact race
 `is_exporting()` is defined against) does not trigger the confirmation; a
 periodic `QTimer` keeps ticking throughout a real, multi-second delayed
@@ -933,7 +933,7 @@ assumes the venv is activated. Full flag reference: `python extract.py --help`.
 ### `--preview`
 
 ```powershell
-python extract.py --profile solo_cards --preview
+python extract.py --profile demo_deck --preview
 ```
 
 Renders `first_front_page` only, crops its cards, and writes
@@ -946,8 +946,8 @@ it's the main calibration loop: change a value in the profile JSON, run
 ### `--overlay`
 
 ```powershell
-python extract.py --profile solo_cards --overlay
-python extract.py --profile solo_cards --overlay --page 8
+python extract.py --profile demo_deck --overlay
+python extract.py --profile demo_deck --overlay --page 3
 ```
 
 Same blue/red overlay as `--preview`, but for one page only, without
@@ -958,7 +958,7 @@ profile's `back_page` number), which `--preview` doesn't cover.
 ### `--inspect CARD_NUM`
 
 ```powershell
-python extract.py --profile solo_cards --inspect 1
+python extract.py --profile demo_deck --inspect 1
 # → preview/inspect_card001.png
 ```
 
@@ -972,8 +972,8 @@ cumulative drift).
 ### `--calibrate`
 
 ```powershell
-python extract.py --profile solo_cards --calibrate
-python extract.py --profile solo_cards --calibrate --page 8
+python extract.py --profile demo_deck --calibrate
+python extract.py --profile demo_deck --calibrate --page 3
 ```
 
 Opens an interactive window on the rendered page: click a card's
@@ -1060,8 +1060,8 @@ of `ViewTransform`, these are unit tested without opening a window.
 ### `--measure`
 
 ```powershell
-python extract.py --profile solo_cards --measure --card r0c0:240,420,960,1360
-python extract.py --profile solo_cards --measure \
+python extract.py --profile demo_deck --measure --card r0c0:240,420,960,1360
+python extract.py --profile demo_deck --measure \
   --card r0c0:240,420,960,1360 --card r0c1:1000,420,1720,1360
 ```
 
@@ -1076,7 +1076,7 @@ coordinates on hand and don't want to open the interactive window.
 ### `--export`
 
 ```powershell
-python extract.py --profile solo_cards --export
+python extract.py --profile demo_deck --export
 # → output/front_001.png ... output/front_NNN.png, output/back.png
 ```
 
@@ -1089,7 +1089,7 @@ PlayingCards.io or Tabletop Simulator.
 ### `--contact-sheet`
 
 ```powershell
-python extract.py --profile solo_cards --contact-sheet
+python extract.py --profile demo_deck --contact-sheet
 # → preview/contact_sheet.png
 ```
 
@@ -1107,8 +1107,8 @@ miss, like one page's grid drifting relative to the others.
 4. Implement the feature or fix, in small increments.
 5. Run the test suite again — don't let a broken test linger while you keep coding.
 6. Test manually: run the relevant `extract.py` command(s) against
-   `sample_decks/Solo-cards-digital.pdf` (or another real PDF) and look
-   at the actual output/preview images. DeckForge is an image tool —
+   `sample_decks/CardLift_Demo_Deck.pdf` (or another real PDF) and look
+   at the actual output/preview images. CardLift is an image tool —
    passing tests don't guarantee the crop looks right.
 7. Commit (see "Git Workflow" below).
 8. Repeat from step 4 for the next increment.
@@ -1140,17 +1140,17 @@ miss, like one page's grid drifting relative to the others.
 ## Project Structure
 
 ```
-DeckForge/
+CardLift/
 ├── extract.py              # CLI entry point — thin, delegates to src/deckforge
 ├── gui_app.py               # GUI entry point — thin, delegates to src/deckforge_gui (Phase II prototype)
 ├── requirements.txt         # Runtime dependencies
 ├── requirements-dev.txt     # Runtime + test dependencies (pytest)
 ├── requirements-gui.txt     # Runtime + PySide6, for the GUI shell prototype
 ├── pyproject.toml           # pytest config (test paths, src layout)
-├── README.md                 # Product/conceptual docs: what DeckForge is, grid math, calibration model
+├── README.md                 # Product/conceptual docs: what CardLift is, grid math, calibration model
 ├── DEVELOPER.md              # This file — day-to-day mechanics of working on the repo
-├── profiles/                 # One JSON calibration file per deck (e.g. solo_cards.json)
-├── sample_decks/              # Source PDFs live here (e.g. Solo-cards-digital.pdf)
+├── profiles/                 # One JSON calibration file per deck (e.g. demo_deck.json)
+├── sample_decks/              # Source PDFs live here (e.g. CardLift_Demo_Deck.pdf)
 ├── output/                    # --export writes front_NNN.png / back.png here
 ├── preview/                    # --preview/--overlay/--inspect/--contact-sheet write here
 ├── src/deckforge/
@@ -1244,7 +1244,7 @@ How we expect Claude Code to be used on this project:
   flag's behavior changes, or a new one is added, update README.md
   (conceptual/how-it-works) and this file (DEVELOPER.md) in the same
   change — not as a follow-up.
-- **Preserve the vision of making DeckForge easy for non-technical
+- **Preserve the vision of making CardLift easy for non-technical
   users.** The manual-calibration-only design, the `--calibrate`
   interactive window, and the blue/red overlay convention all exist to
   make an inherently fiddly task (aligning a crop grid) forgiving and
@@ -1317,7 +1317,7 @@ If the implementation is technically correct but could reasonably mislead a firs
 
 ## Design Philosophy
 
-When improving DeckForge:
+When improving CardLift:
 
 - Observe user friction first.
 - Describe the problem, not the solution.
@@ -1328,4 +1328,4 @@ When improving DeckForge:
 ## Maintaining This Document
 
 Whenever new commands, workflows, or development practices are added to
-DeckForge, please update DEVELOPER.md as part of the same change.
+CardLift, please update DEVELOPER.md as part of the same change.

@@ -4,9 +4,9 @@ CardLift - extract.py
 
 Thin entry point. All logic lives in src/deckforge/. Run with:
 
-    python extract.py --profile solo_cards --preview
-    python extract.py --profile solo_cards --export
-    python extract.py --profile solo_cards --contact-sheet
+    python extract.py --profile demo_deck --preview
+    python extract.py --profile demo_deck --export
+    python extract.py --profile demo_deck --contact-sheet
 
 See README.md for setup, calibration workflow, and command details.
 """

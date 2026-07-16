@@ -65,9 +65,12 @@ profile that's simply "the front grid"; a profile with more than one
 layout that needs a distinct back geometry should set the overrides
 explicitly rather than relying on the fallback.
 
-The bundled `solo_cards.json` profile actually needs this: its back page
-cards are smaller and inset within their cell, while the fronts are
-edge-to-edge.
+The bundled `demo_deck.json` profile actually needs this: its shared
+back page is centered at a different position on its own page than the
+front grid's row-0/col-0 cell, so `back_left`/`back_top` are overridden
+(the back card here is the same size as the fronts; a deck whose back
+is a different size or inset within its cell would override the
+`back_card_width`/`back_card_height` fields too).
 
 ## Profiles
 
@@ -435,8 +438,8 @@ adjustments or a single problem card:
   other layout's pages in a multi-layout profile:
 
   ```bash
-  python extract.py --profile solo_cards --overlay
-  python extract.py --profile solo_cards --overlay --page 8
+  python extract.py --profile demo_deck --overlay
+  python extract.py --profile demo_deck --overlay --page 3
   ```
 
   This is the same overlay `--preview` writes, just without also
@@ -453,7 +456,7 @@ adjustments or a single problem card:
   matches the numbering `--export` uses for `front_NNN.png`:
 
   ```bash
-  python extract.py --profile solo_cards --inspect 1
+  python extract.py --profile demo_deck --inspect 1
   # → preview/inspect_card001.png
   ```
 
@@ -465,22 +468,22 @@ adjustments or a single problem card:
 ## Commands
 
 ```bash
-python extract.py --profile solo_cards --preview
-# → preview/calibration_overlay.png, preview/page2_preview.png
+python extract.py --profile demo_deck --preview
+# → preview/calibration_overlay.png, preview/page1_preview.png
 
-python extract.py --profile solo_cards --export
-# → output/front_001.png ... output/front_054.png, output/back.png
+python extract.py --profile demo_deck --export
+# → output/front_001.png ... output/front_012.png, output/back.png
 
-python extract.py --profile solo_cards --contact-sheet
+python extract.py --profile demo_deck --contact-sheet
 # → preview/contact_sheet.png
 
-python extract.py --profile solo_cards --overlay [--page N]
+python extract.py --profile demo_deck --overlay [--page N]
 # → preview/calibration_overlay.png (defaults to the first layout's first page)
 
-python extract.py --profile solo_cards --inspect CARD_NUM
+python extract.py --profile demo_deck --inspect CARD_NUM
 # → preview/inspect_card{CARD_NUM:03d}.png
 
-python extract.py --profile solo_cards --measure --card r0c0:X1,Y1,X2,Y2 [--card rRcC:X1,Y1,X2,Y2] [--page N]
+python extract.py --profile demo_deck --measure --card r0c0:X1,Y1,X2,Y2 [--card rRcC:X1,Y1,X2,Y2] [--page N]
 # → prints a suggested left/top/card_width/card_height/gap_x/gap_y patch; writes nothing
 ```
 
