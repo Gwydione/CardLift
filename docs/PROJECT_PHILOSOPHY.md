@@ -2,7 +2,7 @@
 
 ## Why This Document Exists
 
-DeckForge began as a personal tool to solve a frustrating problem:
+CardLift began as a personal tool to solve a frustrating problem:
 extracting cards from print-and-play PDFs should not require
 image-editing expertise, complicated workflows, or hours of repetitive
 manual work.
@@ -16,14 +16,14 @@ This document explains the principles that guide the project.
 It is not a legal document or a technical specification. Those topics
 are covered elsewhere in the project's documentation.
 
-Instead, it describes the values that influence how DeckForge is
+Instead, it describes the values that influence how CardLift is
 engineered, maintained, and shared.
 
 ------------------------------------------------------------------------
 
-## Why DeckForge Exists
+## Why CardLift Exists
 
-DeckForge exists to make complicated PDF extraction feel simple.
+CardLift exists to make complicated PDF extraction feel simple.
 
 The project is intentionally focused on a narrow problem: helping
 tabletop gamers transform print-and-play card PDFs into clean, organized
@@ -44,7 +44,7 @@ feature count.
 
 ## Scope Before Features
 
-DeckForge is intentionally specialized.
+CardLift is intentionally specialized.
 
 Its purpose is to solve one workflow exceptionally well rather than many
 workflows adequately.
@@ -64,7 +64,7 @@ consistency over novelty.
 
 ## AI-Assisted Engineering
 
-DeckForge is developed using modern AI-assisted engineering practices.
+CardLift is developed using modern AI-assisted engineering practices.
 
 Artificial intelligence is treated as a professional engineering tool
 rather than an autonomous software developer. AI is used to explore
@@ -90,7 +90,7 @@ humans who choose to build, review, and release it.
 
 ## Engineering Before Popularity
 
-DeckForge is guided by a simple principle:
+CardLift is guided by a simple principle:
 
 **Stability and functionality are more valuable than feature count.**
 
@@ -119,7 +119,7 @@ sufficient confidence or quality.
 
 ## Respect the User
 
-Every interaction with DeckForge should demonstrate respect for the
+Every interaction with CardLift should demonstrate respect for the
 person using it.
 
 That means respecting:
@@ -138,7 +138,7 @@ Errors should be honest. Limitations should be acknowledged rather than
 hidden. Recovery from mistakes should be straightforward whenever
 possible.
 
-DeckForge should avoid unnecessary complexity, surprising behavior, and
+CardLift should avoid unnecessary complexity, surprising behavior, and
 collecting information unrelated to its purpose.
 
 Users are not expected to understand PDF rendering, image processing, or
@@ -149,7 +149,7 @@ details approachable while producing reliable results.
 
 ## Sharing the Project
 
-DeckForge is being shared because it is intended to be useful to the
+CardLift is being shared because it is intended to be useful to the
 tabletop gaming community.
 
 The decision to make the project available is intended to benefit the
@@ -164,9 +164,9 @@ because it is common practice.
 
 ------------------------------------------------------------------------
 
-## Maintaining DeckForge
+## Maintaining CardLift
 
-DeckForge is maintained by a single developer in his spare time.
+CardLift is maintained by a single developer in his spare time.
 
 Bug reports, suggestions, and constructive feedback are always
 appreciated.
@@ -184,7 +184,7 @@ Sustainable maintenance is more important than rapid development.
 
 ## Licensing and Distribution
 
-DeckForge depends on several outstanding open-source projects, and their
+CardLift depends on several outstanding open-source projects, and their
 work makes this application possible.
 
 The project is committed to respecting both the legal requirements and
@@ -201,7 +201,7 @@ documented separately in the project's LICENSE and NOTICE files.
 
 ## Looking Forward
 
-DeckForge will continue to evolve.
+CardLift will continue to evolve.
 
 Features will change.
 

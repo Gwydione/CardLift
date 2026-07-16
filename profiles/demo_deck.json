@@ -1,7 +1,7 @@
 {
-  "_comment": "Calibration profile for DeckForge_Demo_Deck.pdf, DeckForge's own authored onboarding deck (see docs/ui/DEMO_DECK.md). All spatial values are in PDF POINTS (1/72 inch). Unlike solo_cards.json's hand-measured values, these were read directly from the PDF's own vector card-outline paths (PyMuPDF page.get_drawings()) and confirmed with --preview -- front cards are standard poker size (2.5in x 3.5in = 180pt x 252pt), edge-to-edge with the drawn outline, with a real 9pt gutter between cells.",
+  "_comment": "Calibration profile for CardLift_Demo_Deck.pdf, CardLift's own authored onboarding deck (see docs/ui/DEMO_DECK.md). All spatial values are in PDF POINTS (1/72 inch). Unlike solo_cards.json's hand-measured values, these were read directly from the PDF's own vector card-outline paths (PyMuPDF page.get_drawings()) and confirmed with --preview -- front cards are standard poker size (2.5in x 3.5in = 180pt x 252pt), edge-to-edge with the drawn outline, with a real 9pt gutter between cells.",
 
-  "pdf_file": "DeckForge_Demo_Deck.pdf",
+  "pdf_file": "CardLift_Demo_Deck.pdf",
 
   "first_front_page": 1,
   "last_front_page": 2,

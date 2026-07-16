@@ -201,7 +201,7 @@ shapes — which is exactly what your testing found.
 
 **Is the uniform-pitch lattice model itself mathematically incapable of
 producing consistent results for common printable PDFs?** No — not based
-on the evidence gathered here. DeckForge's stated scope
+on the evidence gathered here. CardLift's stated scope
 (`README.md`: "fixed grid of cards") is decks that *are* laid out as a
 true uniform grid by design; a rigid lattice is the right model for that
 input class, and the CLI side of this codebase (hand-typed profiles) has
@@ -232,7 +232,7 @@ only" product principle. Neither adds a new step or a new UI screen.
 an axis still defaulted (one-card finish, or a same-row/same-column
 second click), the completion banner and guidance/status text say so
 explicitly ("Spacing between columns and rows wasn't measured, so
-DeckForge assumed cards sit edge-to-edge. If cards look clipped in Review
+CardLift assumed cards sit edge-to-edge. If cards look clipped in Review
 Cards, click Start Over and measure a second card farther away instead of
 finishing with one."), pointing at the already-existing Start Over
 control. The warning only fires when the axis actually has more than one

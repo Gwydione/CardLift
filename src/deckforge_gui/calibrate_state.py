@@ -578,7 +578,7 @@ def ungauged_axis_warning(target: CalibrationTarget, page_size: Optional[tuple[f
         return ""
     axes_text = " and ".join(missing_axes)
     return (
-        f" Spacing between {axes_text} wasn't measured, so DeckForge "
+        f" Spacing between {axes_text} wasn't measured, so CardLift "
         "assumed cards sit edge-to-edge. If cards look clipped in Review "
         "Cards, click Start Over and measure a second card farther away "
         "instead of finishing with one."

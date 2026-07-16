@@ -4,7 +4,7 @@ import pytest
 
 from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 
 def test_page_size_matches_the_actual_page():

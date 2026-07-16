@@ -50,7 +50,7 @@ class DeckSession:
             raise DeckLoadError(str(exc)) from exc
         except Exception as exc:
             raise DeckLoadError(
-                f"DeckForge couldn't open '{path.name}'. It may be corrupted or not a valid PDF."
+                f"CardLift couldn't open '{path.name}'. It may be corrupted or not a valid PDF."
             ) from exc
 
         self.pdf_path = path

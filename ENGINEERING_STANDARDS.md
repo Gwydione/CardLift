@@ -1,16 +1,16 @@
-# DeckForge Engineering Standards
+# CardLift Engineering Standards
 
 ## Purpose
 
-DeckForge is intended to become a publicly released desktop application
+CardLift is intended to become a publicly released desktop application
 for tabletop gamers.
 
 These standards exist to ensure that every change improves the software
 without sacrificing quality, maintainability, security, or user trust.
 
-The goal is not simply to make DeckForge work.
+The goal is not simply to make CardLift work.
 
-The goal is to make DeckForge a product that other people can
+The goal is to make CardLift a product that other people can
 confidently install, use, and contribute to.
 
 ---
@@ -106,7 +106,7 @@ Avoid introducing unnecessary attack surface.
 
 # Privacy
 
-DeckForge is a local-first desktop application.
+CardLift is a local-first desktop application.
 
 Unless explicitly approved, do not introduce:
 

@@ -78,11 +78,11 @@ def demo_deck_path() -> Path:
     """Resolved fresh on every call (not cached at import time) so tests
     can simulate frozen vs. source execution without reloading this
     module."""
-    return _resource_root() / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+    return _resource_root() / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 
 class TopBar(QWidget):
-    """Minimal top bar: DeckForge branding + an overflow/settings placeholder."""
+    """Minimal top bar: CardLift branding + an overflow/settings placeholder."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -94,7 +94,7 @@ class TopBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(18, 0, 10, 0)
 
-        brand = QLabel("DeckForge")
+        brand = QLabel("CardLift")
         brand.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {ACCENT};")
         layout.addWidget(brand)
 
@@ -115,7 +115,7 @@ class TopBar(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"DeckForge v{__version__}")
+        self.setWindowTitle(f"CardLift v{__version__}")
         self.resize(1200, 800)
         self.setMinimumSize(720, 480)
 
@@ -562,12 +562,12 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Export in progress")
         box.setText(
             "An export is still in progress.\n\n"
-            "DeckForge can remain open, or it can finish the export and "
+            "CardLift can remain open, or it can finish the export and "
             "then close automatically once it's done. The application "
             "stays fully responsive the whole time the export is "
             "finishing."
         )
-        keep_open_btn = box.addButton("Keep DeckForge Open", QMessageBox.ButtonRole.RejectRole)
+        keep_open_btn = box.addButton("Keep CardLift Open", QMessageBox.ButtonRole.RejectRole)
         finish_close_btn = box.addButton("Finish Export, Then Close", QMessageBox.ButtonRole.AcceptRole)
         box.setDefaultButton(keep_open_btn)
         box.setEscapeButton(keep_open_btn)

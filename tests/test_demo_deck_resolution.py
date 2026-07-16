@@ -27,7 +27,7 @@ from PySide6.QtWidgets import QApplication
 from deckforge_gui.main_window import MainWindow, _resource_root, demo_deck_path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SAMPLE_PDF = REPO_ROOT / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = REPO_ROOT / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +59,7 @@ class TestResourceRootFrozenMode:
     ) -> None:
         monkeypatch.setattr(sys, "frozen", True, raising=False)
         monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
-        assert demo_deck_path() == tmp_path / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+        assert demo_deck_path() == tmp_path / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
     def test_frozen_without_meipass_falls_back_to_source_resolution(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -92,7 +92,7 @@ class TestOnDemoDeckRequestedMissingFile:
     def test_shows_an_error_and_does_not_attempt_to_load_anything(
         self, qapp: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        missing_path = tmp_path / "DeckForge_Demo_Deck.pdf"
+        missing_path = tmp_path / "CardLift_Demo_Deck.pdf"
         assert not missing_path.exists()
         monkeypatch.setattr(
             "deckforge_gui.main_window.demo_deck_path", lambda: missing_path,

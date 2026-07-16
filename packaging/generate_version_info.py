@@ -19,10 +19,10 @@ from deckforge import __version__ as VERSION  # noqa: E402
 OUTPUT_PATH = Path(__file__).resolve().parent / "version_info.txt"
 
 COMPANY_NAME = "RPG Frequencies"
-PRODUCT_NAME = "DeckForge"
-FILE_DESCRIPTION = "DeckForge - Print-and-Play Card Extractor"
+PRODUCT_NAME = "CardLift"
+FILE_DESCRIPTION = "CardLift - Print-and-Play Card Extractor"
 LEGAL_COPYRIGHT = "Copyright (C) 2026 Allen Dodge. Licensed under AGPLv3."
-ORIGINAL_FILENAME = "DeckForge.exe"
+ORIGINAL_FILENAME = "CardLift.exe"
 
 TEMPLATE = """\
 # UTF-8

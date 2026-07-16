@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DeckForge - extract.py
+CardLift - extract.py
 
 Thin entry point. All logic lives in src/deckforge/. Run with:
 

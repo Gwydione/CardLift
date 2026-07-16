@@ -48,17 +48,17 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
         "Choose the print-and-play PDF you want to turn into cards.",
     ),
     WorkflowStep.FIND_CARDS: (
-        "Show DeckForge your cards.",
+        "Show CardLift your cards.",
         "Mark each page as a card front or the shared back. Most pages "
         "(instructions, reference material) need no marking at all.",
     ),
     WorkflowStep.CALIBRATE_CARDS: (
-        "Show DeckForge a front card.",
+        "Show CardLift a front card.",
         "Click the upper-left corner of a card — use its cutting guide if "
         "it has one, otherwise the card's outer edge.",
     ),
     WorkflowStep.CALIBRATE_BACK: (
-        "Show DeckForge the card back.",
+        "Show CardLift the card back.",
         "Click the upper-left corner of the back design — use its cutting "
         "guide if it has one, otherwise the design's outer edge.",
     ),

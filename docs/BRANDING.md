@@ -1,8 +1,8 @@
-# DeckForge Branding
+# CardLift Branding
 
 ## Purpose
 
-This document defines the branding identity for DeckForge: the product
+This document defines the branding identity for CardLift: the product
 name, publisher attribution, and the chosen visual concept for the
 application icon and mark.
 
@@ -10,12 +10,18 @@ application icon and mark.
 
 # Identity
 
-- **Product name:** DeckForge
+- **Product name:** CardLift
 - **Publisher attribution:** by RPG Frequencies
 
 ---
 
-# Chosen Concept: Premium Hammer Strike
+# Chosen Concept: Premium Hammer Strike (pending revision)
+
+**Note (post-rename):** this concept was designed around the product's
+former name, DeckForge, and its "forged" visual language no longer fits
+CardLift. The concept below is preserved as-is rather than reworked now.
+Icon redesign is explicitly deferred until after Alpha; revisit this
+section, including the concept name itself, as part of that work.
 
 The icon concept is built around an **Ace of Spades** card motif,
 reinterpreted through a "forged" visual language.

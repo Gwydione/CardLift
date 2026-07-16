@@ -30,7 +30,7 @@ from deckforge_gui.export_workspace import ExportWorkspace
 from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.review_state import ReviewCardsState, build_review_cards
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 # Real, --preview-verified geometry from profiles/demo_deck.json (same
 # constant test_cell_export.py uses against this sample PDF), so the

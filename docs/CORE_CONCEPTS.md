@@ -1,8 +1,8 @@
-# DeckForge Core Concepts
+# CardLift Core Concepts
 
 ## Purpose
 
-This document defines the core concepts of DeckForge.
+This document defines the core concepts of CardLift.
 
 These concepts describe the user's world rather than the implementation.
 The engine, GUI, and future features should all use this shared
@@ -11,11 +11,11 @@ vocabulary whenever practical.
 The goal is to keep the application organized around concepts that are
 meaningful to users instead of internal implementation details.
 
-DeckForge exists to understand one or more printable tabletop decks contained within a source document. Every workflow step contributes to building that understanding so the deck(s) can be accurately previewed and exported.
+CardLift exists to understand one or more printable tabletop decks contained within a source document. Every workflow step contributes to building that understanding so the deck(s) can be accurately previewed and exported.
 
 Core concepts should remain relatively stable over time. Features,
 workflows, and implementations may evolve, but these concepts define the
-language of DeckForge and should change only when the understanding of
+language of CardLift and should change only when the understanding of
 the problem domain itself changes.
 
 ---
@@ -26,7 +26,7 @@ A PDF is the source document provided by the user.
 
 A PDF contains one or more pages.
 
-DeckForge never modifies the original PDF.
+CardLift never modifies the original PDF.
 
 ---
 
@@ -53,7 +53,7 @@ A **Card Page** is any PDF page containing one or more printable cards.
 
 Card Pages are identified during the **Select Card Pages** workflow.
 
-At this stage, DeckForge does **not** distinguish between front pages,
+At this stage, CardLift does **not** distinguish between front pages,
 back pages, decks, or card arrangements.
 
 The only question being answered is:
@@ -67,9 +67,9 @@ The only question being answered is:
 A **Deck** is a logical collection of related cards.
 
 A Deck is the primary object users create and work with inside
-DeckForge.
+CardLift.
 
-A Deck is also the primary object DeckForge seeks to understand.
+A Deck is also the primary object CardLift seeks to understand.
 
 A Deck owns:
 
@@ -114,7 +114,7 @@ Future versions may support multiple Shared Back groups.
 
 # Calibration
 
-Calibration teaches DeckForge how to interpret a Deck.
+Calibration teaches CardLift how to interpret a Deck.
 
 Calibration belongs to a Deck rather than to the PDF itself.
 
@@ -129,7 +129,7 @@ Future versions may calibrate multiple card arrangements as needed.
 
 # Preview
 
-Preview allows users to verify that DeckForge correctly understands a
+Preview allows users to verify that CardLift correctly understands a
 Deck before extraction.
 
 Preview is intended to build confidence and catch mistakes before files
@@ -161,7 +161,7 @@ Decks rather than Card Arrangements.
 
 # Guiding Principle
 
-DeckForge should model the user's understanding of their document rather
+CardLift should model the user's understanding of their document rather
 than exposing internal implementation details.
 
 Users think in terms of:

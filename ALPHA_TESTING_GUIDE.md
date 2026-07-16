@@ -1,8 +1,8 @@
-# DeckForge Alpha Testing Guide
+# CardLift Alpha Testing Guide
 
 First, thank you.
 
-By participating in this private Alpha, you're helping shape DeckForge
+By participating in this private Alpha, you're helping shape CardLift
 before a broader public release.
 
 Our goal isn't simply to extract cards---it's to make working with
@@ -20,7 +20,7 @@ We recommend trying two workflows.
 
 ## 1. Start with the Demo Deck
 
-The built-in Demo Deck introduces the complete DeckForge workflow in
+The built-in Demo Deck introduces the complete CardLift workflow in
 just a few minutes.
 
 It provides a quick way to become familiar with the application before
@@ -28,7 +28,7 @@ importing one of your own print-and-play PDFs.
 
 ## 2. Try One of Your Own PDFs
 
-After completing the Demo Deck, try DeckForge with a real project that
+After completing the Demo Deck, try CardLift with a real project that
 matters to you.
 
 The most valuable feedback often comes from using the software on an
@@ -61,7 +61,7 @@ If you ever find yourself wondering,
 
 # Reporting Feedback
 
-Please share feedback in the **#deckforge-alpha** channel on the **RPG
+Please share feedback in the **#cardlift-alpha** channel on the **RPG
 Frequencies Discord** server.
 
 Helpful information includes:
@@ -92,6 +92,6 @@ overall experience before a broader Beta release.
 
 # Thank You
 
-We sincerely appreciate you taking the time to help improve DeckForge.
+We sincerely appreciate you taking the time to help improve CardLift.
 
 Your feedback will directly influence the future of the project.

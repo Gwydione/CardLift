@@ -1,4 +1,4 @@
-# DeckForge — Alpha Release Review
+# CardLift — Alpha Release Review
 
 Read-only release-engineering assessment. Written 2026-07-15, against
 commit `53cc28d` ("Link Privacy Promises into project documentation").
@@ -33,7 +33,7 @@ prose today.
 work has been started (confirmed: no `.spec` file, no installer script,
 no packaging tool installed in the venv) — consistent with the pause
 this review was requested during. More materially: there is no LICENSE
-file for DeckForge itself, no third-party attribution notices despite a
+file for CardLift itself, no third-party attribution notices despite a
 core dependency (PyMuPDF) carrying an AGPL/commercial dual license, no
 verified redistribution rights for the 16 MB sample PDF committed to the
 repo, no tester-facing quick-start or known-limitations note (only
@@ -63,12 +63,12 @@ Verified directly (`git status`, `git log`, `find`, `pip show`):
 | Dependencies | `PyMuPDF>=1.24`, `Pillow>=10.0` (runtime); `+PySide6>=6.6` (GUI); `+pytest>=8.0` (dev). No lock file — all ranges unpinned |
 | Packaging config | **None** — no `.spec`, `setup.py`, `setup.cfg`, installer script, or `[project]` table in `pyproject.toml` (which contains only pytest config); no packaging tool (`pyinstaller`/`cx_freeze`/`nuitka`/`briefcase`) installed in `.venv` |
 | Icon/branding assets | **None** — `docs/BRANDING.md` documents a concept but explicitly states it "requires a simplified production pass" before use; no `.ico`/`.icns`/asset files exist anywhere in the repo |
-| License | **No LICENSE file for DeckForge.** No NOTICE/third-party-attribution file |
+| License | **No LICENSE file for CardLift.** No NOTICE/third-party-attribution file |
 | CI | No `.github/` directory — no workflows, no issue templates |
 | Test suite | 21 test files, 508 tests, run directly (see §4) |
 | Tracked repo payload | 36 MB total tracked content; `sample_decks/Solo-cards-digital.pdf` (16 MB) + `preview/` (6.8 MB) + `output/` (10.8 MB, 54 generated PNGs) + `docs/ui/UI_REFERENCE_LAYOUT.png` (1.7 MB) account for nearly all of it |
 | `.gitignore` | Four lines: `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.venv/` — does **not** exclude `output/`, `preview/`, or a stray tracked file (`claude engineering prompt.txt`, repo root) |
-| Diagnostic logging | Local-only rotating file, `%LOCALAPPDATA%\DeckForge\logs\deckforge.log`, 1 MB × 3 backups (`deckforge_gui/logging_setup.py`) — confirmed no networking dependency exists anywhere in the dependency tree |
+| Diagnostic logging | Local-only rotating file, `%LOCALAPPDATA%\CardLift\logs\cardlift.log`, 1 MB × 3 backups (`deckforge_gui/logging_setup.py`) — confirmed no networking dependency exists anywhere in the dependency tree |
 
 ---
 
@@ -176,7 +176,7 @@ but it lives only in developer-facing docs. A tester who loads a PDF
 with genuinely mixed card sizes gets no warning; the only signal is
 whatever visibly-wrong crop appears in Review Cards' thumbnails, which
 they have no way to attribute to "unsupported deck structure" versus
-"DeckForge bug."
+"CardLift bug."
 **Disposition:** Accept and disclose for Alpha 1 — cheap to fix via a
 tester-facing sentence, not a code change.
 **Confidence:** High (directly verified in code + investigation doc).
@@ -253,7 +253,7 @@ scope to fix.
 **B5 — `DEVELOPER.md`'s "Getting Started" section contradicts
 `README.md`'s now GUI-first framing.**
 Evidence: `DEVELOPER.md` still opens with "There's nothing to
-'launch' — DeckForge is a CLI tool, not a server," walking through CLI
+'launch' — CardLift is a CLI tool, not a server," walking through CLI
 setup first and GUI setup second under "GUI (Phase II)" — while
 `README.md` was deliberately rewritten (per `RELEASE_READINESS.md`'s own
 accomplished-item log) to lead with the GUI workflow. Both documents are
@@ -317,7 +317,7 @@ need to resolve, not defects:
 - **One-file vs. one-folder, portable vs. installer**: no evidence
   either way exists anywhere in the repo. **Undecided — must resolve.**
 - **Clean uninstall**: trivially clean *today* (no installer, no
-  registry footprint, only `%LOCALAPPDATA%\DeckForge\logs` persists) —
+  registry footprint, only `%LOCALAPPDATA%\CardLift\logs` persists) —
   worth stating as a baseline to preserve, and worth a one-line tester
   note now even before any installer exists.
 - **SmartScreen/unsigned binary**: no code-signing evidence anywhere.
@@ -374,9 +374,9 @@ Walked end-to-end against verified code, not assumption:
 - **Finding help**: **no in-app help, feedback, or bug-report affordance
   exists anywhere** — verified by reading `TopBar`/`Sidebar`/status-bar
   code. A tester has no way, from inside the app, to learn how to report
-  a problem or where `deckforge.log` lives.
+  a problem or where `cardlift.log` lives.
 - **Removing the application**: today, "uninstall" = delete the folder;
-  `%LOCALAPPDATA%\DeckForge\logs` persists afterward. Not documented
+  `%LOCALAPPDATA%\CardLift\logs` persists afterward. Not documented
   anywhere yet, trivial to write down.
 
 ### E. Release artifacts and legal/attribution readiness
@@ -387,7 +387,7 @@ Walked end-to-end against verified code, not assumption:
 | Release notes | None (internal docs only, wrong voice for a tester) | **Needed** — cheap to produce by condensing `RELEASE_READINESS.md`, not new investigation |
 | Known-issues/scope statement | Exists internally (`RELEASE_READINESS.md`, `CALIBRATION_GEOMETRY_INVESTIGATION.md`), not tester-facing | **Needed**, same reason |
 | Privacy Promises | **Exists, tester-ready** (`docs/PRIVACY_PROMISES.md`) | Done |
-| DeckForge's own license | **Missing entirely** — no LICENSE file | **Needed** — even "private alpha, all rights reserved" is a decision that should be explicit, not silent |
+| CardLift's own license | **Missing entirely** — no LICENSE file | **Needed** — even "private alpha, all rights reserved" is a decision that should be explicit, not silent |
 | Third-party attribution/notices | **Missing entirely** | **Needed, with real urgency** — see below |
 | Bug-report instructions | None, no in-app pointer | **Needed** |
 | Version/build identity | Solid (§3) | Done |
@@ -444,7 +444,7 @@ review's read-only scope). **Confidence:** High.
   description) but **discoverability is entirely external** — no
   in-app "Open log folder," which `docs/ALPHA_HARDENING_PLAN.md` §6
   already explicitly deferred on purpose. A non-technical tester would
-  not find `%LOCALAPPDATA%\DeckForge\logs` without being told.
+  not find `%LOCALAPPDATA%\CardLift\logs` without being told.
 - **Log-sharing safety is already well-communicated** in
   `docs/PRIVACY_PROMISES.md` and reusable verbatim in tester
   instructions.
@@ -452,7 +452,7 @@ review's read-only scope). **Confidence:** High.
   us the version shown in the title bar").
 - **Known-limitations communication exists only internally** (§E) —
   needs distillation, not new content.
-- **Distinguishing a DeckForge defect from an unsupported PDF structure
+- **Distinguishing a CardLift defect from an unsupported PDF structure
   has no in-app answer today** (§A1) — the single most likely source of
   tester confusion, and currently unaddressed by anything the tester
   would actually see.
@@ -552,7 +552,7 @@ dead UI affordance. See §5D and §5F.
 ## 8. Required release artifacts (summary)
 
 Present and reusable as-is: version identity, Privacy Promises. Missing
-and needed regardless of scale: DeckForge's own license, third-party
+and needed regardless of scale: CardLift's own license, third-party
 attribution (elevated urgency — AGPL), tester-facing release notes and
 known-issues note, bug-report instructions, uninstall note, and a
 definitive answer on the sample deck's redistribution rights. Not
@@ -576,7 +576,7 @@ storefronts (itch.io etc.) are premature. See §5G.
 1. **Are `sample_decks/Solo-cards-digital.pdf`'s redistribution rights
    clear?** Unverifiable from the repository alone — needs a definitive
    answer before any external distribution.
-2. **What is DeckForge's licensing/distribution posture given
+2. **What is CardLift's licensing/distribution posture given
    PyMuPDF's AGPL/commercial dual license?** Needs an explicit decision,
    not silence.
 3. **Who is the actual Alpha 1 tester group** — developer-literate
@@ -614,10 +614,10 @@ storefronts (itch.io etc.) are premature. See §5G.
    Card Inspection's provisional status (§A2), and the calibration
    guidance already written in `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`
    ("measure a second card far from the first").
-5. A LICENSE decision for DeckForge itself is made and stated, even if
+5. A LICENSE decision for CardLift itself is made and stated, even if
    informal for a private alpha.
 6. A feedback/bug-report channel is chosen and communicated, including
-   where to find and how to safely share `deckforge.log`.
+   where to find and how to safely share `cardlift.log`.
 7. At least one clean-machine (non-development-environment) run-through
    of the actual tester-facing instructions succeeds.
 8. `docs/RELEASE_READINESS.md` is brought current with this session's
@@ -645,7 +645,7 @@ candidate" — real, currently-missing artifacts (license, attribution
 notices, a tester-facing note, a feedback channel) stand between here
 and that.
 
-The gap between where DeckForge is and a responsible first alpha is
+The gap between where CardLift is and a responsible first alpha is
 short, concrete, and almost entirely non-code — §11's eight items. Close
 those, and the answer to this review's central question becomes an
 unconditional yes.

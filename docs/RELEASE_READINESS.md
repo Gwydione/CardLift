@@ -1,7 +1,7 @@
 # Release Readiness Board
 
 Living document tracking what's open, what's done, and what's top
-priority before DeckForge's alpha ships. Updated as design review
+priority before CardLift's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
@@ -11,7 +11,7 @@ Last updated: 2026-07-16.
 
 Engineering hardening (the seven items in the priorities table below) is
 implemented. The project has moved into release-preparation work:
-non-code items that stand between here and handing DeckForge to a
+non-code items that stand between here and handing CardLift to a
 private alpha tester. See `docs/ALPHA_RELEASE_REVIEW.md` for the release
 review this phase is responding to.
 
@@ -21,7 +21,7 @@ review this phase is responding to.
   (GNU AGPLv3) exists in the working tree but **is not yet committed to
   git** — closing that gap is the single remaining governance item.
 - **Packaging: discovery build only.** `deckforge_gui.spec` (one-folder
-  PyInstaller build) exists and produces a working `dist/DeckForge/`
+  PyInstaller build) exists and produces a working `dist/CardLift/`
   bundle, manually smoke-tested through Demo Deck load → Calibrate
   Fronts. No installer, code signing, version metadata, or icon yet —
   those are deliberately deferred stabilization steps. Still open, per
@@ -33,7 +33,7 @@ review this phase is responding to.
   `docs/ALPHA_RELEASE_REVIEW.md` §5H.
 - **Sample deck: migrated.** The third-party `sample_decks/Solo-cards-digital.pdf`
   has been removed from the repository and replaced by
-  `sample_decks/DeckForge_Demo_Deck.pdf`, an official DeckForge Demo Deck
+  `sample_decks/CardLift_Demo_Deck.pdf`, an official CardLift Demo Deck
   authored for this project (design doc: `docs/ui/DEMO_DECK.md`). The GUI's
   bundled onboarding path (`MainWindow.DEMO_DECK_PATH`), the six test files
   that depend on a real-PDF fixture (`tests/test_cell_export.py`,
@@ -87,7 +87,7 @@ _Release preparation (not yet implemented):_
       `tests/test_main_window.py`, `tests/test_pdf_renderer.py`,
       `tests/test_review_workspace.py`, `tests/test_session.py`) and the
       matching calibration profile (`profiles/solo_cards.json` ->
-      `profiles/demo_deck.json`) to `sample_decks/DeckForge_Demo_Deck.pdf`,
+      `profiles/demo_deck.json`) to `sample_decks/CardLift_Demo_Deck.pdf`,
       then remove the third-party PDF from the repository.
 - [x] `sample_decks/Solo-cards-digital.pdf`'s redistribution rights are
       now moot -- the file has been removed rather than cleared for
@@ -99,7 +99,7 @@ _Release preparation (not yet implemented):_
       out of this alpha's GUI testing surface (see the calibration-geometry
       follow-up item below), and these examples have no runtime dependency
       on the removed file until someone actually runs them. Repoint at
-      `demo_deck`/`DeckForge_Demo_Deck.pdf` (or a dedicated CLI fixture) in
+      `demo_deck`/`CardLift_Demo_Deck.pdf` (or a dedicated CLI fixture) in
       a follow-up pass.
 
 _Calibration geometry follow-up (not yet implemented):_
@@ -126,11 +126,11 @@ _Flagged during the first PyInstaller packaging pass (2026-07-16), not investiga
 
 _Bugs found during manual alpha testing:_
 
-- [x] Drag-and-drop appeared completely broken when DeckForge was
+- [x] Drag-and-drop appeared completely broken when CardLift was
       launched from an elevated (Administrator) PowerShell. Traced to
       Windows UIPI blocking OLE drag-and-drop from Explorer (normal
-      integrity level) into an elevated target process — not a DeckForge
-      defect. Resolved by running DeckForge from a normal, non-elevated
+      integrity level) into an elevated target process — not a CardLift
+      defect. Resolved by running CardLift from a normal, non-elevated
       PowerShell; manually verified with a real PDF from Explorer. See
       `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
 - [x] Calibrating a real 3×3 deck ("DP Pocket 20 pages for centered
@@ -149,7 +149,7 @@ _Bugs found during manual alpha testing:_
       hover tooltip may display with poor text/background contrast. This
       affects only supplemental hover guidance; card review, inspection,
       inclusion/exclusion, and export remain fully functional.
-- [ ] On a clean Windows Sandbox system, DeckForge may take approximately
+- [ ] On a clean Windows Sandbox system, CardLift may take approximately
       3-4 seconds after double-clicking before the main window appears,
       with no visible startup feedback.
 
@@ -272,7 +272,7 @@ _Bugs found during manual alpha testing:_
   could destroy a live `_ExportWorker` `QThread` (a well-known hard-crash
   pattern) and leave a partial, unlabeled file set with no warning.
   Closing with no export running is unchanged. Closing during an export
-  shows a choice — **Keep DeckForge Open** (default/Escape, ignores the
+  shows a choice — **Keep CardLift Open** (default/Escape, ignores the
   close, export keeps running) or **Finish Export, Then Close** (defers
   the close via a `_close_after_export` flag and `event.ignore()` —
   never a blocking join on the GUI thread). An earlier version of this
@@ -337,7 +337,7 @@ _Bugs found during manual alpha testing:_
   scope (build small, learn from real use, iterate).
 - **Privacy-conscious crash logging.** New `deckforge_gui/logging_setup.py`
   configures a rotating local log file
-  (`%LOCALAPPDATA%\DeckForge\logs\deckforge.log`, 1 MB × 3 backups) in
+  (`%LOCALAPPDATA%\CardLift\logs\cardlift.log`, 1 MB × 3 backups) in
   `gui_app.main()` before `MainWindow()` is constructed, with a session
   header stamping `deckforge.__version__` plus platform/Python version.
   `sys.excepthook` now logs uncaught GUI-thread exceptions with full
@@ -356,7 +356,7 @@ _Bugs found during manual alpha testing:_
   `_redact_home()` or custom traceback rewriting — since a full traceback
   or an `OSError`'s message can still embed the tester's Windows username
   via the install path; `logging_setup.py`'s module docstring documents
-  this so `deckforge.log` is reviewed before being shared publicly. No
+  this so `cardlift.log` is reviewed before being shared publicly. No
   telemetry, no network calls, local file only. See
   `docs/ALPHA_HARDENING_PLAN.md` §6.
 

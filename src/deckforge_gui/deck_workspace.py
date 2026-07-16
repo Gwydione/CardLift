@@ -58,8 +58,8 @@ _DEFAULT_BUTTON_TEXT = "Choose PDF"
 _CHANGE_BUTTON_TEXT = "Change PDF"
 
 _DEFAULT_HEADING = "Turn a Print-and-Play PDF\ninto individual cards."
-_DEFAULT_SUBHEADING = "DeckForge finds, crops, and prepares your cards so you can print with confidence."
-_DEMO_COMPLETE_HEADING = "Nice — that's how DeckForge works."
+_DEFAULT_SUBHEADING = "CardLift finds, crops, and prepares your cards so you can print with confidence."
+_DEMO_COMPLETE_HEADING = "Nice — that's how CardLift works."
 _DEMO_COMPLETE_SUBHEADING = "Bring in your own PDF whenever you're ready."
 
 _DROPZONE_STYLE = f"""
@@ -283,7 +283,7 @@ class DeckWorkspace(QWidget):
         # Secondary onboarding path -- deliberately a plain link, not a
         # second button, so the drop zone above stays the one primary
         # action on this screen (see _DEMO_LINK_STYLE).
-        self._demo_caption = QLabel("New to DeckForge?")
+        self._demo_caption = QLabel("New to CardLift?")
         self._demo_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._demo_caption.setStyleSheet(f"color: {TEXT_CAPTION_MUTED}; background: transparent;")
         self._outer.addWidget(self._demo_caption)

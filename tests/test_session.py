@@ -4,7 +4,7 @@ import pytest
 
 from deckforge_gui.session import DeckLoadError, DeckSession
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 
 def test_not_loaded_by_default():
@@ -18,7 +18,7 @@ def test_load_valid_pdf_sets_filename_and_page_count():
     session = DeckSession()
     session.load_pdf(SAMPLE_PDF)
     assert session.is_loaded
-    assert session.filename == "DeckForge_Demo_Deck.pdf"
+    assert session.filename == "CardLift_Demo_Deck.pdf"
     assert session.page_count == 3
 
 
@@ -56,4 +56,4 @@ def test_rejected_file_does_not_clear_a_previously_loaded_deck(tmp_path):
     with pytest.raises(DeckLoadError):
         session.load_pdf(bogus)
     assert session.is_loaded
-    assert session.filename == "DeckForge_Demo_Deck.pdf"
+    assert session.filename == "CardLift_Demo_Deck.pdf"

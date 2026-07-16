@@ -159,7 +159,7 @@ def review_guidance_text(
     total = review_state.total_count()
     if total == 0:
         return (
-            "DeckForge couldn't fit any cards.",
+            "CardLift couldn't fit any cards.",
             "The calibrated card doesn't fit on the page. Go back to "
             "Calibrate and check your measurement.",
         )

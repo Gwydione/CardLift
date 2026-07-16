@@ -278,7 +278,7 @@ class _CardInspector(QWidget):
     cover the whole workspace (see ReviewWorkspace.resizeEvent()) and
     raised on top, so it reads as the workspace itself focusing on one
     card rather than a separate dialog application opening
-    (DESIGN_SYSTEM.md: "DeckForge is... not a collection of dialogs").
+    (DESIGN_SYSTEM.md: "CardLift is... not a collection of dialogs").
 
     Deliberately excludes: any zoom control, pan, a thumbnail filmstrip,
     and a deck-wide "card N of M" count -- the last one specifically
@@ -326,7 +326,7 @@ class _CardInspector(QWidget):
         )
         outer.addWidget(self._image_label, 1)
 
-        self._crop_caption = QLabel("The area inside the outline is what DeckForge will export.")
+        self._crop_caption = QLabel("The area inside the outline is what CardLift will export.")
         self._crop_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._crop_caption.setStyleSheet(
             f"color: {TEXT_CAPTION_MUTED}; font-size: {FONT_CAPTION}px; background: transparent;"

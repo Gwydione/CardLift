@@ -1,10 +1,10 @@
-# DeckForge — Software Licensing Research
+# CardLift — Software Licensing Research
 
 Factual investigation only, prepared in response to the licensing
 finding in `docs/ALPHA_RELEASE_REVIEW.md`. This document does not
-recommend a license for DeckForge, does not draft a `LICENSE` file, and
+recommend a license for CardLift, does not draft a `LICENSE` file, and
 does not set project policy — it reports verified facts about
-DeckForge's actual dependencies, with citations, so that decision can be
+CardLift's actual dependencies, with citations, so that decision can be
 made deliberately by someone with the authority (and, where needed, the
 legal advice) to make it.
 
@@ -55,7 +55,7 @@ Yes, confirmed directly by both sources above.
 | | AGPLv3 (free) | Commercial (paid, via Artifex) |
 |---|---|---|
 | Cost | $0 | Negotiated with Artifex |
-| DeckForge's own source | Must be made available under AGPL-compatible terms to anyone who receives the software (see next question) | Stays proprietary — Artifex states "No Code Disclosure Required" |
+| CardLift's own source | Must be made available under AGPL-compatible terms to anyone who receives the software (see next question) | Stays proprietary — Artifex states "No Code Disclosure Required" |
 | Modifications to PyMuPDF/MuPDF itself | Must be disclosed under AGPL | No disclosure required |
 | Generated PDF output | Expected to mention the open-source software / retain a producer line, per Artifex | No such expectation |
 | Support | Community only | Direct vendor support; Artifex advertises "free upgrades" |
@@ -65,7 +65,7 @@ Source: [Artifex — Licensing](https://artifex.com/licensing).
 ### What obligations exist when distributing a desktop application using the AGPL option?
 
 Two different AGPL clauses are relevant, and it matters which one
-actually applies to DeckForge's situation — a compiled Windows binary
+actually applies to CardLift's situation — a compiled Windows binary
 handed to a tester, not a hosted network service:
 
 - **AGPL §6 ("Conveying Non-Source Forms")** is the section that
@@ -88,7 +88,7 @@ handed to a tester, not a hosted network service:
   with it remotely through a computer network... an opportunity to
   receive the Corresponding Source..."* This is the clause most
   general-audience write-ups about AGPL focus on, but it is **not**
-  DeckForge's actual exposure as currently scoped: DeckForge is not a
+  CardLift's actual exposure as currently scoped: CardLift is not a
   network service, so §13 adds nothing beyond what §§4–6 already
   require for a distributed binary. Source:
   [GNU AGPLv3, full text, §13](https://www.gnu.org/licenses/agpl-3.0.en.html);
@@ -108,8 +108,8 @@ handed to a tester, not a hosted network service:
   ("If you're using it as part of a commercial product's data
   pipeline... the AGPL obligations apply").
 
-**In plain terms:** shipping a compiled DeckForge `.exe` that bundles
-PyMuPDF under the AGPL option means DeckForge's own source would need to
+**In plain terms:** shipping a compiled CardLift `.exe` that bundles
+PyMuPDF under the AGPL option means CardLift's own source would need to
 be made available under AGPL-compatible terms to anyone who receives
 the binary — not just PyMuPDF's source. This is Artifex's explicit,
 stated reading of their own license grant, and it's the reading that
@@ -155,7 +155,7 @@ license text or the FSF's own commentary on it.
 ### PyMuPDF (`pymupdf==1.28.0`)
 - **License:** AGPLv3 or Artifex Commercial (dual). See §1.
 - **Attribution requirements:** under the AGPL option, Artifex's page
-  states DeckForge should mention the open-source software and, in
+  states CardLift should mention the open-source software and, in
   generated PDFs, retain/attribute a producer line. Source:
   [Artifex — Licensing](https://artifex.com/licensing).
 - **Redistribution obligations:** yes, substantial — see §1. This is
@@ -192,7 +192,7 @@ license text or the FSF's own commentary on it.
   [Qt Licensing](https://www.qt.io/licensing/).
 - **Practical note:** for a proprietary desktop application that
   doesn't want to release its own source, the LGPLv3 option is the
-  relevant one — the GPLv2/v3 options would require DeckForge's own
+  relevant one — the GPLv2/v3 options would require CardLift's own
   source to be GPL-licensed too, similar in spirit to PyMuPDF's AGPL
   constraint. Nothing in the current codebase indicates this choice has
   been made yet.
@@ -203,14 +203,14 @@ license text or the FSF's own commentary on it.
   explicitly not permitted. Source:
   [Qt — Open Source LGPL Obligations](https://www.qt.io/licensing/open-source-lgpl-obligations).
 - **Redistribution obligations (under LGPLv3):** real, but lighter than
-  AGPL/GPL. DeckForge's own source does **not** need to be disclosed,
+  AGPL/GPL. CardLift's own source does **not** need to be disclosed,
   as long as PySide6 remains "a work that uses the library" — i.e.
   dynamically linked, which is how a normal Python `import PySide6`
   already works, not statically merged in a way that prevents
   replacement. Qt's page is explicit, though, that you must "deliver
   Complete corresponding source code of the library used with the
   application... including all modifications to the library" (PySide6/Qt's
-  own source, not DeckForge's), and that users must be able to "change
+  own source, not CardLift's), and that users must be able to "change
   and re-link the library" — Qt's page calls locking this down
   "tivoization" and prohibits it. Source:
   [Qt — Open Source LGPL Obligations](https://www.qt.io/licensing/open-source-lgpl-obligations).
@@ -229,7 +229,7 @@ license text or the FSF's own commentary on it.
 - **NOTICE file appropriate?** No — not part of the distributed
   product.
 
-### PyInstaller (not currently a DeckForge dependency; reviewed because it was named as the likely next packaging step)
+### PyInstaller (not currently a CardLift dependency; reviewed because it was named as the likely next packaging step)
 - **License:** dual — GPLv2 for the PyInstaller project itself, with an
   explicit bootloader exception, plus a small number of files
   separately under Apache-2.0. Source:
@@ -247,15 +247,15 @@ license text or the FSF's own commentary on it.
 
 ## 3. Distribution Requirements
 
-Scenario as posed: DeckForge distributes Windows binaries, with source
+Scenario as posed: CardLift distributes Windows binaries, with source
 hosted publicly (e.g. GitHub).
 
 ### Required
 (obligations that exist as-is, if the current dependency licenses are used unmodified)
 
-- **If PyMuPDF is used under AGPL:** DeckForge's own source must be
+- **If PyMuPDF is used under AGPL:** CardLift's own source must be
   made available under AGPL-compatible terms to anyone who receives the
-  binary (§1). Publicly hosting DeckForge's source on GitHub, as
+  binary (§1). Publicly hosting CardLift's source on GitHub, as
   already planned, would satisfy the *availability* half of this — but
   the source would need to actually carry an AGPL-compatible license
   for the combined work, which is a decision not yet made (and
@@ -289,7 +289,7 @@ hosted publicly (e.g. GitHub).
   own folder (e.g. a `licenses/` subdirectory next to the `.exe`) —
   satisfies "provide a copy of the license text" without depending on a
   GitHub link that could go stale or require network access to view
-  (notably relevant given DeckForge's own stated local-first,
+  (notably relevant given CardLift's own stated local-first,
   no-network-dependency posture in `docs/PRIVACY_PROMISES.md`).
 
 ---
@@ -298,7 +298,7 @@ hosted publicly (e.g. GitHub).
 
 Stated plainly, not glossed over:
 
-1. **Whether DeckForge's specific packaging architecture (a Python
+1. **Whether CardLift's specific packaging architecture (a Python
    interpreter plus bundled compiled extension modules, invoked via
    `import fitz`) legally constitutes a "combined work" under AGPL's
    copyleft scope, versus mere aggregation.** Artifex's own stated
@@ -310,14 +310,14 @@ Stated plainly, not glossed over:
    independent of what any one licensor prefers. This document reports
    Artifex's stated position; whether it matches a from-first-principles
    legal reading isn't something to resolve without counsel.
-2. **What specific steps would make DeckForge's own source AGPL-compliant**,
+2. **What specific steps would make CardLift's own source AGPL-compliant**,
    if the AGPL (not commercial) path is chosen. Not addressed here, per
    the explicit instruction not to draft policy or choose a license.
-3. **Whether DeckForge's product itself (processing user-supplied
+3. **Whether CardLift's product itself (processing user-supplied
    Print-and-Play PDFs) raises separate IP questions unrelated to
    dependency licensing** — outside this document's scope, flagged only
    so it isn't silently assumed to be covered by the analysis above.
-4. **Whether accepting AGPL for DeckForge's own source is commercially
+4. **Whether accepting AGPL for CardLift's own source is commercially
    acceptable, versus purchasing an Artifex commercial license** — a
    cost/tradeoff business decision this document doesn't evaluate.
 5. **The precise scope of "distribution" for a small, private alpha
@@ -339,19 +339,19 @@ For developers, not lawyers:
 
 - **PyMuPDF is the actual blocker.** It's AGPL/commercial dual-licensed
   by Artifex. Using the free AGPL option, per Artifex's own stated
-  position, means DeckForge's own source needs to be made available
+  position, means CardLift's own source needs to be made available
   under AGPL-compatible terms to anyone who gets the binary. There is
-  no free option that lets DeckForge stay closed-source while using
+  no free option that lets CardLift stay closed-source while using
   PyMuPDF as-is.
 - **Donations don't change this.** Money changing hands — or not — has
   no bearing on AGPL/GPL obligations, confirmed directly by the FSF's
   own guidance. There's no "AGPL, but exempt because it's
   donation-supported" middle ground.
 - **PySide6 is the easy one, if used correctly.** Under its LGPLv3
-  option, DeckForge can stay closed-source as long as PySide6 stays
+  option, CardLift can stay closed-source as long as PySide6 stays
   dynamically linked (the normal way Python imports it anyway) and
   users get a license notice plus the ability to replace the library.
-  No disclosure of DeckForge's own source required.
+  No disclosure of CardLift's own source required.
 - **Pillow is a non-issue.** Permissive license; just needs its notice
   preserved somewhere in the distribution.
 - **pytest doesn't matter for distribution** — dev-only, never ships in
@@ -360,7 +360,7 @@ For developers, not lawyers:
   exists specifically so frozen apps aren't GPL-contaminated by the
   packaging tool itself.
 - **The decision that actually has to be made before packaging isn't
-  "how do we comply with AGPL" — it's "do we open-source DeckForge
+  "how do we comply with AGPL" — it's "do we open-source CardLift
   itself (AGPL), or pay Artifex for a commercial license instead."**
   That's a business/product decision this document deliberately doesn't
   make.

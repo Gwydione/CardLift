@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds a DeckForge RC1 release: PyInstaller bundle, bundled docs,
+    Builds a CardLift RC1 release: PyInstaller bundle, bundled docs,
     internal + external SHA256 checksums, and a versioned ZIP, in one
     repeatable step.
 
@@ -9,16 +9,16 @@
        so the .exe's Windows file-properties metadata never drifts from
        the version string the GUI itself displays.
     2. Runs PyInstaller against deckforge_gui.spec for a clean one-folder
-       build (dist/DeckForge/).
+       build (dist/CardLift/).
     3. Copies release docs (QUICK_START.md, ALPHA_TESTING_GUIDE.md,
        docs/PRIVACY_PROMISES.md as PRIVACY.md, LICENSE,
-       LICENSE_EXPLAINED.md, THIRD_PARTY_NOTICES.md) into dist/DeckForge/
+       LICENSE_EXPLAINED.md, THIRD_PARTY_NOTICES.md) into dist/CardLift/
        alongside the .exe and _internal/.
-    4. Writes dist/DeckForge/SHA256SUMS.txt covering DeckForge.exe and
+    4. Writes dist/CardLift/SHA256SUMS.txt covering CardLift.exe and
        the copied docs (not _internal/, which is PyInstaller's own
        runtime payload and not independently verifiable content).
-    5. Zips dist/DeckForge/ into a versioned archive
-       (dist/DeckForge-<version>-windows-x64.zip).
+    5. Zips dist/CardLift/ into a versioned archive
+       (dist/CardLift-<version>-windows-x64.zip).
     6. Writes a sibling .sha256 checksum file for that archive so testers
        can verify the download before running it -- there is no code
        signing yet, so this is the only integrity check available.
@@ -39,7 +39,7 @@ $Python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
 $PyInstaller = Join-Path $RepoRoot '.venv\Scripts\pyinstaller.exe'
 $SpecFile = Join-Path $RepoRoot 'deckforge_gui.spec'
 $DistDir = Join-Path $RepoRoot 'dist'
-$BundleDir = Join-Path $DistDir 'DeckForge'
+$BundleDir = Join-Path $DistDir 'CardLift'
 
 foreach ($tool in @($Python, $PyInstaller)) {
     if (-not (Test-Path $tool)) {
@@ -65,7 +65,7 @@ finally {
     Pop-Location
 }
 
-$ExePath = Join-Path $BundleDir 'DeckForge.exe'
+$ExePath = Join-Path $BundleDir 'CardLift.exe'
 if (-not (Test-Path $ExePath)) {
     throw "Expected build output not found: $ExePath"
 }
@@ -89,7 +89,7 @@ foreach ($doc in $DocsToCopy) {
 
 Write-Host "`n== Step 4/6: Generating internal SHA256SUMS.txt ==" -ForegroundColor Cyan
 $SumsPath = Join-Path $BundleDir 'SHA256SUMS.txt'
-$SumsFiles = @('DeckForge.exe') + ($DocsToCopy | ForEach-Object { $_.DestName })
+$SumsFiles = @('CardLift.exe') + ($DocsToCopy | ForEach-Object { $_.DestName })
 $SumsLines = foreach ($name in $SumsFiles) {
     $hash = (Get-FileHash -Path (Join-Path $BundleDir $name) -Algorithm SHA256).Hash.ToLower()
     "$hash  $name"
@@ -98,7 +98,7 @@ $SumsLines = foreach ($name in $SumsFiles) {
 Write-Host "Wrote $SumsPath"
 
 Write-Host "`n== Step 5/6: Assembling release ZIP ==" -ForegroundColor Cyan
-$ZipName = "DeckForge-$Version-windows-x64.zip"
+$ZipName = "CardLift-$Version-windows-x64.zip"
 $ZipPath = Join-Path $DistDir $ZipName
 if (Test-Path $ZipPath) {
     Remove-Item $ZipPath -Force

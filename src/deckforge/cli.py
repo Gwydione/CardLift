@@ -25,7 +25,7 @@ from .pdf_renderer import PDFRenderError
 from .profile import ProfileError, load_profile
 
 NEW_USER_HINT = (
-    "New to DeckForge? Start with:\n"
+    "New to CardLift? Start with:\n"
     "  python extract.py --profile <name> --calibrate\n"
     "It walks you through calibrating a deck step by step, and each "
     "command tells you what to run next."
@@ -103,14 +103,14 @@ def friendly_error(e: Exception) -> str:
     if isinstance(e, ProfileError):
         if "not found at" in detail:
             explanation = (
-                "DeckForge can't find that profile. Likely cause: no "
+                "CardLift can't find that profile. Likely cause: no "
                 "profiles/<name>.json file exists yet, or --profile is "
                 "misspelled.\nNext step: create the profile JSON (see "
                 "README 'Calibrating a new deck') or check the spelling."
             )
         elif "is not valid JSON" in detail:
             explanation = (
-                "DeckForge couldn't read that profile file because it "
+                "CardLift couldn't read that profile file because it "
                 "isn't valid JSON -- likely a typo such as a missing "
                 "comma, quote, or brace.\nNext step: open the file and "
                 "compare its structure against profiles/solo_cards.json."
@@ -118,7 +118,7 @@ def friendly_error(e: Exception) -> str:
         elif "has both 'layouts' and legacy" in detail:
             explanation = (
                 "This profile mixes the old flat front-grid fields with "
-                "the new 'layouts' list -- DeckForge needs one or the "
+                "the new 'layouts' list -- CardLift needs one or the "
                 "other.\nNext step: remove the legacy first_front_page/"
                 "last_front_page/rows/cols/left/top/card_width/"
                 "card_height/gap_x/gap_y fields if using 'layouts', or "
@@ -126,7 +126,7 @@ def friendly_error(e: Exception) -> str:
             )
         elif "must include at least one layout" in detail:
             explanation = (
-                "This profile's 'layouts' list is empty -- DeckForge "
+                "This profile's 'layouts' list is empty -- CardLift "
                 "needs at least one layout describing where the front "
                 "cards are.\nNext step: add a layout entry with "
                 "first_page/last_page/rows/cols/left/top/card_width/"
@@ -157,14 +157,14 @@ def friendly_error(e: Exception) -> str:
             )
         elif "missing required keys" in detail:
             explanation = (
-                "This profile is missing information DeckForge needs "
+                "This profile is missing information CardLift needs "
                 "before it can find your cards.\nNext step: add the "
                 "listed fields (see README 'Profiles' for what each one "
                 "means)."
             )
         elif "unrecognized keys" in detail:
             explanation = (
-                "This profile has a field name DeckForge doesn't "
+                "This profile has a field name CardLift doesn't "
                 "recognize -- likely a typo.\nNext step: check the field "
                 "name against README 'Profiles', or prefix it with '_' if "
                 "it's meant as a comment."
@@ -177,7 +177,7 @@ def friendly_error(e: Exception) -> str:
                 "them."
             )
         else:
-            explanation = "DeckForge couldn't load this profile."
+            explanation = "CardLift couldn't load this profile."
 
     elif isinstance(e, PDFRenderError):
         if "out of range" in detail:
@@ -188,13 +188,13 @@ def friendly_error(e: Exception) -> str:
             )
         elif "not found" in detail:
             explanation = (
-                "DeckForge can't find the source PDF for this deck.\n"
+                "CardLift can't find the source PDF for this deck.\n"
                 "Next step: place the PDF in sample_decks/ (or the "
                 "project root) using the filename given by 'pdf_file' in "
                 "the profile."
             )
         else:
-            explanation = "DeckForge had a problem reading the PDF."
+            explanation = "CardLift had a problem reading the PDF."
 
     elif isinstance(e, ExportError):
         if "no 'pdf_file' set" in detail:
@@ -204,7 +204,7 @@ def friendly_error(e: Exception) -> str:
             )
         elif "could not find" in detail:
             explanation = (
-                "DeckForge can't find the PDF named in this profile.\n"
+                "CardLift can't find the PDF named in this profile.\n"
                 "Next step: place it in sample_decks/ (or the project "
                 "root)."
             )
@@ -229,7 +229,7 @@ def friendly_error(e: Exception) -> str:
                 "profile with --overlay."
             )
         else:
-            explanation = "DeckForge couldn't complete the export."
+            explanation = "CardLift couldn't complete the export."
 
     elif isinstance(e, GeometryError):
         explanation = (
@@ -240,14 +240,14 @@ def friendly_error(e: Exception) -> str:
 
     elif isinstance(e, MeasureError):
         explanation = (
-            "DeckForge couldn't understand one of the --card "
+            "CardLift couldn't understand one of the --card "
             "measurements.\nNext step: check the format against the "
             "README 'Measuring a new deck fast' example "
             "(rNcN:x1,y1,x2,y2)."
         )
 
     else:
-        explanation = "DeckForge couldn't complete that command."
+        explanation = "CardLift couldn't complete that command."
 
     return f"{explanation}\n\nDetails: {detail}"
 
@@ -255,7 +255,7 @@ def friendly_error(e: Exception) -> str:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = DeckForgeArgParser(
         prog="extract.py",
-        description="DeckForge: extract card images from a print-and-play PDF using a manual calibration profile.",
+        description="CardLift: extract card images from a print-and-play PDF using a manual calibration profile.",
     )
     parser.add_argument(
         "--profile", required=True,
@@ -454,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except Exception:
         print(
-            "ERROR: DeckForge hit a problem it doesn't have a specific "
+            "ERROR: CardLift hit a problem it doesn't have a specific "
             "explanation for. This is likely a bug, or an unusual PDF -- "
             "if it keeps happening, please report it with the details "
             "below.\n\n"

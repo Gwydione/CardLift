@@ -1,6 +1,6 @@
 # CLI Reference
 
-This is the full reference for DeckForge's command-line engine
+This is the full reference for CardLift's command-line engine
 (`extract.py`): the profile JSON schema, the grid math it's based on,
 and every command it supports. If you're looking for the GUI app or a
 product overview, see [../README.md](../README.md); for how the code is
@@ -165,7 +165,7 @@ schema/validation/GUI surface.
 
 ### Trim scope: one unavoidable distinction
 
-`back_page` is deliberately **not** a layout -- DeckForge has exactly
+`back_page` is deliberately **not** a layout -- CardLift has exactly
 one shared back, and folding it into `layouts` would blur what a
 `CardLayout` means (a grid of card fronts). Since the back isn't a
 layout, its trim still needs to come from somewhere:
@@ -271,9 +271,9 @@ N` for a different page, e.g. to calibrate the back grid) and walks you
 through three steps:
 
 1. **Mark a card.** Click a card's upper-left corner, then its
-   lower-right corner. DeckForge assumes this first card is `r0c0` (the
+   lower-right corner. CardLift assumes this first card is `r0c0` (the
    grid's top-left card).
-2. **Add spacing (optional).** Once one card is measured, DeckForge
+2. **Add spacing (optional).** Once one card is measured, CardLift
    highlights where a neighboring card is likely to be — click it to
    also work out the gap between cards, or click **Finish** to skip
    straight to step 3 with card size only.
@@ -498,13 +498,13 @@ PlayingCards.io or Tabletop Simulator — followed by a suggestion to run
 
 ## If something goes wrong
 
-Every error DeckForge can anticipate (a missing profile, invalid JSON,
+Every error CardLift can anticipate (a missing profile, invalid JSON,
 a PDF that isn't where the profile says, trim values that collapse a
 card to nothing, a malformed `--card` spec, …) prints a one- or
 two-line plain-language explanation of the likely cause and what to try
 next, followed by `Details:` with the underlying technical message —
 keep reading past the first lines if you need the exact value or field
-name. Anything DeckForge doesn't have a specific explanation for (a
+name. Anything CardLift doesn't have a specific explanation for (a
 bug, or an unusual PDF) still exits cleanly with a short notice and the
 full technical detail, instead of a raw crash.
 

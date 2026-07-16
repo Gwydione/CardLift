@@ -86,7 +86,7 @@ class DeckExporter:
         if not self.profile.pdf_file:
             raise ExportError(
                 f"profile '{self.profile.name}' has no 'pdf_file' set, so "
-                f"DeckForge doesn't know which PDF to open. Add a "
+                f"CardLift doesn't know which PDF to open. Add a "
                 f'"pdf_file": "your-deck.pdf" entry to the profile.'
             )
         candidate = self.paths.sample_decks_dir / self.profile.pdf_file

@@ -1,13 +1,13 @@
-# DeckForge Demo Deck
+# CardLift Demo Deck
 
 ## Purpose
 
-The DeckForge Demo Deck exists to help first-time users become
-comfortable with DeckForge before importing their own PDFs.
+The CardLift Demo Deck exists to help first-time users become
+comfortable with CardLift before importing their own PDFs.
 
 Its goals are to build confidence that:
 
--   DeckForge works as promised.
+-   CardLift works as promised.
 -   The user can successfully use the application.
 -   The user finishes the demo wanting to try **their own** deck.
 
@@ -101,7 +101,7 @@ has achieved its purpose.
 ## Open Question
 
 Should the PDF itself contain any introductory material, or should all
-onboarding remain within the DeckForge application while the Demo Deck
+onboarding remain within the CardLift application while the Demo Deck
 behaves like a normal card deck?
 
 This question remains intentionally open for product review.

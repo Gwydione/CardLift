@@ -30,7 +30,7 @@ from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.review_state import ReviewCard, ReviewCardsState
 from deckforge_gui.review_workspace import INSPECT_RENDER_SCALE, REVIEW_RENDER_SCALE, ReviewWorkspace, _CardTile
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 # Real, --preview-verified geometry from profiles/demo_deck.json (same
 # constant test_export_workspace.py uses against this sample PDF) -- a 2x3

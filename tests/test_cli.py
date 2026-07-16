@@ -50,7 +50,7 @@ class TestFriendlyError:
         assert "couldn't understand" in msg
 
     def test_export_error_unknown_pdf_file_gets_plain_language(self) -> None:
-        msg = friendly_error(ExportError("profile 'x' has no 'pdf_file' set, so DeckForge doesn't know which PDF to open."))
+        msg = friendly_error(ExportError("profile 'x' has no 'pdf_file' set, so CardLift doesn't know which PDF to open."))
         assert "doesn't say which PDF" in msg
 
     def test_unrecognized_exception_falls_back_gracefully(self) -> None:
@@ -96,4 +96,4 @@ class TestMainEndToEnd:
             main(["--profile", "does_not_exist_xyz"])
         err = capsys.readouterr().err
         assert "--calibrate" in err
-        assert "New to DeckForge" in err
+        assert "New to CardLift" in err

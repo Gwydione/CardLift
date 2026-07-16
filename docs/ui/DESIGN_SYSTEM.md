@@ -1,14 +1,14 @@
-# DeckForge Design System
+# CardLift Design System
 
 ## Purpose
 
-This document defines the visual language of DeckForge.
+This document defines the visual language of CardLift.
 
 It does not specify exact colors, fonts, or pixel measurements. Instead,
 it describes how the application should feel and the principles that
 should guide visual design decisions.
 
-**Every visual decision should reinforce the idea that DeckForge is
+**Every visual decision should reinforce the idea that CardLift is
 user-friendly, not technical.**
 
 The goal is consistency.
@@ -17,7 +17,7 @@ The goal is consistency.
 
 # Brand Personality
 
-DeckForge should feel:
+CardLift should feel:
 
 - Crafted
 - Purpose-built
@@ -37,14 +37,14 @@ It should never feel:
 - Experimental
 - Technical
 
-Users should immediately feel that DeckForge was designed specifically
+Users should immediately feel that CardLift was designed specifically
 for tabletop gamers.
 
 ---
 
 # Emotional Goals
 
-When users launch DeckForge, they should think:
+When users launch CardLift, they should think:
 
 - I know where to start.
 - This looks polished.
@@ -76,7 +76,7 @@ The accompanying UI_REFERENCE_LAYOUT.png illustrates the intended overall layout
 
 # Layout Philosophy
 
-DeckForge is a workspace application, not a dialog application.
+CardLift is a workspace application, not a dialog application.
 
 The workspace should feel open, spacious, and intentional.
 
@@ -103,7 +103,7 @@ It should feel substantial and permanent---not decorative.
 
 # Workspace
 
-The center workspace is the heart of DeckForge.
+The center workspace is the heart of CardLift.
 
 Whenever possible, it should dominate the application.
 
@@ -216,7 +216,7 @@ Empty space should feel calm rather than unfinished.
 
 # Responsive Design
 
-DeckForge should feel intentionally designed at every window size.
+CardLift should feel intentionally designed at every window size.
 
 As the application grows:
 
@@ -229,9 +229,9 @@ large window.
 
 ---
 
-# Things DeckForge Is Not
+# Things CardLift Is Not
 
-DeckForge is not:
+CardLift is not:
 
 - A fantasy game
 - A developer tool
@@ -248,10 +248,10 @@ It is a purpose-built workspace for tabletop gamers.
 
 Before changing the interface, ask:
 
-- Does this make DeckForge feel more crafted?
+- Does this make CardLift feel more crafted?
 - Does this make the next action clearer?
 - Does this reduce uncertainty?
 - Would a first-time user immediately understand what to do?
-- Does this strengthen DeckForge's visual identity?
+- Does this strengthen CardLift's visual identity?
 
 If not, reconsider the change.

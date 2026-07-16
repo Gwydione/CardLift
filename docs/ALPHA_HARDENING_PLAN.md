@@ -208,10 +208,10 @@ pre-existing join outside this feature's scope.
 `MainWindow.closeEvent(event)` is a no-op (default accept, unchanged) when
 `export_workspace.is_exporting()` is `False` — which also covers the
 automatic second close described below, since by then the worker is
-already cleared. Otherwise it shows a `QMessageBox` — **Keep DeckForge
+already cleared. Otherwise it shows a `QMessageBox` — **Keep CardLift
 Open** (default and Escape button) vs. **Finish Export, Then Close** — via
 `_confirm_quit_during_export()` (still its own method, same reason
-`export_workspace._confirm_overwrite_if_needed()` is). "Keep DeckForge
+`export_workspace._confirm_overwrite_if_needed()` is). "Keep CardLift
 Open" calls `event.ignore()` and does nothing else. "Finish Export, Then
 Close" sets a `MainWindow._close_after_export` flag and calls
 `event.ignore()` — never a blocking join — so the close is deferred, not
@@ -256,7 +256,7 @@ original plan.
 pipeline (not a synthetic direct `closeEvent()` call, which cannot detect
 an unresponsive GUI thread at all) —
 `TestCloseEventNoActiveExport` (no export running: dialog never shown,
-close proceeds normally), `TestKeepDeckForgeOpen` (Keep DeckForge Open
+close proceeds normally), `TestKeepDeckForgeOpen` (Keep CardLift Open
 leaves the worker running and ignores the close; a worker left referenced
 but no longer running, the exact race `is_exporting()` is defined
 against, does not trigger the confirmation),
@@ -425,7 +425,7 @@ version stamp is much less actionable.
   engine's own version (already true today, not currently coupled to the
   GUI, and no evidence they need to move in lockstep for alpha).
 - Surface it: append to `MainWindow`'s window title
-  ("DeckForge — v0.1.0-alpha.1") — cheapest possible visibility, useful
+  ("CardLift — v0.1.0-alpha.1") — cheapest possible visibility, useful
   for screenshots/bug reports, and it's what crash log headers (§6) will
   also stamp.
 - One line in `DEVELOPER.md` documenting the bump convention (bump the
@@ -467,7 +467,7 @@ which extends to not phoning home crash data either):
 - Configure Python's stdlib `logging` once, at the very top of
   `gui_app.main()`, before `MainWindow()` is constructed: a
   `RotatingFileHandler` writing to a per-user local log directory (e.g.
-  `Path(os.environ["LOCALAPPDATA"]) / "DeckForge" / "logs"` on Windows,
+  `Path(os.environ["LOCALAPPDATA"]) / "CardLift" / "logs"` on Windows,
   the only platform this app currently targets — no new dependency for a
   single OS-appropriate path lookup). First line of every session logs
   the version string from §5.
@@ -490,7 +490,7 @@ addition once you know what testers actually need from it.
 follow-up review** (`deckforge_gui/logging_setup.py`, new;
 `export_workspace.py`, `main_window.py`, `gui_app.py`): all three
 smallest-coherent-implementation bullets landed as described — rotating
-local `RotatingFileHandler` (`%LOCALAPPDATA%\DeckForge\logs\deckforge.log`,
+local `RotatingFileHandler` (`%LOCALAPPDATA%\CardLift\logs\cardlift.log`,
 1 MB × 3 backups) configured in `gui_app.main()` before `MainWindow()` is
 constructed, session header stamped with `deckforge.__version__`
 (see §5's actual outcome — the single authoritative constant, not a
@@ -579,15 +579,15 @@ elevation issue below — they'd be necessary on any platform, elevated or
 not.
 
 **Separate finding — not an application defect:** during manual alpha
-testing, drag-and-drop appeared completely broken when DeckForge was
+testing, drag-and-drop appeared completely broken when CardLift was
 launched from an elevated (Administrator) PowerShell. Root cause: Windows
 blocks OLE drag-and-drop between processes at different integrity
 levels — Explorer runs at the normal user's integrity level and cannot
 supply drag data to a higher-integrity-level (elevated) target process.
 This is Windows UIPI (User Interface Privilege Isolation) behavior, not a
-DeckForge bug, and no code change addresses or should attempt to address
-it. Running DeckForge from a normal, non-elevated PowerShell resolves it.
+CardLift bug, and no code change addresses or should attempt to address
+it. Running CardLift from a normal, non-elevated PowerShell resolves it.
 Manually verified 2026-07-12: dragging a real PDF from Explorer into a
-non-elevated DeckForge works correctly with the event-handling fixes
+non-elevated CardLift works correctly with the event-handling fixes
 above in place. Recorded here so a future elevated-process test session
 isn't re-diagnosed as an application defect.

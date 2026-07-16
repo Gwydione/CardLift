@@ -1,15 +1,15 @@
 # LICENSE_EXPLAINED.md
 
-# Understanding DeckForge's License
+# Understanding CardLift's License
 
 If you've never heard of the GNU Affero General Public License (AGPL),
 you're not alone.
 
-Many DeckForge users simply want to extract cards from their PDFs and
+Many CardLift users simply want to extract cards from their PDFs and
 enjoy their tabletop games. You do not need to become an expert in
-open-source licensing to use DeckForge.
+open-source licensing to use CardLift.
 
-This document explains, in plain language, why DeckForge uses the AGPL
+This document explains, in plain language, why CardLift uses the AGPL
 and what that means for you.
 
 The complete legal license is contained in the repository's `LICENSE`
@@ -20,15 +20,15 @@ official license, the `LICENSE` file governs.
 
 # The Short Version
 
-If you're simply using DeckForge, you can relax.
+If you're simply using CardLift, you can relax.
 
 You can:
 
--   Download DeckForge.
+-   Download CardLift.
 -   Use it to process your own PDFs.
 -   Export card images.
 -   Keep and use the images you create.
--   Share DeckForge with others under the terms of the license.
+-   Share CardLift with others under the terms of the license.
 
 Most users will never have to think about the AGPL beyond that.
 
@@ -36,20 +36,20 @@ Most users will never have to think about the AGPL beyond that.
 
 # Why We Chose the AGPL
 
-DeckForge exists because we believe useful software should be available
+CardLift exists because we believe useful software should be available
 to everyone.
 
 We also believe that software benefits from transparency. Users should
 be able to understand how it works, inspect the source code if they
 wish, and trust that the project is being developed responsibly.
 
-Finally, we believe that if someone improves DeckForge and distributes
+Finally, we believe that if someone improves CardLift and distributes
 those improvements, those improvements should remain available to the
 community that made the project possible.
 
 The AGPL reflects those values.
 
-Our choice of license is part of DeckForge's engineering philosophy, not
+Our choice of license is part of CardLift's engineering philosophy, not
 simply a legal requirement.
 
 ------------------------------------------------------------------------
@@ -58,7 +58,7 @@ simply a legal requirement.
 
 For most people, the answer is simple:
 
-Use DeckForge.
+Use CardLift.
 
 Enjoy it.
 
@@ -72,7 +72,7 @@ The AGPL does **not** require you to publish:
 -   your adventures,
 -   your original creations.
 
-The license applies to **DeckForge itself**, not to the content you
+The license applies to **CardLift itself**, not to the content you
 process with it.
 
 Of course, you remain responsible for respecting the copyright and
@@ -80,13 +80,13 @@ licensing terms of any PDFs or artwork you choose to use.
 
 ------------------------------------------------------------------------
 
-# What If I Modify DeckForge?
+# What If I Modify CardLift?
 
-You're welcome to modify DeckForge.
+You're welcome to modify CardLift.
 
 That's one of the benefits of open-source software.
 
-If you distribute a modified version of DeckForge, the AGPL generally
+If you distribute a modified version of CardLift, the AGPL generally
 requires that you also make the corresponding source code for your
 modified version available under the same license.
 
@@ -95,13 +95,13 @@ software should remain part of the community.
 
 ------------------------------------------------------------------------
 
-# Can I Use DeckForge Commercially?
+# Can I Use CardLift Commercially?
 
 Yes.
 
-The AGPL does not prevent you from using DeckForge in commercial work.
+The AGPL does not prevent you from using CardLift in commercial work.
 
-However, DeckForge's license does **not** grant rights to the PDFs,
+However, CardLift's license does **not** grant rights to the PDFs,
 artwork, or game materials you process. You must have the appropriate
 rights to use those materials.
 
@@ -109,7 +109,7 @@ rights to use those materials.
 
 # Why Transparency Matters
 
-Throughout DeckForge, we've tried to make complicated tasks feel
+Throughout CardLift, we've tried to make complicated tasks feel
 approachable.
 
 That philosophy extends beyond the software itself.
@@ -130,9 +130,9 @@ Open-source licensing is one part of building that trust.
 If you're curious about the legal details, please read the `LICENSE`
 file.
 
-If you're considering contributing to DeckForge, we'd love to have you
+If you're considering contributing to CardLift, we'd love to have you
 involved. Please see `ENGINEERING_STANDARDS.md` for the project's
 engineering priorities and definition of done, and `DEVELOPER.md` to get
 a development environment running.
 
-Thank you for being part of the DeckForge community.
+Thank you for being part of the CardLift community.

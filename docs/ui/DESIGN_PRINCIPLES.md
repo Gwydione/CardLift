@@ -1,8 +1,8 @@
-# DeckForge UI Design Principles
+# CardLift UI Design Principles
 
 ## Purpose
 
-DeckForge exists to help tabletop gamers transform Print-and-Play PDFs
+CardLift exists to help tabletop gamers transform Print-and-Play PDFs
 into virtual tabletop-ready card images.
 
 The engine performs sophisticated extraction, calibration, and export
@@ -16,7 +16,7 @@ use.
 
 # Product Philosophy
 
-DeckForge should feel like a polished desktop application, not a
+CardLift should feel like a polished desktop application, not a
 graphical interface layered on top of a command-line tool.
 
 Users should think about **their deck**, not about how the engine works.
@@ -24,7 +24,7 @@ Users should think about **their deck**, not about how the engine works.
 The interface should guide users naturally through the workflow while
 keeping advanced capabilities available without overwhelming beginners.
 
-**Above all, DeckForge should feel user-friendly, not technical.**
+**Above all, CardLift should feel user-friendly, not technical.**
 
 Users should focus on their cards and workflow---not on the extraction
 engine.
@@ -33,7 +33,7 @@ engine.
 
 # Privacy and Security
 
-DeckForge should require no network access for its core PDF-processing workflow.
+CardLift should require no network access for its core PDF-processing workflow.
 
 User PDFs and derived card data should remain on the user’s computer unless the user explicitly chooses an online feature. Any future network-dependent capability must be optional, clearly disclosed, and designed so the local core workflow remains usable without it.
 
@@ -61,13 +61,13 @@ Simple workflows should require very few decisions.
 
 ## Clarity over Assumption
 
-Interfaces should communicate the user's current task, progress, and next action without requiring prior knowledge of DeckForge's internal model.
+Interfaces should communicate the user's current task, progress, and next action without requiring prior knowledge of CardLift's internal model.
 
 ## Every interaction should build confidence.
 
 Each completed step should leave the user more confident than before.
 
-The interface should continually communicate what DeckForge understands
+The interface should continually communicate what CardLift understands
 and what will happen next.
 
 Examples include:
@@ -138,7 +138,7 @@ Prefer user-oriented language such as:
 
 - Select Card Pages
 - Review Cards
-- Show DeckForge the first card
+- Show CardLift the first card
 
 Avoid exposing concepts such as:
 
@@ -161,7 +161,7 @@ for attention.
 Users should always know:
 
 - where they are
-- what DeckForge understands
+- what CardLift understands
 - what to do next
 
 # Decision Filter

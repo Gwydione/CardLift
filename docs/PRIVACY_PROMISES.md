@@ -1,14 +1,14 @@
-# DeckForge Privacy Promises
+# CardLift Privacy Promises
 
-This page is not a legal Privacy Policy — DeckForge doesn't collect
+This page is not a legal Privacy Policy — CardLift doesn't collect
 anything today that would require one. It's something more basic: a
-plain-language statement of what DeckForge actually does with your
-files, written from the code, not from aspiration. If DeckForge ever
+plain-language statement of what CardLift actually does with your
+files, written from the code, not from aspiration. If CardLift ever
 starts collecting or transmitting data in a way that *would* need a
 formal policy, we'll say so here first, and a real policy will follow.
 
-These promises describe DeckForge's alpha behavior (`0.1.0-alpha`) as
-verified against the code. They're commitments about how DeckForge is
+These promises describe CardLift's alpha behavior (`0.1.0-alpha`) as
+verified against the code. They're commitments about how CardLift is
 built, not just a description of how it happens to work right now.
 
 ---
@@ -18,41 +18,41 @@ built, not just a description of how it happens to work right now.
 ### 1. The core workflow works offline, with no account.
 
 Opening a PDF, calibrating its card grid, reviewing suggested cards, and
-exporting card images — DeckForge's entire day-to-day workflow — runs on
+exporting card images — CardLift's entire day-to-day workflow — runs on
 your own computer. No internet connection and no account are required.
-That's true today, and it will stay true: whatever else DeckForge adds
+That's true today, and it will stay true: whatever else CardLift adds
 later, this core workflow will keep working exactly as it does now,
 fully offline.
 
 ### 2. Nothing about your deck — or you — leaves your computer automatically.
 
-Your PDFs, the card images DeckForge exports, and the local diagnostic
-log DeckForge keeps for itself are never transmitted anywhere. The
+Your PDFs, the card images CardLift exports, and the local diagnostic
+log CardLift keeps for itself are never transmitted anywhere. The
 current app has no analytics and no telemetry, and it doesn't collect
 personal information beyond what already lives on your own filesystem
 (like the names of files and folders you choose to work with).
 
 ### 3. Diagnostic logs stay on your computer, and we're upfront about their limits.
 
-DeckForge keeps a small rotating log file on your own machine to help
+CardLift keeps a small rotating log file on your own machine to help
 diagnose problems — never uploaded, never sent anywhere. In normal use,
 it records short, descriptive names, not full file paths. When
 something genuinely unexpected goes wrong, though, the crash detail we
 capture can still include a full file path — for example, a folder name
-you chose, or your Windows username as part of DeckForge's own install
-location. If you ever share `deckforge.log` publicly (say, in a bug
+you chose, or your Windows username as part of CardLift's own install
+location. If you ever share `cardlift.log` publicly (say, in a bug
 report), skim it first.
 
 ### 4. Any future feature that sends data off your device will be optional, and we'll say so first.
 
-If DeckForge ever adds something that needs the network — exporting
+If CardLift ever adds something that needs the network — exporting
 straight to an online platform, for instance — it won't turn on by
 default, it won't be required to use the core workflow above, and we'll
 tell you plainly what it sends and why before it ever sends anything.
 
-### 5. DeckForge only writes what you asked it to.
+### 5. CardLift only writes what you asked it to.
 
-The only files DeckForge creates are the card images you export to the
+The only files CardLift creates are the card images you export to the
 folder you choose, plus its own local diagnostic log. It doesn't install
 background services, doesn't create hidden data stores elsewhere on your
 system, and doesn't need elevated permissions to run.
@@ -65,7 +65,7 @@ These promises are a design constraint, not just a description. Before
 adding or changing anything that touches file I/O, logging, or the
 network, check it against:
 
-1.  Does this cause DeckForge to send anything off the user's device
+1.  Does this cause CardLift to send anything off the user's device
     that it didn't send before?
 2.  If yes — is it off by default, and is the user told what's being
     sent and why *before* it happens?

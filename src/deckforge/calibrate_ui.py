@@ -541,7 +541,7 @@ class CalibrationWindow(tk.Tk):
         self._pointer_xy: Optional[tuple[float, float]] = None
 
         title_suffix = f", {resolution.label.rsplit(', page ', 1)[0]}" if len(profile.layouts) > 1 else ""
-        self.title(f"DeckForge Calibration -- {profile_name} (page {resolution.page_num}{title_suffix})")
+        self.title(f"CardLift Calibration -- {profile_name} (page {resolution.page_num}{title_suffix})")
         # Initial window size only; the canvas expands to fill whatever
         # space the user resizes/maximizes the window to.
         self.geometry(f"{MAX_DISPLAY_WIDTH}x{MAX_DISPLAY_HEIGHT + 200}")
@@ -549,7 +549,7 @@ class CalibrationWindow(tk.Tk):
         self._build_widgets()
         self._set_step(
             "Step 1 of 3 -- Mark a card",
-            "Click the UPPER-LEFT corner of a card. DeckForge uses this pair "
+            "Click the UPPER-LEFT corner of a card. CardLift uses this pair "
             "of clicks to work out that card's size and position.",
         )
 
@@ -1220,7 +1220,7 @@ class CalibrationWindow(tk.Tk):
         self.details_toggle.grid_remove()
         self._set_step(
             "Step 1 of 3 -- Mark a card",
-            "Click the UPPER-LEFT corner of a card. DeckForge uses this pair "
+            "Click the UPPER-LEFT corner of a card. CardLift uses this pair "
             "of clicks to work out that card's size and position.",
         )
 

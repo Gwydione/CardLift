@@ -6,7 +6,7 @@ from deckforge.cropper import CardCropper
 from deckforge.pdf_renderer import PDFRenderer
 from deckforge.profile import GridGeometry, TrimValues
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 # Real, --preview-verified geometry from profiles/demo_deck.json, minus
 # trim (cell_export.py always crops at zero trim -- see its module

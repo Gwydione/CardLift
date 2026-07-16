@@ -14,7 +14,7 @@ uncaught-exception tracebacks (frame filenames include the full install
 path) and caught-exception messages logged via _logger.exception/.warning
 (e.g. OSError's str() includes the failing filename in full). On most
 Windows setups the install path embeds the tester's Windows username (e.g.
-C:\\Users\\<username>\\...). Review deckforge.log before sharing it publicly
+C:\\Users\\<username>\\...). Review cardlift.log before sharing it publicly
 (bug reports, forums, etc.) and strip that path segment if needed.
 """
 
@@ -33,7 +33,7 @@ _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
 def log_directory() -> Path:
-    return Path(os.environ["LOCALAPPDATA"]) / "DeckForge" / "logs"
+    return Path(os.environ["LOCALAPPDATA"]) / "CardLift" / "logs"
 
 
 def configure_logging() -> None:
@@ -41,13 +41,13 @@ def configure_logging() -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     handler = RotatingFileHandler(
-        log_dir / "deckforge.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8",
+        log_dir / "cardlift.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8",
     )
     handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
     logging.getLogger(__name__).info(
-        "DeckForge v%s starting (%s, Python %s)",
+        "CardLift v%s starting (%s, Python %s)",
         __version__, platform.platform(), platform.python_version(),
     )
 

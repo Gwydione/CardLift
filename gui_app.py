@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DeckForge - gui_app.py
+CardLift - gui_app.py
 
 Launches the desktop application. Thin entry point, same pattern as
 extract.py -- all logic lives in src/deckforge_gui/.
@@ -28,7 +28,7 @@ from deckforge_gui.theme import BG_CARD, BORDER_CARD, TEXT_HEADING  # noqa: E402
 
 # Qt's native tooltip styling is unset by default, so on Windows dark mode
 # it can inherit a near-black background with no matching text color change
-# (invisible black-on-black text). Style tooltips with DeckForge's own light
+# (invisible black-on-black text). Style tooltips with CardLift's own light
 # card palette so they're never dependent on OS theme rendering. Both the
 # QSS rule and the QPalette roles below are set (not just one): confirmed by
 # testing that a hostile system tooltip palette (dark ToolTipBase, unchanged
@@ -58,7 +58,7 @@ def _apply_tooltip_theme(app: QApplication) -> None:
 def main() -> int:
     configure_logging()
     app = QApplication(sys.argv)
-    app.setApplicationName("DeckForge")
+    app.setApplicationName("CardLift")
     _apply_tooltip_theme(app)
     window = MainWindow()
     window.show()

@@ -43,7 +43,7 @@ from deckforge_gui.main_window import MainWindow
 from deckforge_gui.review_state import build_review_cards
 import deckforge_gui.export_workspace as export_workspace_mod
 
-SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "DeckForge_Demo_Deck.pdf"
+SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
 # Same real, --preview-verified geometry test_export_workspace.py uses
 # against this sample PDF.
@@ -151,7 +151,7 @@ class TestKeepDeckForgeOpen:
 
         assert event.isAccepted() is False
         assert window._close_after_export is False
-        # "Keep DeckForge Open" means exactly that -- the export keeps
+        # "Keep CardLift Open" means exactly that -- the export keeps
         # running, untouched.
         assert window.export_workspace._worker is not None
         assert window.export_workspace.is_exporting() is True
@@ -319,7 +319,7 @@ class TestFailedExportDoesNotConcealFailureByQuitting:
         QTimer.singleShot(50, window.close)
 
         def _check_and_quit() -> None:
-            assert window.isVisible() is True, "a failed export must leave DeckForge open, not quit silently"
+            assert window.isVisible() is True, "a failed export must leave CardLift open, not quit silently"
             assert window._close_after_export is False, "the pending-close request must be cleared on failure"
             assert window.export_workspace._result_label.isVisible() is True
             assert "disk is full" in window.export_workspace._result_label.text()

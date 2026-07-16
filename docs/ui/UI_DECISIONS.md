@@ -1,7 +1,7 @@
-# DeckForge UI Decisions
+# CardLift UI Decisions
 
 This document records intentional user experience decisions made during
-the design of DeckForge's desktop application.
+the design of CardLift's desktop application.
 
 Its purpose is to preserve _why_ decisions were made so future
 development remains consistent.
@@ -64,7 +64,7 @@ The top bar remains intentionally minimal.
 
 It contains:
 
-- DeckForge branding
+- CardLift branding
 - Overflow/settings menu
 
 The current PDF filename should not occupy permanent space in the top
@@ -103,7 +103,7 @@ It should:
 
 Preferred wording:
 
-"Show DeckForge the first card."
+"Show CardLift the first card."
 
 Avoid wording that implies training or configuration complexity.
 
@@ -130,7 +130,7 @@ Examples:
 
 - Select Card Pages
 - Review Cards
-- Show DeckForge the first card
+- Show CardLift the first card
 
 Avoid exposing implementation concepts such as JSON, profile
 normalization, crop geometry, or command-line terminology.
@@ -167,7 +167,7 @@ card here at all?) but not enough to judge whether a crop is actually
 correct. Card Inspection closes that gap: clicking a small "look closer"
 affordance on a tile opens an overlay showing that one card at high
 fidelity, with a margin of surrounding page content so the crop boundary
-(drawn in DeckForge's own accent color) is visible in context rather than
+(drawn in CardLift's own accent color) is visible in context rather than
 isolated. This ports the CLI's already-proven `--preview` (macro) /
 `--inspect` (micro) split into the GUI, rather than inventing a new idea.
 
@@ -194,7 +194,7 @@ rather than a partial audit. Concretely, this means:
   the user actually opens -- never pre-rendered for the whole deck.
 
 The overlay itself is a full-workspace overlay, not a modal dialog --
-DeckForge is "a workspace application, not a dialog application"
+CardLift is "a workspace application, not a dialog application"
 (DESIGN_SYSTEM.md), so it should read as the workspace focusing on one
 card, not a separate application opening on top of it.
 
