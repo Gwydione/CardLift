@@ -145,6 +145,13 @@ _Bugs found during manual alpha testing:_
       already-computed, independent second-card hint and asking for
       clarification (existing `NEEDS_CELL_LABEL` prompt) on disagreement,
       rather than a new tuned threshold.
+- [ ] On some clean Windows environments, the Review Cards card-tile
+      hover tooltip may display with poor text/background contrast. This
+      affects only supplemental hover guidance; card review, inspection,
+      inclusion/exclusion, and export remain fully functional.
+- [ ] On a clean Windows Sandbox system, DeckForge may take approximately
+      3-4 seconds after double-clicking before the main window appears,
+      with no visible startup feedback.
 
 ---
 
