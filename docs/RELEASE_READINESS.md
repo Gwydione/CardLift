@@ -5,7 +5,7 @@ priority before DeckForge's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
-Last updated: 2026-07-15.
+Last updated: 2026-07-16.
 
 ## Current phase: Alpha Release Preparation
 
@@ -20,9 +20,12 @@ review this phase is responding to.
   `docs/LICENSE_RESEARCH.md` are written and committed. A `LICENSE` file
   (GNU AGPLv3) exists in the working tree but **is not yet committed to
   git** — closing that gap is the single remaining governance item.
-- **Packaging: not started.** No `.spec` file, installer script, or
-  packaging tool is present. Still open, per `docs/ALPHA_RELEASE_REVIEW.md`
-  §5C/§6.
+- **Packaging: discovery build only.** `deckforge_gui.spec` (one-folder
+  PyInstaller build) exists and produces a working `dist/DeckForge/`
+  bundle, manually smoke-tested through Demo Deck load → Calibrate
+  Fronts. No installer, code signing, version metadata, or icon yet —
+  those are deliberately deferred stabilization steps. Still open, per
+  `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6.
 - **Clean-machine validation: not done.** The documented from-source
   tester path (`git clone` → `pip install -r requirements-gui.txt` →
   `python gui_app.py`) has not yet been verified on a machine without
@@ -71,9 +74,10 @@ _Release preparation (not yet implemented):_
 
 - [ ] Commit the `LICENSE` file — it exists in the working tree (GNU
       AGPLv3) but is currently untracked by git.
-- [ ] Packaging (installer/portable build) — not started; see
-      `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6 for the open decisions
-      (one-file vs. one-folder, code signing, dependency bundling).
+- [ ] Packaging (installer/portable build) — first one-folder PyInstaller
+      build done (`deckforge_gui.spec`), smoke-tested manually. Still
+      open: installer, code signing, version/icon metadata; see
+      `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6.
 - [ ] Clean-machine validation of the from-source tester instructions —
       not yet run on a machine without the existing dev environment; see
       `docs/ALPHA_RELEASE_REVIEW.md` §5H.
@@ -112,6 +116,13 @@ _Calibration geometry follow-up (not yet implemented):_
       away from (see DEVELOPER.md's "Cell-label prompt uses human, not
       internal, numbering"). Not currently prioritized: the CLI engine is
       documented as stable and this alpha's testing surface is the GUI.
+
+_Flagged during the first PyInstaller packaging pass (2026-07-16), not investigated or fixed here:_
+
+- [ ] Pre-existing Qt callback-assertion weakness — noted as a known issue
+      during the discovery packaging session but out of scope for that
+      task. Needs its own investigation/write-up before a fix can be
+      scoped.
 
 _Bugs found during manual alpha testing:_
 
