@@ -9,10 +9,16 @@ CardLift is a **Windows alpha desktop application, under active
 development.** The core workflow — open a PDF, calibrate its card grid,
 review, and export — is complete and has been manually tested end to
 end against real decks, including safe, non-blocking shutdown mid-export
-and a version identity shown in the window title. It isn't packaged as
-an installer yet (run it from source), and crash/error logging is still
-in progress. See [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md)
-for the current, live list of what's shipped and what's still open.
+and a version identity shown in the window title. It's packaged as a
+Windows release build, validated in Windows Sandbox, with crash/error
+logging in place and the official CardLift Demo Deck bundled in. See
+[docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for the current,
+live list of what's shipped and what's still open.
+
+Alpha testers should download the packaged Windows release (see
+[QUICK_START.md](QUICK_START.md) and
+[ALPHA_TESTING_GUIDE.md](ALPHA_TESTING_GUIDE.md)); the instructions
+below are for developers running CardLift from source.
 
 ## What CardLift does
 
@@ -115,19 +121,14 @@ profile reference.
 
 ## Roadmap
 
-Remaining work before CardLift leaves alpha (see
-[docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for the full,
-prioritized, and current list):
-
-- Crash and error logging
-- A real installer/packaged build (currently run from source)
+See [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) for the
+full, prioritized, and current list of what's left before CardLift
+leaves alpha.
 
 Further out, and not yet started: automatic grid/edge detection,
 exporting directly to a PlayingCards.io or Tabletop Simulator package,
-support for multiple saved deck profiles browsed from within the app,
-and an official CardLift Demo Deck (authored for this project, to
-replace the third-party PDF currently used only for development and
-testing).
+and support for multiple saved deck profiles browsed from within the
+app.
 
 ## Contributing
 
