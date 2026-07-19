@@ -7,7 +7,7 @@ files, written from the code, not from aspiration. If CardLift ever
 starts collecting or transmitting data in a way that *would* need a
 formal policy, we'll say so here first, and a real policy will follow.
 
-These promises describe CardLift's alpha behavior (`0.1.0-alpha`) as
+These promises describe CardLift's alpha behavior (`0.1.1-alpha`) as
 verified against the code. They're commitments about how CardLift is
 built, not just a description of how it happens to work right now.
 

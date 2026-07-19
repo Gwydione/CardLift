@@ -119,6 +119,14 @@ Indicators include:
 - cursor changes
 - status bar message
 - Escape exits persistent Pan mode
+- on-canvas indicator (v0.1.1-alpha): the four indicators above all sit at
+  the periphery of the window -- the toolbar above the canvas, the status
+  bar at its bottom -- rather than where the user is actually looking
+  right before they click or drag. An Alpha tester still found Pan mode
+  unclear despite all four already being in place. A small badge drawn
+  directly on the canvas (`_CalibrateCanvas._draw_pan_indicator()`),
+  showing the same status-bar wording, closes that gap without adding a
+  new control; it appears and disappears immediately with `pan_mode`.
 
 ---
 

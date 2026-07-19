@@ -1131,9 +1131,10 @@ miss, like one page's grid drifting relative to the others.
   (`git log --oneline`) is a good model for commit message style —
   short, milestone-based, present tense.
 - **Version bump.** `deckforge.__version__` (`src/deckforge/__init__.py`)
-  is the single authoritative version string — the GUI's window title and
-  `TopBar` label both read it directly rather than carrying their own
-  copy. Bump the pre-release number (e.g. `0.1.0-alpha` → `0.1.0-alpha.2`)
+  is the single authoritative version string — the GUI's window title,
+  `TopBar` label, and the packaged build's Windows version resource
+  (`packaging/generate_version_info.py`) all read it directly rather than
+  carrying their own copy. Bump it (e.g. `0.1.0-alpha` → `0.1.1-alpha`)
   each time a build goes out for alpha testing, so a bug report can be
   tied to the exact build it came from. See `docs/ALPHA_HARDENING_PLAN.md` §5.
 
@@ -1269,6 +1270,48 @@ information hierarchy, and overall user experience over exact appearance.
 
 The purpose of the GUI is to make the engine approachable for tabletop
 gamers, not to expose implementation details.
+
+## Tooltip Rendering / QSS Styling Gotcha
+
+`widget.setStyleSheet("background: X;")` -- a bare declaration with no
+selector -- leaks that background value into the `QToolTip` of *any*
+descendant of that widget, silently overriding the app-level `QToolTip`
+theme `gui_app.py`'s `_apply_tooltip_theme()` sets. A solid ancestor color
+leaks through as a wrong-but-opaque tooltip; `"background: transparent"`
+(used deliberately in a few places so an inner container's own background
+doesn't show, letting the workspace's background show through instead)
+leaks through as a fully transparent tooltip with translucent text -- this
+was the exact "Review Cards card-tile tooltip is unreadable" defect
+reported during Alpha (`docs/RELEASE_READINESS.md`).
+
+The same leak isn't limited to `background`, and isn't limited to
+ancestors: a bare `widget.setStyleSheet("color: X; ...")` set directly ON
+the tooltip-owning widget itself -- correct and intended for that widget's
+own rendered appearance -- leaks into that same widget's *own* tooltip
+text. This is exactly what happened to the guidance panel's collapse/
+expand buttons: `TEXT_NAV` is the right color for their glyph against the
+dark guidance panel background, but leaked into their tooltip text once
+the background leak above was fixed, reading as washed-out and hard to
+read against the now-correct white tooltip background.
+
+Scoping the declaration to a selector -- the widget's own class name
+(`f"MyWidget {{ background: X; }}"`) or a type selector
+(`f"QToolButton {{ color: X; }}"`) for a custom or built-in `QWidget`
+subclass, or an `objectName()` + `f"#name {{ background: X; }}"` rule for
+a plain `QWidget`/`QFrame`/`QStackedWidget` instance where a type selector
+would be too broad -- stops the leak in both directions without changing
+that widget's own rendered appearance. Confirmed empirically (not
+assumed) before either round of this was fixed: see the `git log` history
+around the v0.1.1-alpha tooltip fix for the isolation tests that pinned
+down bare declarations specifically (not nesting depth, not
+`QScrollArea`, not `WA_StyledBackground`) as the mechanism.
+
+**Whenever adding a new `setStyleSheet()` call, always scope it to a
+selector** -- never a bare declaration, for any property -- even if no
+tooltip currently lives on or underneath that widget; one might be added
+later. `tests/test_tooltip_theme.py::TestNoBareStyleSheetDeclarations`
+guards against regressing this across the whole `deckforge_gui` package,
+for both inline literals and named `_..._STYLE` constants.
 
 ## Workflow Completion
 

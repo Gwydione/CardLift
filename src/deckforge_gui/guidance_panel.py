@@ -30,7 +30,14 @@ from .theme import (
 COLLAPSED_WIDTH = 30
 EXPANDED_WIDTH = 280
 
-_GLYPH_BUTTON_STYLE = f"color: {TEXT_NAV}; font-size: 14px; font-weight: 700;"
+# Selector-scoped, not a bare "color: ..." declaration -- see DEVELOPER.md's
+# tooltip-rendering note: a bare declaration set directly on a widget leaks
+# that property into the widget's own QToolTip too, not just descendants'.
+# TEXT_NAV is correct for this button's own text against BG_GUIDANCE, but
+# leaking it into the tooltip (rendered on a white BG_CARD background, via
+# gui_app.py's _apply_tooltip_theme()) produced washed-out, low-contrast
+# tooltip text -- the button's own appearance is unchanged by this fix.
+_GLYPH_BUTTON_STYLE = f"QToolButton {{ color: {TEXT_NAV}; font-size: 14px; font-weight: 700; }}"
 
 
 class GuidancePanel(QWidget):
@@ -59,7 +66,12 @@ class GuidancePanel(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
 
         self._stack = QStackedWidget()
-        self._stack.setStyleSheet(f"background: {BG_GUIDANCE};")
+        self._stack.setObjectName("guidanceStack")
+        # ID-scoped, not a bare "background: ..." declaration -- see
+        # DEVELOPER.md's tooltip-rendering note: an unscoped setStyleSheet()
+        # here leaked BG_GUIDANCE into the collapse/expand buttons' own
+        # QToolTip, overriding gui_app.py's app-level tooltip theme.
+        self._stack.setStyleSheet(f"#guidanceStack {{ background: {BG_GUIDANCE}; }}")
         outer.addWidget(self._stack)
 
         self._full_page = self._build_full_page()
@@ -83,8 +95,9 @@ class GuidancePanel(QWidget):
         # actions) rather than recoloring the text itself, which at this size
         # wouldn't clear body-text contrast against BG_GUIDANCE.
         marker = QFrame()
+        marker.setObjectName("guidanceMarker")
         marker.setFixedSize(7, 7)
-        marker.setStyleSheet(f"background: {ACCENT}; border-radius: 3px;")
+        marker.setStyleSheet(f"#guidanceMarker {{ background: {ACCENT}; border-radius: 3px; }}")
         header_row.addWidget(marker, 0, Qt.AlignmentFlag.AlignVCenter)
 
         title = QLabel("Guidance")

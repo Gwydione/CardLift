@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +46,6 @@ from .theme import (
     FONT_CAPTION,
     TEXT_BODY,
     TEXT_CAPTION_MUTED,
-    TEXT_NAV,
 )
 from .workspaces import build_workspaces
 
@@ -82,7 +80,18 @@ def demo_deck_path() -> Path:
 
 
 class TopBar(QWidget):
-    """Minimal top bar: CardLift branding + an overflow/settings placeholder."""
+    """Minimal top bar: CardLift branding only.
+
+    Previously also held an overflow ("⋮") button with a "Settings"
+    tooltip -- removed for v0.1.1-alpha (docs/ALPHA_RELEASE_REVIEW.md
+    finding B7): it had no `.clicked` connection anywhere and no Settings
+    feature exists yet, so it implied interactivity it didn't have,
+    contradicting DESIGN_SYSTEM.md's "interactive elements should
+    communicate interactivity before users click them." An overflow/
+    settings menu is still the intended eventual design
+    (docs/ui/UI_DECISIONS.md's "Top Bar" section) -- this removes the
+    premature, non-functional affordance, not the design decision; re-add
+    it once there's an actual Settings feature to attach to it."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -103,13 +112,6 @@ class TopBar(QWidget):
         layout.addWidget(version)
 
         layout.addStretch(1)
-
-        overflow = QToolButton()
-        overflow.setText("⋮")
-        overflow.setToolTip("Settings")
-        overflow.setAutoRaise(True)
-        overflow.setStyleSheet(f"color: {TEXT_NAV}; font-size: 16px;")
-        layout.addWidget(overflow)
 
 
 class MainWindow(QMainWindow):
@@ -161,8 +163,9 @@ class MainWindow(QMainWindow):
         self.calibrate_toolbar.zoom_in_clicked.connect(self._on_zoom_in_clicked)
         self.calibrate_toolbar.zoom_out_clicked.connect(self._on_zoom_out_clicked)
         no_toolbar = QWidget()  # index 0: no toolbar for this step
+        no_toolbar.setObjectName("noToolbarPlaceholder")
         no_toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        no_toolbar.setStyleSheet(f"background: {BG_WORKSPACE};")
+        no_toolbar.setStyleSheet(f"#noToolbarPlaceholder {{ background: {BG_WORKSPACE}; }}")
         self.toolbar_stack.addWidget(no_toolbar)
         self.toolbar_stack.addWidget(self.calibrate_toolbar)  # index 1: calibrate
 

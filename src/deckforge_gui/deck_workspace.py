@@ -214,7 +214,7 @@ class DeckWorkspace(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"DeckWorkspace {{ background: {BG_WORKSPACE}; }}")
 
         self._outer = QVBoxLayout(self)
         self._outer.setAlignment(Qt.AlignmentFlag.AlignCenter)

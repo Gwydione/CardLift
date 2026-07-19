@@ -264,7 +264,7 @@ class ExportWorkspace(QWidget):
         self._pdf_generation = 0
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"ExportWorkspace {{ background: {BG_WORKSPACE}; }}")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(32, 32, 32, 32)

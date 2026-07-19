@@ -204,7 +204,14 @@ class _PageCanvas(QWidget):
         super().__init__(workspace)
         self._workspace = workspace
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px;")
+        # Selector-scoped (not a bare "background: ..." declaration) -- an
+        # unscoped setStyleSheet() on a container leaks its background
+        # into any QToolTip owned by a descendant, silently overriding the
+        # app-level QToolTip theme (gui_app.py's _apply_tooltip_theme()).
+        # See DEVELOPER.md's tooltip-rendering note.
+        self.setStyleSheet(
+            f"_PageCanvas {{ background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px; }}"
+        )
         self.setMinimumSize(160, 160)
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -279,7 +286,7 @@ class FindCardsWorkspace(QWidget):
         self._pixmap: Optional[QPixmap] = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"FindCardsWorkspace {{ background: {BG_WORKSPACE}; }}")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)

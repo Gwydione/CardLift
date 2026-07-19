@@ -65,8 +65,8 @@ QPushButton[indented="true"] {{
 """
 
 _HEADER_STYLE = (
-    f"color: {TEXT_NAV_HEADER}; font-size: {_HEADER_FONT}px; font-weight: 700;"
-    " letter-spacing: 1px; padding: 18px 14px 4px 14px;"
+    f"QLabel {{ color: {TEXT_NAV_HEADER}; font-size: {_HEADER_FONT}px; font-weight: 700;"
+    " letter-spacing: 1px; padding: 18px 14px 4px 14px; }}"
 )
 
 

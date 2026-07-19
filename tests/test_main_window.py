@@ -359,3 +359,24 @@ class TestNoBlockingWaitDuringClose:
 
         _drain_until_worker_done(qapp, window)
         assert wait_calls == [], "the deferred close must still never have joined the worker directly"
+
+
+class TestTopBarHasNoDeadControls:
+    """v0.1.1-alpha removed the TopBar's overflow ("⋮") button
+    (docs/ALPHA_RELEASE_REVIEW.md finding B7): it showed a "Settings"
+    tooltip and hover styling but had no `.clicked` connection anywhere
+    and no Settings feature exists, so it implied interactivity it didn't
+    have. Guards against silently reintroducing a non-functional control
+    -- if a real Settings feature is ever added, this test should be
+    updated alongside it, not simply deleted."""
+
+    def test_no_settings_tooltip_anywhere_in_top_bar(self, window: MainWindow) -> None:
+        from PySide6.QtWidgets import QWidget
+
+        tooltips = [w.toolTip() for w in window.top_bar.findChildren(QWidget) if w.toolTip()]
+        assert "Settings" not in tooltips
+
+    def test_top_bar_has_no_tool_buttons(self, window: MainWindow) -> None:
+        from PySide6.QtWidgets import QToolButton
+
+        assert window.top_bar.findChildren(QToolButton) == []

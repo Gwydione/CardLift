@@ -296,7 +296,7 @@ class _CardInspector(QWidget):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"_CardInspector {{ background: {BG_WORKSPACE}; }}")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._pixmap: Optional[QPixmap] = None
 
@@ -426,7 +426,7 @@ class ReviewWorkspace(QWidget):
         self._inspecting_index: Optional[int] = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"ReviewWorkspace {{ background: {BG_WORKSPACE}; }}")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -467,7 +467,14 @@ class ReviewWorkspace(QWidget):
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self._content = QWidget()
-        self._content.setStyleSheet("background: transparent;")
+        self._content.setObjectName("reviewCardsContent")
+        # ID-scoped, not a bare "background: ..." declaration -- this was
+        # the confirmed root cause of the Review Cards card-tile tooltip
+        # rendering with a transparent (rather than opaque white) interior:
+        # an unscoped setStyleSheet() here leaked straight through to any
+        # QToolTip owned by a _CardTile descendant, overriding gui_app.py's
+        # app-level tooltip theme. See DEVELOPER.md's tooltip-rendering note.
+        self._content.setStyleSheet("#reviewCardsContent { background: transparent; }")
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._content_layout.setSpacing(16)

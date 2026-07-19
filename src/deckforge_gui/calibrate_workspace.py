@@ -42,12 +42,12 @@ from typing import Optional
 from PIL import Image
 from PIL.ImageQt import ImageQt
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent, QWheelEvent
+from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap, QResizeEvent, QWheelEvent
 from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 
-from .app_state import AppState, WorkflowStep
+from .app_state import AppState, PAN_STATUS, WorkflowStep
 from .calibrate_state import (
     CalibrateState,
     CalibrationTarget,
@@ -83,6 +83,17 @@ _WHEEL_ZOOM_STEP = 1.1
 _MARKER_RADIUS = 5.0
 _GUIDE_COLOR = QColor(ACCENT)
 _SUGGESTION_COLOR = QColor(ACCENT)
+
+# Pan Mode's on-canvas indicator (docs/ui/UI_DECISIONS.md "Pan Mode": the
+# button highlight, cursor change, and status-bar message all already exist
+# but sit at the periphery of the window -- the toolbar above the canvas,
+# the status bar at its bottom -- not where the user is actually looking
+# while about to click or drag. This badge reinforces the same state
+# (app_state.PAN_STATUS, already shown in the status bar) right on the
+# canvas itself, and disappears the instant pan_mode clears.
+_PAN_INDICATOR_MARGIN = 12.0
+_PAN_INDICATOR_PAD_X = 10.0
+_PAN_INDICATOR_PAD_Y = 6.0
 
 _CONTROL_BUTTON_STYLE = f"""
 QPushButton {{
@@ -144,7 +155,13 @@ class _CalibrateCanvas(QWidget):
         super().__init__(workspace)
         self._workspace = workspace
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px;")
+        # Selector-scoped, not a bare "background: ..." declaration -- see
+        # DEVELOPER.md's tooltip-rendering note: an unscoped setStyleSheet()
+        # on a container leaks its background into any QToolTip owned by a
+        # descendant, overriding gui_app.py's app-level tooltip theme.
+        self.setStyleSheet(
+            f"_CalibrateCanvas {{ background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px; }}"
+        )
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setMinimumSize(160, 160)
         self.setMouseTracking(True)
@@ -162,6 +179,11 @@ class _CalibrateCanvas(QWidget):
             pixmap = self._workspace.current_pixmap()
             view = self._workspace.current_view()
             if pixmap is None or pixmap.isNull() or view is None:
+                # Drawn even with no page loaded (e.g. Shared Back,
+                # UNRESOLVED, before any page is assigned): Pan mode's
+                # cursor and status-bar signals aren't gated on a loaded
+                # page either, so the on-canvas indicator shouldn't be.
+                self._draw_pan_indicator(painter)
                 return
 
             dest_x, dest_y = view.image_to_canvas(0, 0)
@@ -175,6 +197,7 @@ class _CalibrateCanvas(QWidget):
             self._draw_pending(painter, view)
             self._draw_suggestions(painter, view)
             self._draw_guides(painter)
+            self._draw_pan_indicator(painter)
         finally:
             painter.end()
 
@@ -240,6 +263,27 @@ class _CalibrateCanvas(QWidget):
         painter.drawLine(QPointF(0, y), QPointF(self.width(), y))
         painter.drawLine(QPointF(x, 0), QPointF(x, self.height()))
 
+    def _draw_pan_indicator(self, painter: QPainter) -> None:
+        if not self._workspace.app_state.pan_mode:
+            return
+        text = PAN_STATUS
+        font = QFont(painter.font())
+        font.setPixelSize(FONT_CAPTION)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        text_w, text_h = metrics.horizontalAdvance(text), metrics.height()
+
+        badge = QRectF(
+            _PAN_INDICATOR_MARGIN, _PAN_INDICATOR_MARGIN,
+            text_w + _PAN_INDICATOR_PAD_X * 2, text_h + _PAN_INDICATOR_PAD_Y * 2,
+        )
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(ACCENT))
+        painter.drawRoundedRect(badge, 6, 6)
+        painter.setPen(QColor("white"))
+        painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
+
     # -- mouse / wheel --------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -293,6 +337,9 @@ class _CalibrateCanvas(QWidget):
 
     def set_pan_active(self, active: bool) -> None:
         self._update_cursor(active)
+        self.update()  # repaint immediately so the on-canvas indicator
+        # appears/disappears the instant Pan mode toggles, rather than
+        # waiting for the next incidental mouse-move repaint.
 
     def _update_cursor(self, pan_active_hint: Optional[bool] = None) -> None:
         active = self._workspace.app_state.pan_mode if pan_active_hint is None else pan_active_hint
@@ -334,7 +381,7 @@ class CalibrateWorkspace(QWidget):
         self._fit_mode = True
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {BG_WORKSPACE};")
+        self.setStyleSheet(f"CalibrateWorkspace {{ background: {BG_WORKSPACE}; }}")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)

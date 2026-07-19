@@ -5,7 +5,7 @@ priority before CardLift's alpha ships. Updated as design review
 findings and manual alpha-testing bugs come in — this is the single
 place to check "are we ready yet."
 
-Last updated: 2026-07-16.
+Last updated: 2026-07-19.
 
 ## Current phase: Alpha Release Preparation
 
@@ -142,10 +142,54 @@ _Bugs found during manual alpha testing:_
       already-computed, independent second-card hint and asking for
       clarification (existing `NEEDS_CELL_LABEL` prompt) on disagreement,
       rather than a new tuned threshold.
-- [ ] On some clean Windows environments, the Review Cards card-tile
+- [x] On some clean Windows environments, the Review Cards card-tile
       hover tooltip may display with poor text/background contrast. This
       affects only supplemental hover guidance; card review, inspection,
-      inclusion/exclusion, and export remain fully functional.
+      inclusion/exclusion, and export remain fully functional. An earlier
+      fix attempt (app-level `QToolTip` QSS + `QPalette` override,
+      commit `4a3e39e`) turned out not to be the root cause: repeated
+      Windows Sandbox testing showed no change in the packaged build, and
+      the regression test written for it only exercised a synthetic
+      `QPalette` poke on a bare `QPushButton`, never a real tooltip nested
+      inside the app's own container hierarchy -- it was reverted from
+      testing but left live in `gui_app.py` with the defect still open
+      (commit `c1c4153`). The actual root cause (v0.1.1-alpha), found in
+      two rounds: (1) a bare, selector-less `setStyleSheet("background:
+      ...")` on a container leaks its background into any descendant's
+      `QToolTip`, overriding the app-level theme -- affected the Review
+      Cards card tile (transparent background, translucent text) and the
+      guidance panel's collapse/expand buttons (wrong-but-opaque color);
+      (2) after fixing that, guidance's tooltip text was still washed out
+      -- a bare `setStyleSheet("color: ...")` set directly on the
+      tooltip-owning widget itself (correct for its own on-panel glyph,
+      TEXT_NAV against the dark guidance panel background) leaks into
+      that widget's *own* tooltip text, now rendered on the newly-correct
+      white background. Fixed by scoping every such declaration across
+      `deckforge_gui` to a selector, and manually verified in a rebuilt
+      packaged executable. See DEVELOPER.md's "Tooltip Rendering / QSS
+      Styling Gotcha" and `tests/test_tooltip_theme.py`.
+- [x] Manual validation of the packaged build surfaced the TopBar
+      overflow ("⋮") button as a dead control: a "Settings" tooltip and
+      hover styling with no `.clicked` connection anywhere and no
+      Settings feature built yet (already flagged as low-severity finding
+      B7 in `docs/ALPHA_RELEASE_REVIEW.md`, accepted for Alpha 1 at the
+      time). Removed for v0.1.1-alpha rather than left implying
+      interactivity it doesn't have; `docs/ui/UI_DECISIONS.md`'s "Top Bar"
+      section still documents an eventual overflow/settings menu as the
+      design intent, so this removes only the premature affordance, not
+      that decision. See `tests/test_main_window.py`'s
+      `TestTopBarHasNoDeadControls`.
+- [x] An Alpha tester indicated it was not immediately obvious whether
+      Calibrate was in Pan mode or Selection/Calibration mode. Pan mode
+      already had four indicators per `docs/ui/UI_DECISIONS.md` (button
+      highlight, cursor change, status-bar message, Escape-to-exit) — the
+      gap wasn't a missing signal, it was that all four sit at the
+      window's periphery rather than on the canvas itself, where the user
+      is looking right before they click or drag. Fixed (v0.1.1-alpha) by
+      adding a small on-canvas badge, reusing the existing status-bar
+      wording, shown only while `pan_mode` is active and hidden
+      immediately when it exits — no new control, no workflow change. See
+      `tests/test_calibrate_workspace.py`.
 - [ ] On a clean Windows Sandbox system, CardLift may take approximately
       3-4 seconds after double-clicking before the main window appears,
       with no visible startup feedback.
