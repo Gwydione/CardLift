@@ -20,7 +20,7 @@ these in order; each one is also covered in more depth further down.
 
 1. **Open PowerShell** in the project folder:
    ```powershell
-   cd C:\Users\adodg\OneDrive\Documents\deckforge-rewrite
+   cd C:\path\to\CardLift
    ```
 2. **Activate the virtual environment:**
    ```powershell
@@ -59,7 +59,7 @@ At that point you're caught up — pick up wherever you left off, or see
 **Open the project**
 
 ```powershell
-cd C:\Users\adodg\OneDrive\Documents\deckforge-rewrite
+cd C:\path\to\CardLift
 ```
 
 There's nothing to "launch" — CardLift is a CLI tool, not a server. You
@@ -147,7 +147,7 @@ zone, margins, and type scale to constant pixel sizes -- at moderate
 window sizes the page looks the same as before, but on a large monitor the
 drop zone, heading, and whitespace all grow instead of leaving the page
 looking like a small dialog stranded in a mostly-empty workspace (see
-DESIGN_PRINCIPLES.md's "The PDF is the workspace"). `_apply_responsive_metrics`
+docs/ui/DESIGN_PRINCIPLES.md's "The PDF is the workspace"). `_apply_responsive_metrics`
 recomputes every scaled size from a single `t` (`theme.responsive_t()`,
 0 at `_COMPACT_WIDTH` and below, 1 at `_SPACIOUS_WIDTH` and above) on
 every `resizeEvent`/`showEvent`, so growth is continuous rather than a
@@ -213,7 +213,7 @@ it (`FindCardsState.set_role()`), so "a page cannot be both Front and
 Shared Back" is enforced by construction rather than by convention.
 
 Because "this Deck has no Shared Back" is a valid, common answer that
-must stay distinguishable from "haven't decided yet" (CORE_CONCEPTS.md),
+must stay distinguishable from "haven't decided yet" (docs/CORE_CONCEPTS.md),
 `FindCardsState.shared_back_status()` returns a three-way
 `SharedBackStatus` (`ASSIGNED` / `CONFIRMED_NONE` / `UNRESOLVED`) rather
 than exposing "is some page currently assigned" as a bare boolean. An
@@ -499,7 +499,7 @@ developer-facing, not shared code with the GUI).
 
 **Review Cards milestone.** The last checkpoint before Export: every
 suggested card is rendered as a clickable thumbnail so the user can catch
-a miscount or a bad crop before anything is written to disk -- CORE_CONCEPTS.md's
+a miscount or a bad crop before anything is written to disk -- docs/CORE_CONCEPTS.md's
 definition of Preview ("build confidence and catch mistakes before files
 are generated").
 
@@ -1101,7 +1101,7 @@ miss, like one page's grid drifting relative to the others.
 
 ## Typical Development Workflow
 
-1. Pull latest changes (once this repo has a remote — not yet applicable).
+1. Pull latest changes (`git pull`).
 2. Activate the virtual environment (`.venv\Scripts\Activate.ps1`).
 3. Run the test suite (`pytest`) to confirm you're starting from a clean baseline.
 4. Implement the feature or fix, in small increments.
@@ -1257,7 +1257,7 @@ How we expect Claude Code to be used on this project:
 
 Before implementing GUI changes, review the following:
 
-1. Read CORE_CONCEPTS.md
+1. Read docs/CORE_CONCEPTS.md
 2. Read the relevant UI documents
 3. Read ENGINEERING_STANDARDS.md
 4. Read DEVELOPER.md
