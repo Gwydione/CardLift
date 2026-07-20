@@ -65,7 +65,11 @@ The top bar remains intentionally minimal.
 It contains:
 
 - CardLift branding
-- Overflow/settings menu
+- Current version number
+
+A future overflow/settings menu remains part of the design direction,
+but the inactive placeholder control was removed in v0.1.1-alpha (no
+Settings feature exists yet to attach it to).
 
 The current PDF filename should not occupy permanent space in the top
 bar.

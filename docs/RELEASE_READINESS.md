@@ -1,53 +1,80 @@
 # Release Readiness Board
 
 Living document tracking what's open, what's done, and what's top
-priority before CardLift's alpha ships. Updated as design review
-findings and manual alpha-testing bugs come in — this is the single
-place to check "are we ready yet."
+priority for CardLift's alpha. Originally a pre-release checklist, it now
+also tracks the post-release feedback loop with private alpha testers —
+this is the single place to check "where does the project stand right
+now."
 
-Last updated: 2026-07-19.
+Last updated: 2026-07-20.
 
-## Current phase: Alpha Release Preparation
+## Current phase: Alpha — Feedback & Iteration
 
-Engineering hardening (the seven items in the priorities table below) is
-implemented. The project has moved into release-preparation work:
-non-code items that stand between here and handing CardLift to a
-private alpha tester. See `docs/ALPHA_RELEASE_REVIEW.md` for the release
-review this phase is responding to.
+The current release is **`v0.1.1-alpha`** (tag `v0.1.1-alpha`, commit
+`dbbb102`, current HEAD), shipped 2026-07-19. `v0.1.0-alpha` (tag
+`v0.1.0-alpha`, commit `221eb96`) went out first, on 2026-07-16, as a
+packaged Windows build (one-folder PyInstaller bundle, ZIP + SHA-256
+checksum) to private alpha testers via the **RPG Frequencies Discord**,
+`#cardlift-alpha` channel — see `ALPHA_TESTING_GUIDE.md` and
+`QUICK_START.md`, the tester-facing onboarding docs shipped inside that
+package — establishing the initial Alpha release and opening
+public/private Alpha testing. `v0.1.1-alpha` followed as the first
+round of real user feedback came in: tooltip-contrast fixes, clearer
+Pan Mode signaling on-canvas, removal of the inactive Settings
+placeholder, synchronized documentation, and new regression tests
+covering each (full writeup under "Bugs found and fixed during alpha
+testing" below).
+
+The project has moved out of pre-release preparation and into an
+ongoing Alpha feedback and iteration cycle: testers report issues in
+Discord, issues get triaged and fixed, a new patch tag ships. 527
+automated tests pass as of this writing. `docs/ALPHA_RELEASE_REVIEW.md`
+and `docs/ALPHA_HARDENING_PLAN.md` remain as the design review and
+implementation plan that got the project *to* v0.1.0-alpha; they're not
+being updated further and are preserved for historical context.
 
 - **Governance documentation: complete.** `LICENSE_EXPLAINED.md`,
   `THIRD_PARTY_NOTICES.md`, `docs/PROJECT_PHILOSOPHY.md`,
   `docs/LICENSE_RESEARCH.md`, and the `LICENSE` file (GNU AGPLv3) are all
-  written and committed to git.
-- **Packaging: discovery build only.** `deckforge_gui.spec` (one-folder
-  PyInstaller build) exists and produces a working `dist/CardLift/`
-  bundle, manually smoke-tested through Demo Deck load → Calibrate
-  Fronts. No installer, code signing, version metadata, or icon yet —
-  those are deliberately deferred stabilization steps. Still open, per
-  `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6.
-- **Clean-machine validation: not done.** The documented from-source
-  tester path (`git clone` → `pip install -r requirements-gui.txt` →
-  `python gui_app.py`) has not yet been verified on a machine without
-  the existing development environment. Still open, per
-  `docs/ALPHA_RELEASE_REVIEW.md` §5H.
-- **Sample deck: migrated.** The third-party `sample_decks/Solo-cards-digital.pdf`
-  has been removed from the repository and replaced by
-  `sample_decks/CardLift_Demo_Deck.pdf`, an official CardLift Demo Deck
-  authored for this project (design doc: `docs/ui/DEMO_DECK.md`). The GUI's
-  bundled onboarding path (`MainWindow.DEMO_DECK_PATH`), the six test files
-  that depend on a real-PDF fixture (`tests/test_cell_export.py`,
-  `tests/test_export_workspace.py`, `tests/test_main_window.py`,
-  `tests/test_pdf_renderer.py`, `tests/test_review_workspace.py`,
-  `tests/test_session.py`), and the calibration profile (now
-  `profiles/demo_deck.json`, replacing `profiles/solo_cards.json`) have all
-  been repointed at it and validated against the real PDF via `--preview`/
-  `--overlay`/`--export`. The redistribution-rights question this raised
-  (see `docs/ALPHA_RELEASE_REVIEW.md` §5H/§10.1) is now moot: the
-  third-party file is gone rather than cleared for redistribution.
+  written, committed, and shipped inside the tester package.
+- **Packaging: shipped, good enough for private alpha; installer/signing
+  still deferred.** `deckforge_gui.spec` (one-folder PyInstaller build)
+  plus `packaging/build_release.ps1` and
+  `packaging/generate_version_info.py` (added in `994ca22`) form a
+  repeatable release process: Windows executable version metadata is now
+  generated from `deckforge.__version__` automatically, and the process
+  produces a checksummed ZIP validated by fresh extraction. What's still
+  genuinely missing — no installer, no code signing, no custom icon (the
+  spec file's own header still says "No installer/signing yet") — is a
+  deliberate deferral, not an oversight: a portable ZIP is sufficient for
+  a small private Discord-based alpha, and none of the three block
+  testers from running the app. Revisit before a broader/public release.
+- **Clean-machine validation: done for the tester path, still open for
+  the developer path.** The packaged build has been repeatedly validated
+  on a clean Windows Sandbox (see commit `c1c4153`) — this is the path
+  alpha testers actually use. The from-source path documented in
+  `README.md` (`git clone` → `pip install -r requirements-gui.txt` →
+  `python gui_app.py`) has *not* been verified on a machine without the
+  existing dev environment. This is no longer a release blocker since
+  README already scopes that path to developers, not alpha testers, but
+  it's worth doing before treating source-install as a supported path.
+- **Sample deck: migrated (complete).** The third-party
+  `sample_decks/Solo-cards-digital.pdf` was removed from the repository
+  and replaced by `sample_decks/CardLift_Demo_Deck.pdf`, an official
+  CardLift Demo Deck authored for this project (design doc:
+  `docs/ui/DEMO_DECK.md`), now bundled directly into the packaged
+  release and used as the tester onboarding path ("Try the Demo Deck" in
+  `QUICK_START.md`). The redistribution-rights question this raised is
+  moot: the third-party file is gone rather than cleared for
+  redistribution.
 
 ---
 
-## Top priorities before alpha release
+## Historical: pre-release hardening priorities (v0.1.0-alpha)
+
+All seven items below were the gating checklist for shipping
+`v0.1.0-alpha` and are complete. Kept for traceability — new
+post-release work is tracked under **Open** instead.
 
 Ranked by risk, not by discovery order.
 
@@ -69,35 +96,13 @@ analysis, and recommended fix for item 1: `docs/CALIBRATION_GEOMETRY_INVESTIGATI
 
 ## Open
 
-_Release preparation (not yet implemented):_
+_Packaging stabilization (deliberately deferred, not blocking private alpha):_
 
-- [x] Commit the `LICENSE` file — GNU AGPLv3, committed to git.
-- [ ] Packaging (installer/portable build) — first one-folder PyInstaller
-      build done (`deckforge_gui.spec`), smoke-tested manually. Still
-      open: installer, code signing, version/icon metadata; see
-      `docs/ALPHA_RELEASE_REVIEW.md` §5C/§6.
-- [ ] Clean-machine validation of the from-source tester instructions —
-      not yet run on a machine without the existing dev environment; see
-      `docs/ALPHA_RELEASE_REVIEW.md` §5H.
-- [x] Migrate the six test files that depended on
-      `sample_decks/Solo-cards-digital.pdf` as a real-PDF fixture
-      (`tests/test_cell_export.py`, `tests/test_export_workspace.py`,
-      `tests/test_main_window.py`, `tests/test_pdf_renderer.py`,
-      `tests/test_review_workspace.py`, `tests/test_session.py`) and the
-      matching calibration profile (`profiles/solo_cards.json` ->
-      `profiles/demo_deck.json`) to `sample_decks/CardLift_Demo_Deck.pdf`,
-      then remove the third-party PDF from the repository.
-- [x] `sample_decks/Solo-cards-digital.pdf`'s redistribution rights are
-      now moot -- the file has been removed rather than cleared for
-      redistribution.
-- [ ] `.claude/settings.local.json`'s Bash allowlist still uses
-      `solo_cards`/`Solo-cards-digital.pdf` as its example profile and PDF
-      (`DEVELOPER.md`, `docs/CLI_REFERENCE.md`, and `extract.py` have
-      since been repointed at `demo_deck`/`CardLift_Demo_Deck.pdf`).
-      Deliberately deferred: it's an internal Bash-permission allowlist
-      entry, not user-facing documentation, and has no runtime dependency
-      on the removed file until someone actually runs the allowlisted
-      command.
+- [ ] Installer, code signing, and a custom icon — see "Packaging"
+      above. Portable ZIP is sufficient for the current small,
+      Discord-based private alpha.
+- [ ] Clean-machine validation of the from-source developer path — see
+      "Clean-machine validation" above. Not tester-facing today.
 
 _Calibration geometry follow-up (not yet implemented):_
 
@@ -121,78 +126,96 @@ _Flagged during the first PyInstaller packaging pass (2026-07-16), not investiga
       task. Needs its own investigation/write-up before a fix can be
       scoped.
 
-_Bugs found during manual alpha testing:_
+_Bugs found during manual/tester alpha testing, not yet fixed:_
 
-- [x] Drag-and-drop appeared completely broken when CardLift was
-      launched from an elevated (Administrator) PowerShell. Traced to
-      Windows UIPI blocking OLE drag-and-drop from Explorer (normal
-      integrity level) into an elevated target process — not a CardLift
-      defect. Resolved by running CardLift from a normal, non-elevated
-      PowerShell; manually verified with a real PDF from Explorer. See
-      `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
-- [x] Calibrating a real 3×3 deck ("DP Pocket 20 pages for centered
-      bothsided print.pdf") by clicking the upper-left and lower-right
-      cards produced 12 suggested cells (3×4) instead of 9 (3×3). Traced
-      to `infer_second_cell()` silently mislabeling the second card as
-      `(2,3)` instead of `(2,2)` — the deck's real column gutter (~27% of
-      card_width) tips `round(dx/card_width)` past its rounding boundary.
-      A distinct failure mode from item 1's Effects A/B (a wrong *cell*,
-      not a wrong *gap*) — see `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s
-      addendum. Fixed by cross-checking the click against the
-      already-computed, independent second-card hint and asking for
-      clarification (existing `NEEDS_CELL_LABEL` prompt) on disagreement,
-      rather than a new tuned threshold.
-- [x] On some clean Windows environments, the Review Cards card-tile
-      hover tooltip may display with poor text/background contrast. This
-      affects only supplemental hover guidance; card review, inspection,
-      inclusion/exclusion, and export remain fully functional. An earlier
-      fix attempt (app-level `QToolTip` QSS + `QPalette` override,
-      commit `4a3e39e`) turned out not to be the root cause: repeated
-      Windows Sandbox testing showed no change in the packaged build, and
-      the regression test written for it only exercised a synthetic
-      `QPalette` poke on a bare `QPushButton`, never a real tooltip nested
-      inside the app's own container hierarchy -- it was reverted from
-      testing but left live in `gui_app.py` with the defect still open
-      (commit `c1c4153`). The actual root cause (v0.1.1-alpha), found in
-      two rounds: (1) a bare, selector-less `setStyleSheet("background:
-      ...")` on a container leaks its background into any descendant's
-      `QToolTip`, overriding the app-level theme -- affected the Review
-      Cards card tile (transparent background, translucent text) and the
-      guidance panel's collapse/expand buttons (wrong-but-opaque color);
-      (2) after fixing that, guidance's tooltip text was still washed out
-      -- a bare `setStyleSheet("color: ...")` set directly on the
-      tooltip-owning widget itself (correct for its own on-panel glyph,
-      TEXT_NAV against the dark guidance panel background) leaks into
-      that widget's *own* tooltip text, now rendered on the newly-correct
-      white background. Fixed by scoping every such declaration across
-      `deckforge_gui` to a selector, and manually verified in a rebuilt
-      packaged executable. See DEVELOPER.md's "Tooltip Rendering / QSS
-      Styling Gotcha" and `tests/test_tooltip_theme.py`.
-- [x] Manual validation of the packaged build surfaced the TopBar
-      overflow ("⋮") button as a dead control: a "Settings" tooltip and
-      hover styling with no `.clicked` connection anywhere and no
-      Settings feature built yet (already flagged as low-severity finding
-      B7 in `docs/ALPHA_RELEASE_REVIEW.md`, accepted for Alpha 1 at the
-      time). Removed for v0.1.1-alpha rather than left implying
-      interactivity it doesn't have; `docs/ui/UI_DECISIONS.md`'s "Top Bar"
-      section still documents an eventual overflow/settings menu as the
-      design intent, so this removes only the premature affordance, not
-      that decision. See `tests/test_main_window.py`'s
-      `TestTopBarHasNoDeadControls`.
-- [x] An Alpha tester indicated it was not immediately obvious whether
-      Calibrate was in Pan mode or Selection/Calibration mode. Pan mode
-      already had four indicators per `docs/ui/UI_DECISIONS.md` (button
-      highlight, cursor change, status-bar message, Escape-to-exit) — the
-      gap wasn't a missing signal, it was that all four sit at the
-      window's periphery rather than on the canvas itself, where the user
-      is looking right before they click or drag. Fixed (v0.1.1-alpha) by
-      adding a small on-canvas badge, reusing the existing status-bar
-      wording, shown only while `pan_mode` is active and hidden
-      immediately when it exits — no new control, no workflow change. See
-      `tests/test_calibrate_workspace.py`.
 - [ ] On a clean Windows Sandbox system, CardLift may take approximately
       3-4 seconds after double-clicking before the main window appears,
       with no visible startup feedback.
+
+_Internal housekeeping (deliberately deferred):_
+
+- [ ] `.claude/settings.local.json`'s Bash allowlist still uses
+      `solo_cards`/`Solo-cards-digital.pdf` as its example profile and PDF
+      (`DEVELOPER.md`, `docs/CLI_REFERENCE.md`, and `extract.py` have
+      since been repointed at `demo_deck`/`CardLift_Demo_Deck.pdf`).
+      Deliberately deferred: it's an internal Bash-permission allowlist
+      entry, not user-facing documentation, and has no runtime dependency
+      on the removed file until someone actually runs the allowlisted
+      command.
+
+---
+
+## Bugs found and fixed during alpha testing (historical)
+
+Preserved for the investigation detail, even though each is resolved.
+
+- **Drag-and-drop appeared completely broken when CardLift was launched
+  from an elevated (Administrator) PowerShell.** Traced to Windows UIPI
+  blocking OLE drag-and-drop from Explorer (normal integrity level) into
+  an elevated target process — not a CardLift defect. Resolved by
+  running CardLift from a normal, non-elevated PowerShell; manually
+  verified with a real PDF from Explorer. See
+  `docs/ALPHA_HARDENING_PLAN.md`'s addendum.
+- **Calibrating a real 3×3 deck** ("DP Pocket 20 pages for centered
+  bothsided print.pdf") by clicking the upper-left and lower-right cards
+  produced 12 suggested cells (3×4) instead of 9 (3×3). Traced to
+  `infer_second_cell()` silently mislabeling the second card as `(2,3)`
+  instead of `(2,2)` — the deck's real column gutter (~27% of
+  card_width) tips `round(dx/card_width)` past its rounding boundary. A
+  distinct failure mode from priority-item 1's Effects A/B (a wrong
+  *cell*, not a wrong *gap*) — see
+  `docs/CALIBRATION_GEOMETRY_INVESTIGATION.md`'s addendum. Fixed by
+  cross-checking the click against the already-computed, independent
+  second-card hint and asking for clarification (existing
+  `NEEDS_CELL_LABEL` prompt) on disagreement, rather than a new tuned
+  threshold.
+- **Review Cards card-tile hover tooltip poor contrast on some clean
+  Windows environments** (v0.1.1-alpha). Supplemental hover guidance
+  only — card review, inspection, inclusion/exclusion, and export
+  remained fully functional throughout. An earlier fix attempt
+  (app-level `QToolTip` QSS + `QPalette` override, commit `4a3e39e`)
+  turned out not to be the root cause: repeated Windows Sandbox testing
+  showed no change in the packaged build, and the regression test
+  written for it only exercised a synthetic `QPalette` poke on a bare
+  `QPushButton`, never a real tooltip nested inside the app's own
+  container hierarchy — reverted from testing but left live in
+  `gui_app.py` with the defect still open (commit `c1c4153`). The actual
+  root cause, found in two rounds: (1) a bare, selector-less
+  `setStyleSheet("background: ...")` on a container leaks its background
+  into any descendant's `QToolTip`, overriding the app-level theme —
+  affected the Review Cards card tile (transparent background,
+  translucent text) and the guidance panel's collapse/expand buttons
+  (wrong-but-opaque color); (2) after fixing that, guidance's tooltip
+  text was still washed out — a bare `setStyleSheet("color: ...")` set
+  directly on the tooltip-owning widget itself (correct for its own
+  on-panel glyph, TEXT_NAV against the dark guidance panel background)
+  leaks into that widget's *own* tooltip text, now rendered on the
+  newly-correct white background. Fixed by scoping every such
+  declaration across `deckforge_gui` to a selector, and manually
+  verified in a rebuilt packaged executable. Shipped in `v0.1.1-alpha`
+  (commit `dbbb102`). See DEVELOPER.md's "Tooltip Rendering / QSS
+  Styling Gotcha" and `tests/test_tooltip_theme.py`.
+- **TopBar overflow ("⋮") button was a dead control.** Manual validation
+  of the packaged build surfaced a "Settings" tooltip and hover styling
+  with no `.clicked` connection anywhere and no Settings feature built
+  yet (already flagged as low-severity finding B7 in
+  `docs/ALPHA_RELEASE_REVIEW.md`, accepted for Alpha 1 at the time).
+  Removed for v0.1.1-alpha rather than left implying interactivity it
+  doesn't have; `docs/ui/UI_DECISIONS.md`'s "Top Bar" section still
+  documents an eventual overflow/settings menu as the design intent, so
+  this removed only the premature affordance, not that decision. See
+  `tests/test_main_window.py`'s `TestTopBarHasNoDeadControls`.
+- **Unclear whether Calibrate was in Pan mode or Selection/Calibration
+  mode.** An alpha tester indicated it was not immediately obvious. Pan
+  mode already had four indicators per `docs/ui/UI_DECISIONS.md` (button
+  highlight, cursor change, status-bar message, Escape-to-exit) — the
+  gap wasn't a missing signal, it was that all four sit at the window's
+  periphery rather than on the canvas itself, where the user is looking
+  right before they click or drag. Fixed (v0.1.1-alpha) by adding a
+  small on-canvas badge, reusing the existing status-bar wording, shown
+  only while `pan_mode` is active and hidden immediately when it exits —
+  no new control, no workflow change. See
+  `tests/test_calibrate_workspace.py`.
 
 ---
 
@@ -249,11 +272,12 @@ _Bugs found during manual alpha testing:_
   sufficient confidence to proceed automatically, not as proof of
   correctness.
 - **Release versioning (GUI version identity).** `deckforge.__version__`
-  (now `0.1.0-alpha`) is the single authoritative version constant; the
-  GUI had no version display anywhere. `MainWindow`'s window title and a
-  new muted `TopBar` label both import and display it directly, so bug
-  reports/screenshots can be tied to a build. See `docs/ALPHA_HARDENING_PLAN.md`
-  §5 and DEVELOPER.md's "Git Workflow" for the bump convention.
+  (`0.1.1-alpha` as of this writing) is the single authoritative version
+  constant; the GUI had no version display anywhere. `MainWindow`'s
+  window title and a new muted `TopBar` label both import and display it
+  directly, so bug reports/screenshots can be tied to a build. See
+  `docs/ALPHA_HARDENING_PLAN.md` §5 and DEVELOPER.md's "Git Workflow" for
+  the bump convention.
 - **Cell-label prompt now uses human numbering.** The clarification
   dialog above asked for the ambiguous card's cell in internal 0-based
   `r2c2` form, confusing during manual validation. Now asks for a plain
@@ -350,8 +374,10 @@ _Bugs found during manual alpha testing:_
   pre-existing + 9 in `tests/test_export_workspace.py` + 8 in
   `tests/test_main_window.py`, the suite's first `MainWindow`-level tests,
   driven through a real `QApplication.exec()` loop rather than a synthetic
-  direct `closeEvent()` call — see the bullets above).
-- **Card Inspection (implemented, not yet decided).** Replaces the
+  direct `closeEvent()` call — see the bullets above). The suite has
+  since grown to 527 tests as later fixes below landed their own
+  regression coverage.
+- **Card Inspection (implemented, shipped).** Replaces the
   originally-planned "Zoom/Pan" milestone -- design review concluded
   Review Cards' actual need was a closer, high-fidelity look at one
   already-identified card (porting the CLI's `--preview`/`--inspect`
@@ -371,11 +397,9 @@ _Bugs found during manual alpha testing:_
   CLI-only `crop_inspect()`. `tests/test_review_workspace.py` (new)
   covers scroll-position preservation, on-demand/cached rendering,
   next/previous clamping, and include/exclude sync against a real
-  PDFRenderer pipeline. **Code-complete and unit-tested, but not yet
-  manually verified in the running app or decided as a permanent feature
-  -- awaiting your own use and alpha-tester feedback before being
-  considered part of the product**, per this milestone's own explicit
-  scope (build small, learn from real use, iterate).
+  PDFRenderer pipeline. Shipped as part of v0.1.0-alpha; now part of the
+  product, subject to ordinary alpha-tester feedback like everything
+  else rather than being separately gated.
 - **Privacy-conscious crash logging.** New `deckforge_gui/logging_setup.py`
   configures a rotating local log file
   (`%LOCALAPPDATA%\CardLift\logs\cardlift.log`, 1 MB × 3 backups) in
@@ -400,28 +424,50 @@ _Bugs found during manual alpha testing:_
   this so `cardlift.log` is reviewed before being shared publicly. No
   telemetry, no network calls, local file only. See
   `docs/ALPHA_HARDENING_PLAN.md` §6.
+- **DeckForge renamed to CardLift before first public release**
+  (commit `da5a7d0`). Applied across all documentation, packaging
+  scripts, and the two entry-point shims (`extract.py`, `gui_app.py`);
+  the internal Python package name (`deckforge`, `deckforge_gui`) was
+  deliberately left unchanged to avoid an unnecessary import-path churn
+  for a rename that's purely about the public-facing product name.
+- **v0.1.0-alpha packaged and shipped** (commit `994ca22`, tag
+  `v0.1.0-alpha`). Repeatable RC1 packaging workflow: Windows executable
+  version metadata generated from `deckforge.__version__`, RPG
+  Frequencies identified as Windows publisher, full tester-facing
+  package assembled (Quick Start, testing guide, privacy, licensing, and
+  third-party notices), checksums generated for both the extracted files
+  and the release ZIP itself, verified after a fresh extraction. This is
+  the release referenced throughout this document as "shipped to
+  testers."
+- **v0.1.1-alpha shipped** (commit `dbbb102`, tag `v0.1.1-alpha`,
+  current HEAD). Patch release containing the tooltip-contrast root-cause
+  fix — see "Bugs found and fixed during alpha testing" above for detail.
 
 ---
 
-## Explicitly out of scope for this hardening milestone
+## Explicitly out of scope for the pre-release hardening milestone
 
-Carried over from `docs/ALPHA_HARDENING_PLAN.md` so scope doesn't creep:
+Carried over from `docs/ALPHA_HARDENING_PLAN.md` so scope doesn't creep.
+This was the hardening milestone's boundary, not a boundary on
+post-release work generally — new tester-reported bugs still go in
+**Open** regardless of which of these areas they touch.
 
 - True export cancellation (no interrupt hook in `cell_export.py` today).
 - Making PDF-switch-during-export non-blocking.
 - In-app crash-log viewer / "open log folder" affordance.
 - Packaging/distribution (`pip install`-able build, `[project]` table).
-- Anything not in the six focus areas above — new bugs found during
-  manual testing go in **Open** as their own items, not folded into the
-  hardening plan's scope.
 
 ---
 
 ## How to update this board
 
-- New manual-testing bug → add a line under **Open → Bugs found during
-  manual alpha testing**, one bullet, plain description.
-- Hardening item implemented → move its bullet from **Open** to
-  **Accomplished** and check the box in the priorities table.
+- New tester-reported bug (via Discord or otherwise) → add a line under
+  **Open**, one bullet, plain description.
+- Bug fixed → move its bullet from **Open** to **"Bugs found and fixed
+  during alpha testing"** (if it has real investigation detail worth
+  preserving) or **Accomplished** (if it's a smaller fix), and check the
+  box.
+- New release tagged → add a line to **Current phase** noting the tag,
+  commit, date, and what changed.
 - Re-scope only with an explicit decision — don't silently expand what
-  "alpha hardening" covers.
+  a milestone covers.
