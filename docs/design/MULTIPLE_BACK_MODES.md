@@ -128,8 +128,8 @@ while keeping the workflow simple.
 Current Shared Back export
 
 ``` text
-front001.png
-front002.png
+front_001.png
+front_002.png
 ...
 back.png
 ```

@@ -1,4 +1,5 @@
 from deckforge_gui.find_cards_state import (
+    BackMode,
     FindCardsState,
     PageRole,
     SharedBackStatus,
@@ -41,12 +42,16 @@ def test_front_pages_are_independent_across_pages():
     assert state.front_pages() == [2, 5]
 
 
-def test_only_one_page_may_hold_the_back_role():
+def test_multiple_pages_may_hold_the_back_role():
+    """Paired Back Pages needs several BACK pages at once -- BACK is now
+    symmetric with FRONT rather than capped at a single page (see
+    find_cards_state.py's "BACK ROLE: ANY NUMBER OF PAGES" docstring)."""
     state = FindCardsState()
     state.set_role(5, PageRole.BACK)
     state.set_role(8, PageRole.BACK)
-    assert state.back_page() == 8
-    assert state.role_for_page(5) is None
+    assert state.back_pages() == [5, 8]
+    assert state.role_for_page(5) is PageRole.BACK
+    assert state.role_for_page(8) is PageRole.BACK
 
 
 def test_confirming_no_shared_back_is_a_no_op_while_a_back_page_is_assigned():
@@ -135,12 +140,13 @@ class TestToggleBack:
         state.toggle_back(8)
         assert state.back_page() is None
 
-    def test_toggling_back_moves_it_from_a_previous_page(self) -> None:
+    def test_toggling_a_second_back_page_does_not_evict_the_first(self) -> None:
         state = FindCardsState()
         state.toggle_back(5)
         state.toggle_back(8)
-        assert state.back_page() == 8
-        assert state.role_for_page(5) is None
+        assert state.back_pages() == [5, 8]
+        assert state.role_for_page(5) is PageRole.BACK
+        assert state.role_for_page(8) is PageRole.BACK
 
     def test_toggling_back_on_a_front_page_replaces_its_role(self) -> None:
         """The mirror of TestToggleFront's
@@ -152,6 +158,156 @@ class TestToggleBack:
         state.toggle_back(3)
         assert state.role_for_page(3) is PageRole.BACK
         assert state.front_pages() == []
+
+
+class TestBackPages:
+    def test_empty_by_default(self) -> None:
+        state = FindCardsState()
+        assert state.back_pages() == []
+
+    def test_returns_all_back_role_pages_sorted(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.set_role(5, PageRole.BACK)
+        assert state.back_pages() == [5, 8]
+
+    def test_back_page_returns_none_when_two_or_more_are_assigned(self) -> None:
+        """back_page() only makes sense for the single-shared-back case --
+        once Paired Back Pages is in play there is no single 'the' back
+        page, so it must return None rather than an arbitrary one."""
+        state = FindCardsState()
+        state.set_role(5, PageRole.BACK)
+        state.set_role(8, PageRole.BACK)
+        assert state.back_page() is None
+
+
+class TestBackMode:
+    def test_none_with_no_back_pages(self) -> None:
+        state = FindCardsState()
+        assert state.back_mode() is BackMode.NONE
+
+    def test_none_regardless_of_confirmed_none_or_unresolved(self) -> None:
+        """back_mode() doesn't distinguish confirmed-none from
+        not-yet-decided -- that distinction stays shared_back_status()'s
+        job."""
+        state = FindCardsState()
+        assert state.back_mode() is BackMode.NONE
+        state.confirm_no_shared_back()
+        assert state.back_mode() is BackMode.NONE
+
+    def test_shared_with_exactly_one_back_page(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        assert state.back_mode() is BackMode.SHARED
+
+    def test_paired_with_two_back_pages(self) -> None:
+        state = FindCardsState()
+        state.set_role(5, PageRole.BACK)
+        state.set_role(8, PageRole.BACK)
+        assert state.back_mode() is BackMode.PAIRED
+
+    def test_paired_with_more_than_two_back_pages(self) -> None:
+        state = FindCardsState()
+        for page in (2, 4, 6, 8):
+            state.set_role(page, PageRole.BACK)
+        assert state.back_mode() is BackMode.PAIRED
+
+
+class TestPairedBackPageFor:
+    def _paired_state(self) -> FindCardsState:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5, 6):
+            state.set_role(page, PageRole.BACK)
+        return state
+
+    def test_pairs_by_sorted_index(self) -> None:
+        state = self._paired_state()
+        assert state.paired_back_page_for(1) == 4
+        assert state.paired_back_page_for(2) == 5
+        assert state.paired_back_page_for(3) == 6
+
+    def test_pairing_follows_sorted_order_even_when_marked_out_of_order(self) -> None:
+        """Pairing is by sorted-list position, not literal page-number
+        arithmetic or marking order (approved design decision)."""
+        state = FindCardsState()
+        state.set_role(3, PageRole.FRONT)
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(2, PageRole.FRONT)
+        state.set_role(6, PageRole.BACK)
+        state.set_role(4, PageRole.BACK)
+        state.set_role(5, PageRole.BACK)
+        assert state.paired_back_page_for(1) == 4
+        assert state.paired_back_page_for(2) == 5
+        assert state.paired_back_page_for(3) == 6
+
+    def test_none_when_not_a_front_page(self) -> None:
+        state = self._paired_state()
+        assert state.paired_back_page_for(99) is None
+
+    def test_none_when_mode_is_shared_not_paired(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(4, PageRole.BACK)
+        assert state.paired_back_page_for(1) is None
+
+    def test_none_when_mode_is_none(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        assert state.paired_back_page_for(1) is None
+
+    def test_none_for_a_front_page_beyond_the_shorter_back_list(self) -> None:
+        """Unbalanced page counts: the third front page has no
+        corresponding back page at index 2."""
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5):
+            state.set_role(page, PageRole.BACK)
+        assert state.paired_back_page_for(1) == 4
+        assert state.paired_back_page_for(2) == 5
+        assert state.paired_back_page_for(3) is None
+
+
+class TestPairedPageCountsBalanced:
+    def test_true_when_not_paired(self) -> None:
+        state = FindCardsState()
+        assert state.paired_page_counts_balanced() is True
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(2, PageRole.BACK)
+        assert state.paired_page_counts_balanced() is True
+
+    def test_true_when_paired_counts_match(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5, 6):
+            state.set_role(page, PageRole.BACK)
+        assert state.paired_page_counts_balanced() is True
+
+    def test_false_when_paired_counts_differ(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5):
+            state.set_role(page, PageRole.BACK)
+        assert state.paired_page_counts_balanced() is False
+
+
+class TestConfirmNoSharedBackWithPairedPages:
+    def test_is_a_no_op_while_paired_back_pages_are_assigned(self) -> None:
+        """confirm_no_shared_back()'s guard must check the full back-page
+        set, not just back_page() (which also returns None for Paired
+        mode) -- otherwise this could incorrectly mark 'no back' while
+        Paired Back pages are actively assigned."""
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(4, PageRole.BACK)
+        state.set_role(5, PageRole.BACK)
+        state.confirm_no_shared_back()
+        assert state.back_confirmed_none is False
+        assert state.back_mode() is BackMode.PAIRED
 
 
 class TestSharedBackStatus:
@@ -247,6 +403,18 @@ class TestShouldPromptSharedBack:
         state.note_continue_attempted()
         state.confirm_no_shared_back()
         assert state.continue_attempted is False
+
+    def test_never_prompts_once_back_mode_is_paired(self) -> None:
+        """Marking two or more BACK pages is itself an explicit answer --
+        there is nothing left for the 'confirm no Shared Back' prompt to
+        ask, even at the last page or after a blocked Continue attempt."""
+        state = FindCardsState()
+        state.toggle_front(1)
+        state.toggle_back(4)
+        state.toggle_back(5)
+        state.note_page_viewed(10)
+        state.note_continue_attempted()
+        assert state.should_prompt_shared_back(page_count=10) is False
 
 
 class TestFindCardsStatusText:
