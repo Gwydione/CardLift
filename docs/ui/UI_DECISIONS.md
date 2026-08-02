@@ -31,7 +31,7 @@ internal architecture.
 - Select Card Pages
 - Calibrate
   - Fronts
-  - Shared Back
+  - Back
 - Review Cards
 - Export
 
@@ -171,13 +171,39 @@ Where appropriate:
 
 ---
 
+# Back Mode: the One-Page Choice
+
+Back Mode is derived automatically from how many pages a user marks as
+Back in Select Card Pages -- zero, one, or many. Automatic derivation
+was preserved as far as it honestly could be: the deck's back
+configuration should never require a question the page markings already
+answer.
+
+Exactly one marked Back page is the one case that genuinely can't be
+derived -- it could mean a Shared Back, or a one-page deck where every
+card still has its own unique reverse (Paired Back Pages). Rather than
+asking every deck to choose a back mode up front, which would
+reintroduce a question most decks never need, this ambiguity is
+surfaced as a single inline toggle in Select Card Pages' Deck Summary,
+shown only when the count is exactly one and invisible otherwise. Shared
+Back is the default reading, so a deck that behaved this way before this
+choice existed keeps behaving exactly the same unless the user opts in.
+
+This is the project's answer to a more general question worth stating
+explicitly: prefer a narrow, situational choice over a general settings
+screen whenever the ambiguity is genuinely rare and resolvable with one
+clearly-worded control.
+
+---
+
 # Card Inspection
 
 Review Cards' grid thumbnails are intentionally small (150px, a lower
 render scale than Calibrate) -- enough to judge inclusion (is there a
 card here at all?) but not enough to judge whether a crop is actually
 correct. Card Inspection closes that gap: clicking a small "look closer"
-affordance on a tile opens an overlay showing that one card at high
+affordance on a tile opens an overlay showing that one card -- or, for a
+Paired Back Pages deck, that card alongside its paired back -- at high
 fidelity, with a margin of surrounding page content so the crop boundary
 (drawn in CardLift's own accent color) is visible in context rather than
 isolated. This ports the CLI's already-proven `--preview` (macro) /
@@ -210,14 +236,55 @@ CardLift is "a workspace application, not a dialog application"
 (DESIGN_SYSTEM.md), so it should read as the workspace focusing on one
 card, not a separate application opening on top of it.
 
-**Discoverability is a provisional decision, not a resolved one.** The
-"look closer" affordance is a small, always-visible (not hover-only) icon
-in a tile corner, distinct from the existing include/exclude click, so
-the existing toggle-inclusion interaction is completely unchanged. It's
+**Paired Back Pages extends this, rather than adding a second view.**
+Review Cards' main grid still shows fronts only, for every Back Mode --
+the grid's job is judging inclusion, not comparison, and doubling its
+thumbnails would compete with that without helping it. The comparison a
+Paired deck actually needs -- does this card's back really belong with
+this front? -- only matters once someone is already looking closely at
+one card, so it lives inside the same "look closer" overlay instead of a
+new screen: opening it on a Paired deck shows that card's front and its
+paired back side by side, at the same fidelity, rather than asking the
+user to cross-check two separate views.
+
+**Paired comparison needed less page context than single-card
+inspection, not more.** The original page-context margin -- enough
+surrounding page content, including neighboring cards and registration
+marks, to judge whether a crop lines up with the physical page -- reads
+well when only one card is shown. Once Paired Back Pages showed two
+cards side by side, each still carrying its own full margin of context,
+the surrounding detail on both sides started competing with the actual
+front/back comparison rather than supporting it. The fix narrows -- it
+does not remove -- the margin specifically for the paired, side-by-side
+view: enough context remains to judge crop placement, but not enough to
+pull neighboring cards into view. Front Only and Shared Back's
+single-card inspection is unchanged.
+
+**Discoverability is settled for the general case, and evolved through
+testing for Paired Back Pages specifically.** The "look closer"
+affordance is a small, always-visible (not hover-only) icon in a tile
+corner, distinct from the existing include/exclude click, so the
+existing toggle-inclusion interaction is completely unchanged. It's
 always visible rather than hover-gated because a feature whose entire
 purpose is building confidence shouldn't depend on a user incidentally
-discovering it. This is the one part of the design explicitly flagged for
-alpha-testing feedback -- see "Open Questions" below.
+discovering it. Whether this click should stay secondary to
+include/exclude, or the two should swap, was left open pending alpha
+feedback; the shipped placement was confirmed as the answer.
+
+Manual testing on Paired Back Pages decks then surfaced a second,
+narrower discoverability gap: nothing distinguished a card whose "look
+closer" view would show a front/back comparison from an ordinary,
+single-image inspection. The first attempted fix was a clearer tooltip,
+and it didn't address the actual problem -- the gap wasn't that users
+misunderstood the interaction once they found it, it was that they never
+suspected a richer interaction existed to look for. The fix that worked
+was visual, not textual: for Paired Back Pages tiles only, the
+affordance's own icon changes from the ordinary magnifying glass to two
+overlapping card shapes, signaling "compare two things" before the user
+ever clicks -- same corner, same always-visible convention, no new
+control, and no change to Front Only/Shared Back's icon. The lesson
+generalizes: a hidden capability needs a visible signal at the point of
+interaction, not just clearer words once it's already been found.
 
 ---
 
@@ -231,11 +298,6 @@ prototype testing:
 - Compact sidebar mode for smaller displays
 - Export workspace layout
 - Future support for multiple layouts and profile management
-- Card Inspection's discoverability affordance: whether the tile's
-  primary click should stay as include/exclude with inspection as a
-  secondary corner affordance (current implementation), or whether the
-  two should swap. Ship the current design as the default; treat alpha
-  feedback on this specifically as the thing most likely to change.
 
 These should be resolved through iterative testing rather than
 speculation.
