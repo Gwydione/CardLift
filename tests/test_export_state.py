@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from deckforge_gui.calibrate_state import CalibratedGeometry, CalibrationTarget
 from deckforge_gui.export_state import (
+    ExportPlan,
     build_export_plan,
     existing_output_files,
     export_guidance_text,
@@ -12,7 +15,7 @@ from deckforge_gui.export_state import (
     stale_review_guidance_text,
     stale_review_status_text,
 )
-from deckforge_gui.find_cards_state import SharedBackStatus
+from deckforge_gui.find_cards_state import BackMode, FindCardsState, PageRole, SharedBackStatus
 from deckforge_gui.review_state import ReviewCard, ReviewCardsState
 
 
@@ -220,3 +223,271 @@ class TestGuidanceAndStatusText:
         assert headline == "Your calibration changed."
         assert "Review Cards" in body
         assert "Review Cards" in stale_review_status_text()
+
+
+def paired_find_cards_state(front_pages: list[int], back_pages: list[int]) -> FindCardsState:
+    """A FindCardsState with the given Front/Back page markings -- 2+
+    Back pages resolves back_mode() to PAIRED unambiguously (no need for
+    the one-page mark_single_back_page_as_paired() override)."""
+    state = FindCardsState()
+    for page in front_pages:
+        state.set_role(page, PageRole.FRONT)
+    for page in back_pages:
+        state.set_role(page, PageRole.BACK)
+    return state
+
+
+class TestExportPlanMutualExclusivity:
+    def test_back_and_paired_back_together_is_rejected(self) -> None:
+        with pytest.raises(AssertionError):
+            ExportPlan(
+                front_cells=(ReviewCard(2, 0, 0),),
+                front_geometry=make_geometry().to_grid_geometry(),
+                back=(9, make_geometry().to_grid_geometry()),
+                paired_back=(make_geometry().to_grid_geometry(), (5,)),
+            )
+
+    def test_has_paired_back_reflects_the_paired_back_field(self) -> None:
+        plan = ExportPlan(
+            front_cells=(ReviewCard(2, 0, 0),),
+            front_geometry=make_geometry().to_grid_geometry(),
+            paired_back=(make_geometry().to_grid_geometry(), (5,)),
+        )
+        assert plan.has_paired_back is True
+        assert plan.has_back is False
+
+
+class TestBuildExportPlanPaired:
+    def test_plan_resolves_a_back_page_per_front_cell(self) -> None:
+        # Front pages [2, 3] pair (ordered-index) with Back pages [5, 6]:
+        # page 2 -> page 5, page 3 -> page 6.
+        find_cards = paired_find_cards_state([2, 3], [5, 6])
+        review_state = ReviewCardsState()
+        cell_2a, cell_2b, cell_3a = ReviewCard(2, 0, 0), ReviewCard(2, 0, 1), ReviewCard(3, 0, 0)
+        review_state.sync([cell_2a, cell_2b, cell_3a])
+
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED,
+            back_mode=BackMode.PAIRED,
+            paired_back_target=complete_target(page_num=5, card_width=222.0),
+            find_cards_state=find_cards,
+        )
+
+        assert plan.has_back is False
+        assert plan.has_paired_back is True
+        back_geometry, back_pages = plan.paired_back
+        assert back_geometry.card_width == 222.0
+        assert back_pages == (5, 5, 6)  # both page-2 cells pair with page 5; the page-3 cell with page 6
+
+    def test_plan_reuses_each_cells_own_row_and_col_implicitly(self) -> None:
+        # paired_back only carries a page number per cell -- the (row,
+        # col) itself comes straight from front_cells, so a caller
+        # cropping this plan must reuse cells[i]'s own (row, col), never
+        # (0, 0). Asserting the cell list and the page list line up 1:1
+        # is what guarantees that. Two Back pages ([5, 6]) so back_mode()
+        # resolves to PAIRED unambiguously (a single Back page is the
+        # genuinely-ambiguous case -- see find_cards_state.py -- and
+        # would need the explicit override this test isn't about).
+        find_cards = paired_find_cards_state([2, 3], [5, 6])
+        review_state = ReviewCardsState()
+        cell = ReviewCard(2, 1, 2)
+        review_state.sync([cell])
+
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED,
+            back_mode=BackMode.PAIRED,
+            paired_back_target=complete_target(page_num=5),
+            find_cards_state=find_cards,
+        )
+        assert plan.front_cells == (cell,)
+        assert plan.paired_back[1] == (5,)  # front page 2 is index 0 -> back page 5
+
+    def test_excluded_cards_are_not_in_the_plan_or_the_paired_back_list(self) -> None:
+        find_cards = paired_find_cards_state([2, 3], [5, 6])
+        review_state = ReviewCardsState()
+        a, b = ReviewCard(2, 0, 0), ReviewCard(2, 0, 1)
+        review_state.sync([a, b])
+        review_state.toggle(b)  # exclude b
+
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED,
+            back_mode=BackMode.PAIRED,
+            paired_back_target=complete_target(page_num=5),
+            find_cards_state=find_cards,
+        )
+        assert plan.front_cells == (a,)
+        assert plan.paired_back[1] == (5,)  # exactly one entry, matching the one included cell
+
+    def test_front_only_and_shared_back_plans_are_unaffected(self) -> None:
+        # back_mode defaults to SHARED -- omitting it entirely (as
+        # ExportWorkspace still does as of Phase 5B) must reproduce
+        # exactly today's Front Only/Shared Back plan shape.
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        plan = build_export_plan(review_state, complete_target(), incomplete_target(), SharedBackStatus.CONFIRMED_NONE)
+        assert plan.has_back is False
+        assert plan.has_paired_back is False
+        assert plan.paired_back is None
+
+
+class TestExportReadyPaired:
+    def _balanced(self) -> FindCardsState:
+        return paired_find_cards_state([2, 3], [5, 6])
+
+    def _unbalanced(self) -> FindCardsState:
+        # 3 Front pages vs. 2 Back pages -- both counts are 2+, so
+        # back_mode() resolves to PAIRED unambiguously (not the
+        # single-Back-page ambiguous case), and the mismatch is real.
+        return paired_find_cards_state([2, 3, 4], [5, 6])
+
+    def test_ready_when_paired_and_balanced(self) -> None:
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        assert export_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            find_cards_state=self._balanced(),
+        ) is True
+
+    def test_not_ready_when_paired_and_unbalanced(self) -> None:
+        # The hard gate export_ready() adds beyond review_ready(): Export
+        # refuses to run at all rather than silently omit a back file for
+        # some cards (see export_ready()'s docstring).
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        assert export_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            find_cards_state=self._unbalanced(),
+        ) is False
+
+    def test_not_ready_when_paired_back_not_calibrated(self) -> None:
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        assert export_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=incomplete_target(),
+            find_cards_state=self._balanced(),
+        ) is False
+
+    def test_not_ready_when_topology_mismatches(self) -> None:
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        assert export_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            paired_topology_ok=False, find_cards_state=self._balanced(),
+        ) is False
+
+
+class TestGuidanceAndStatusTextPaired:
+    def test_unbalanced_counts_message(self) -> None:
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        headline, body = export_guidance_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            find_cards_state=paired_find_cards_state([2, 3, 4], [5, 6]),
+        )
+        assert headline == "Front and Back page counts don't match."
+        assert "Select Card Pages" in body
+        status = export_status_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            find_cards_state=paired_find_cards_state([2, 3, 4], [5, 6]),
+        )
+        assert "don't match" in status
+
+    def test_ready_message_mentions_paired_back(self) -> None:
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+        headline, body = export_guidance_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, review_state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(page_num=5),
+            find_cards_state=paired_find_cards_state([2, 3], [5, 6]),
+        )
+        assert headline == "Ready to export."
+        assert "paired back" in body
+        assert "shared back" not in body
+
+
+class TestPredictedOutputFilenamesPaired:
+    def test_paired_plan_uses_the_paired_filename_convention(self) -> None:
+        find_cards = paired_find_cards_state([2, 3], [5, 6])
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0), ReviewCard(2, 0, 1)])
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED,
+            back_mode=BackMode.PAIRED,
+            paired_back_target=complete_target(page_num=5),
+            find_cards_state=find_cards,
+        )
+        assert predicted_output_filenames(plan) == [
+            "001_front.png", "001_back.png", "002_front.png", "002_back.png",
+        ]
+
+
+class TestOnePageParedBackDeckExport:
+    """One Front page + one Back page is the genuinely ambiguous case
+    (see find_cards_state.py's "EXACTLY ONE BACK PAGE IS GENUINELY
+    AMBIGUOUS"): back_mode() defaults to SHARED at that count unless the
+    explicit mark_single_back_page_as_paired() override is set. Every
+    other PAIRED test in this file uses 2+ Back pages, where the count
+    alone already resolves to PAIRED -- this regression instead exercises
+    the one-page-deck-explicitly-opted-into-Paired path end-to-end
+    through Export, since that's the one case where a bug could silently
+    fall back to being treated as Shared Back instead."""
+
+    def _one_page_paired_find_cards(self) -> FindCardsState:
+        state = FindCardsState()
+        state.set_role(2, PageRole.FRONT)
+        state.set_role(5, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.back_mode() is BackMode.PAIRED
+        assert state.paired_page_counts_balanced() is True
+        return state
+
+    def test_export_ready_is_true(self) -> None:
+        find_cards = self._one_page_paired_find_cards()
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+
+        assert export_ready(
+            complete_target(), incomplete_target(), find_cards.shared_back_status(), review_state,
+            back_mode=find_cards.back_mode(),
+            paired_back_target=complete_target(page_num=5),
+            find_cards_state=find_cards,
+        ) is True
+
+    def test_build_export_plan_produces_paired_back_not_shared_back(self) -> None:
+        find_cards = self._one_page_paired_find_cards()
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), find_cards.shared_back_status(),
+            back_mode=find_cards.back_mode(),
+            paired_back_target=complete_target(page_num=5, card_width=222.0),
+            find_cards_state=find_cards,
+        )
+
+        assert plan.has_paired_back is True
+        assert plan.has_back is False
+        assert plan.back is None
+        back_geometry, back_pages = plan.paired_back
+        assert back_geometry.card_width == 222.0
+        assert back_pages == (5,)  # the single Back page resolves correctly
+
+    def test_predicted_filenames_use_the_paired_convention(self) -> None:
+        find_cards = self._one_page_paired_find_cards()
+        review_state = ReviewCardsState()
+        review_state.sync([ReviewCard(2, 0, 0)])
+
+        plan = build_export_plan(
+            review_state, complete_target(), incomplete_target(), find_cards.shared_back_status(),
+            back_mode=find_cards.back_mode(),
+            paired_back_target=complete_target(page_num=5),
+            find_cards_state=find_cards,
+        )
+
+        assert predicted_output_filenames(plan) == ["001_front.png", "001_back.png"]
