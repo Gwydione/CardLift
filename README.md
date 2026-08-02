@@ -22,11 +22,11 @@ below are for developers running CardLift from source.
 
 ## What CardLift does
 
-Print-and-play PDFs lay out a deck's card fronts — and often a shared
-back — as a fixed grid on one or more pages. CardLift lets you show it
-exactly where that grid is, by clicking two corners of one card, and it
-slices every card out as its own image file for a tabletop gamer to
-import into a virtual tabletop.
+Print-and-play PDFs lay out a deck's card fronts — and often a back,
+whether one shared design or a unique one per card — as a fixed grid on
+one or more pages. CardLift lets you show it exactly where that grid is,
+by clicking two corners of one card, and it slices every card out as its
+own image file for a tabletop gamer to import into a virtual tabletop.
 
 Calibration is manual by design: PnP PDFs vary wildly in margins, bleed,
 and cut-line placement, and a wrong automatic guess would silently
@@ -57,20 +57,26 @@ you can always come back to an earlier step later.
 CardLift walks you through six steps, in order:
 
 1. **Deck** — open a PDF (drag-and-drop or file picker).
-2. **Select Card Pages** — mark which pages contain card fronts, and
-   which page, if any, is a shared back used by every card in the deck.
+2. **Select Card Pages** — mark which pages contain card fronts and
+   which contain backs. From that, CardLift works out your deck's Back
+   Mode: no back (Front Only), one back shared by every card (Shared
+   Back), or a unique back per card (Paired Back Pages) — see
+   [docs/design/MULTIPLE_BACK_MODES.md](docs/design/MULTIPLE_BACK_MODES.md)
+   for the full behavior, including the one case CardLift asks you to
+   confirm explicitly.
 3. **Fronts** (Calibrate) — click a card's upper-left and lower-right
    corners to teach CardLift the grid. Zoom, pan, and a crosshair guide
    help you land the click precisely, and a hint highlights where the
    next card is likely to be.
-4. **Shared Back** (Calibrate) — the same click-to-measure step, for the
-   back design, if your deck has one.
+4. **Back** (Calibrate) — the same click-to-measure step, for the back
+   design (Shared Back) or one representative back page (Paired Back
+   Pages), if your deck has one.
 5. **Review Cards** — every card CardLift suggests is shown as a
    thumbnail, so you can catch a miscount or a bad crop before anything
    is written to disk.
-6. **Export** — writes each card front and the shared back as its own
-   PNG file to a folder you choose, and warns before overwriting
-   anything already there.
+6. **Export** — writes each card front, and its back if your deck has
+   one, as its own PNG file to a folder you choose, and warns before
+   overwriting anything already there.
 
 If a click is genuinely ambiguous — for example, a wide gap between
 cards could plausibly mean two different grid sizes — CardLift asks you
@@ -100,6 +106,8 @@ profile reference.
 
 - [docs/CORE_CONCEPTS.md](docs/CORE_CONCEPTS.md) — the vocabulary and
   concepts behind the workflow
+- [docs/design/MULTIPLE_BACK_MODES.md](docs/design/MULTIPLE_BACK_MODES.md) —
+  how Front Only, Shared Back, and Paired Back Pages work
 - [docs/PRIVACY_PROMISES.md](docs/PRIVACY_PROMISES.md) — what CardLift
   does and doesn't do with your files, in plain language
 
