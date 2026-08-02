@@ -290,6 +290,104 @@ purely in what the workspace showed the user in the moment.
 All three are additive styling/messaging changes -- `FindCardsState`,
 `SharedBackStatus`, and the Continue/confirm gating logic are unchanged.
 
+**Multiple Back Modes: Phase 2 (Select Card Pages).** Phase 1 (`BackMode`,
+`back_pages()`, `paired_back_page_for()`, `paired_page_counts_balanced()`
+in `find_cards_state.py`) let a Deck hold any number of BACK-role pages,
+but Select Card Pages' own UI still only knew how to talk about a single
+Shared Back. Phase 2 makes the workspace `BackMode`-aware:
+
+- The per-page toggle is renamed from "Set as Shared Back" to the
+  mode-neutral **"Mark as Back"** (inverting to "Unmark as Back" once the
+  current page holds the role, mirroring `review_workspace.py`'s
+  Include/Exclude toggle) -- deliberately mode-neutral, since a per-page
+  action shouldn't presuppose which deck-level mode (Shared vs. Paired)
+  the eventual BACK-page count resolves to.
+- `find_cards_state.back_summary_clause()` is the single authoritative
+  source for the Deck Summary/status-bar's back-configuration wording
+  across all four cases Select Card Pages must distinguish -- unresolved,
+  Front Only, Shared Back, and Paired Backs (naming both counts and, when
+  unbalanced, which side needs more pages) -- so
+  `FindCardsWorkspace._refresh_deck_summary()` no longer re-derives
+  `back_mode()` itself.
+- `FindCardsWorkspace._on_continue_clicked()`/`_refresh()` also gate
+  Continue on `paired_page_counts_balanced()`, so Paired Backs blocks
+  Continue exactly when Front/Back counts don't match and re-enables the
+  instant they do. Front Only and Shared Back behavior is unchanged.
+
+A real gating bug was found and fixed during this pass:
+`shared_back_resolved()` is scoped to the zero/one-BACK-page decision
+only (its own docstring says so) and is always `False` once `back_mode()`
+is `PAIRED`, since `back_page()` returns `None` for 2+ pages.
+`_on_continue_clicked()` originally gated on it alone, so clicking
+Continue on a fully valid, *balanced* Paired Backs deck silently did
+nothing -- the button looked enabled, but the click fell through to the
+"Choose a Shared Back..." blocked-message path instead of advancing.
+Fixed by also treating `back_mode() is BackMode.PAIRED` as "resolved" at
+that point in `_on_continue_clicked()` (safe to check unconditionally
+there, since the earlier `paired_page_counts_balanced()` guard has
+already returned if unbalanced).
+
+**Calibrate/Review Cards terminology must never contradict the selected
+BackMode.** Every guidance/status function between Calibrate and Review
+Cards (`calibrate_guidance_text()`/`calibrate_status_text()` in
+`calibrate_state.py`; `review_ready()`/`review_guidance_text()`/
+`review_status_text()` in `review_state.py`; and their callers in
+`calibrate_workspace.py`, `guidance_panel.py`, `main_window.py`,
+`review_workspace.py`) took only a `SharedBackStatus`, which -- per its
+own docstring -- collapses to `UNRESOLVED` for 2+ BACK pages exactly as it
+does for the genuinely-undecided zero-page case. Nothing checked
+`back_mode()` first, so a Paired Backs deck was told "Continue to Shared
+Back" leaving Fronts, then "Shared Back hasn't been decided yet -- go
+back to Select Card Pages" on the Back step, even though the user had
+already made a valid, different choice. Each function now takes a
+`back_mode: BackMode` parameter and checks `PAIRED` before falling into
+the `SharedBackStatus` branches, showing a distinct "Paired Backs
+calibration isn't available yet" message instead (Paired calibration
+itself is a later milestone -- gating is unchanged: Continue still stays
+disabled at the Back step for Paired exactly as it already did; only the
+wording, and the now-inapplicable "‹ Back to Select Card Pages" button
+-- hidden for PAIRED, since there's nothing to redo -- change).
+Sidebar/guidance copy that assumed Shared Back was the only possible back
+configuration (`app_state.STEP_LABELS`/`GUIDANCE`/`STATUS` for
+`CALIBRATE_BACK`/`FIND_CARDS`) was rewritten to the mode-neutral "Back"
+for the same reason.
+
+**"Jnmark as Back": a QSS font-weight glyph-corruption bug, not an
+application bug.** Manual verification of the "Mark as Back"/"Unmark as
+Back" toggle above found the button rendering as "Jnmark as Back" once
+checked, on at least one real Windows machine -- indistinguishable, at
+first glance, from a copy/paste typo. It wasn't one: byte-level inspection
+of both the source and the compiled `.pyc` showed the plain-ASCII string
+`"Unmark as Back"`, and temporary `print(repr(...))` logging placed
+immediately around the `setText()` call in `FindCardsWorkspace._refresh()`
+confirmed -- via Qt's own `QPushButton.text()` getter, not just the Python
+string that was assigned -- that the widget's internal text was correct at
+the exact moment of assignment, on the exact same widget instance
+(`id()` matched across every log line). That result rules out the entire
+"wrong text was assigned" class of bug: the corruption was happening
+strictly in the paint/font-rendering layer, downstream of a value Qt
+itself already held correctly. The lesson generalizes -- when rendered
+text looks wrong, check the widget's own live text property before
+assuming the source string is at fault; a passing string-equality test
+only proves the *value*, never the *pixels*.
+
+The root cause was `_BACK_TOGGLE_STYLE`'s `:checked` rule setting
+`font-weight: 600` (semibold) -- the only rendering-relevant difference
+between the button's working unchecked state and its corrupted checked
+state, and reproducibly the trigger: removing that one property, and only
+that property, fixed the glyph corruption with no other visual
+regression. The `:checked` state already carries plenty of visual
+distinction from its accent-colored border, accent-colored text, and
+light filled background -- the bold weight was never load-bearing for
+legibility, only for a marginally stronger "this is active" signal, so
+dropping it costs nothing. **Do not reintroduce a bold/semibold
+font-weight on this button's `:checked` rule** without re-testing
+specifically on Windows -- this class of bug (a real font/ClearType
+rendering defect triggered by a specific weight, at a specific size, in a
+specific style transition) cannot be caught by any automated test, since
+the widget's own text property is provably correct; it is only visible by
+looking at the actual rendered pixels.
+
 **Calibrate milestone.** The first milestone where precise geometry is
 established: two-corner-click measurement of one representative Fronts
 page plus the single page Select Card Pages assigns as Shared Back

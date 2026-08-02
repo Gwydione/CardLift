@@ -318,17 +318,57 @@ def continue_blocked_text(state: FindCardsState) -> str | None:
     return None
 
 
+def back_summary_clause(state: FindCardsState) -> str:
+    """The single authoritative description of the deck's back-page
+    configuration, covering all four cases Select Card Pages must
+    distinguish: an unresolved no-back decision, Front Only (confirmed
+    none), Shared Back, and Paired Backs. Branches on back_mode() first
+    (per that method's own docstring -- it's the source of truth for
+    which deck-level configuration currently applies) and only falls back
+    to shared_back_status() to tell CONFIRMED_NONE apart from UNRESOLVED
+    within the zero-BACK-pages case, exactly as that method documents.
+
+    Both find_cards_status_text() (the bottom status bar) and
+    FindCardsWorkspace._refresh_deck_summary() (the in-workspace Deck
+    Summary) call this rather than each re-deriving the mode-specific
+    wording themselves -- see this module's callers for why duplicating
+    that branch in the workspace was explicitly called out as a mistake to
+    avoid. Returned without a trailing period so both callers can compose
+    it into their own sentence.
+
+    For PAIRED, also reports whether paired_page_counts_balanced() holds:
+    when it doesn't, the clause names both counts and which side needs
+    more pages, since Continue is blocked in that state and the message
+    next to it must say what to do, not just that something is wrong."""
+    mode = state.back_mode()
+    if mode is BackMode.SHARED:
+        return f"Shared Back: page {state.back_page()}"
+    if mode is BackMode.PAIRED:
+        front = state.front_page_count()
+        back = len(state.back_pages())
+        if front == back:
+            noun = "page" if front == 1 else "pages"
+            return f"Paired Backs: {front} {noun} each"
+        if front > back:
+            missing = front - back
+            noun = "page" if missing == 1 else "pages"
+            return f"Paired Backs: {front} Front / {back} Back — mark {missing} more Back {noun} to continue"
+        missing = back - front
+        noun = "page" if missing == 1 else "pages"
+        return f"Paired Backs: {front} Front / {back} Back — mark {missing} more Front {noun} to continue"
+    if state.shared_back_status() is SharedBackStatus.CONFIRMED_NONE:
+        return "Front Only — no Back Pages"
+    return "Back: not yet decided"
+
+
 def find_cards_status_text(state: FindCardsState, page_count: int) -> str:
     """Bottom status-bar text for Select Card Pages -- the same two facts
-    (Front count, Shared Back answer) the workspace's own Deck Summary
-    shows, condensed to one line. See FindCardsWorkspace._refresh_deck_
-    summary() for the richer in-workspace rendering, including the inline
-    "Confirm there's no Shared Back" action this plain text doesn't need
-    to represent. The "not yet decided" wording matches that in-workspace
-    label exactly (rather than the two surfaces drifting independently) and
-    reflects SharedBackStatus.UNRESOLVED regardless of whether the inline
-    confirm action happens to be showing yet -- that's a separate, timing-
-    only concern (should_prompt_shared_back()), not a different fact."""
+    (Front count, back-configuration answer) the workspace's own Deck
+    Summary shows, condensed to one line. See FindCardsWorkspace._refresh_
+    deck_summary() for the richer in-workspace rendering, including the
+    inline "Confirm there's no Back" action this plain text doesn't need
+    to represent. back_summary_clause() is the shared source for the
+    second sentence, so its wording can't drift between the two surfaces."""
     if not page_count:
         return "Ready — open a PDF to begin."
     front_count = state.front_page_count()
@@ -336,12 +376,4 @@ def find_cards_status_text(state: FindCardsState, page_count: int) -> str:
         return "Ready — mark at least one page as a Front Page."
     noun = "page" if front_count == 1 else "pages"
     front_clause = f"{front_count} front {noun} marked"
-
-    status = state.shared_back_status()
-    if status is SharedBackStatus.ASSIGNED:
-        back_clause = f"Shared Back: page {state.back_page()}"
-    elif status is SharedBackStatus.CONFIRMED_NONE:
-        back_clause = "Shared Back: none"
-    else:
-        back_clause = "Shared Back: not yet decided"
-    return f"{front_clause}. {back_clause}."
+    return f"{front_clause}. {back_summary_clause(state)}."

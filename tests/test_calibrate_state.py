@@ -14,7 +14,7 @@ from deckforge_gui.calibrate_state import (
     suggested_grid,
     suggested_second_card_offset,
 )
-from deckforge_gui.find_cards_state import FindCardsState, PageRole, SharedBackStatus
+from deckforge_gui.find_cards_state import BackMode, FindCardsState, PageRole, SharedBackStatus
 
 CARDS = WorkflowStep.CALIBRATE_CARDS
 BACK = WorkflowStep.CALIBRATE_BACK
@@ -780,13 +780,13 @@ class TestBackConfirmedNoneGuidanceAndStatus:
         headline, body = calibrate_guidance_text(
             BACK, state.back, shared_back_status=SharedBackStatus.CONFIRMED_NONE,
         )
-        assert headline == "This deck has no Shared Back."
+        assert headline == "This deck is Front Only."
         assert "Review Cards" in body
 
     def test_status_explains_there_is_nothing_to_calibrate(self) -> None:
         state = CalibrateState()
         status = calibrate_status_text(BACK, state.back, shared_back_status=SharedBackStatus.CONFIRMED_NONE)
-        assert "no Shared Back" in status
+        assert "Front Only" in status
 
     def test_shared_back_status_is_ignored_for_the_cards_step(self) -> None:
         state = CalibrateState()
@@ -807,14 +807,14 @@ class TestBackUnresolvedGuidanceAndStatus:
         headline, body = calibrate_guidance_text(
             BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED,
         )
-        assert headline != "This deck has no Shared Back."
+        assert headline != "This deck is Front Only."
         assert "hasn't been decided" in headline
         assert "Select Card Pages" in body
 
     def test_status_points_back_to_select_card_pages_not_review_cards(self) -> None:
         state = CalibrateState()
         status = calibrate_status_text(BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED)
-        assert status == "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
+        assert status == "Back hasn't been decided yet — go back to Select Card Pages to resolve it."
         assert "Review Cards" not in status
 
     def test_shared_back_status_is_ignored_for_the_cards_step(self) -> None:
@@ -823,6 +823,38 @@ class TestBackUnresolvedGuidanceAndStatus:
             calibrate_guidance_text(CARDS, state.cards, shared_back_status=SharedBackStatus.UNRESOLVED)
             == GUIDANCE[CARDS]
         )
+
+
+class TestBackPairedGuidanceAndStatus:
+    """back_mode() PAIRED must be checked before the UNRESOLVED branch
+    above -- shared_back_status() collapses to UNRESOLVED for 2+ BACK
+    pages too (find_cards_state.py's own docstring warning), which would
+    otherwise wrongly tell a Paired Backs deck its back decision "hasn't
+    been decided" when it has been -- just not yet calibratable (Paired
+    calibration is a later milestone)."""
+
+    def test_guidance_names_paired_backs_not_shared_back_or_undecided(self) -> None:
+        state = CalibrateState()
+        headline, body = calibrate_guidance_text(
+            BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED, back_mode=BackMode.PAIRED,
+        )
+        assert "Shared Back" not in headline
+        assert "hasn't been decided" not in headline
+        assert "Paired Backs" in headline
+        assert "Paired Backs" in body
+
+    def test_status_names_paired_backs_not_shared_back_or_undecided(self) -> None:
+        state = CalibrateState()
+        status = calibrate_status_text(
+            BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED, back_mode=BackMode.PAIRED,
+        )
+        assert "Shared Back" not in status
+        assert "hasn't been decided" not in status
+        assert "Paired Backs" in status
+
+    def test_paired_is_ignored_for_the_cards_step(self) -> None:
+        state = CalibrateState()
+        assert calibrate_guidance_text(CARDS, state.cards, back_mode=BackMode.PAIRED) == GUIDANCE[CARDS]
 
 
 class TestUnresolvedSharedBackReachedViaSidebar:
@@ -873,10 +905,10 @@ class TestUnresolvedSharedBackReachedViaSidebar:
         headline, _ = calibrate_guidance_text(
             BACK, calibrate.back, shared_back_status=find_cards.shared_back_status(),
         )
-        assert headline != "This deck has no Shared Back."
+        assert headline != "This deck is Front Only."
 
         status = calibrate_status_text(BACK, calibrate.back, shared_back_status=find_cards.shared_back_status())
-        assert status == "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
+        assert status == "Back hasn't been decided yet — go back to Select Card Pages to resolve it."
 
 
 class TestSuggestedGrid:

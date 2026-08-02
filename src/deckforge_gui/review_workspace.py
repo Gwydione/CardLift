@@ -79,7 +79,7 @@ from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 from deckforge.profile import GridGeometry, TrimValues
 
 from .calibrate_state import CalibratedGeometry, CalibrateState, CalibrationTarget
-from .find_cards_state import FindCardsState, SharedBackStatus
+from .find_cards_state import BackMode, FindCardsState, SharedBackStatus
 from .review_state import (
     ReviewCard,
     ReviewCardsState,
@@ -561,9 +561,10 @@ class ReviewWorkspace(QWidget):
         cards_target = self.calibrate_state.cards
         back_target = self.calibrate_state.back
         shared_back_status = self.find_cards_state.shared_back_status()
+        back_mode = self.find_cards_state.back_mode()
 
-        if not review_ready(cards_target, back_target, shared_back_status) or self._renderer is None:
-            self._show_blocked(cards_target, back_target, shared_back_status)
+        if not review_ready(cards_target, back_target, shared_back_status, back_mode) or self._renderer is None:
+            self._show_blocked(cards_target, back_target, shared_back_status, back_mode)
             return
 
         geometry = cards_target.geometry
@@ -580,7 +581,7 @@ class ReviewWorkspace(QWidget):
             # message as the other blocked states rather than leaving the
             # main content area silently blank with the explanation only
             # in the status bar (see DEVELOPER.md's UX Validation note).
-            self._show_blocked(cards_target, back_target, shared_back_status)
+            self._show_blocked(cards_target, back_target, shared_back_status, back_mode)
             return
 
         self._blocked_label.setVisible(False)
@@ -595,22 +596,28 @@ class ReviewWorkspace(QWidget):
         return self._renderer.page_size(page_num)
 
     def _show_blocked(
-        self, cards_target: CalibrationTarget, back_target: CalibrationTarget, shared_back_status: SharedBackStatus,
+        self,
+        cards_target: CalibrationTarget,
+        back_target: CalibrationTarget,
+        shared_back_status: SharedBackStatus,
+        back_mode: BackMode = BackMode.SHARED,
     ) -> None:
         self._clear_content()
         self._tiles = {}
         self._scroll_area.setVisible(False)
         self._back_panel.setVisible(False)
-        _, body = review_guidance_text(cards_target, back_target, shared_back_status, self.review_state)
+        _, body = review_guidance_text(cards_target, back_target, shared_back_status, self.review_state, back_mode)
         self._blocked_label.setText(body)
         self._blocked_label.setVisible(True)
-        self._status_label.setText(review_status_text(cards_target, back_target, shared_back_status, self.review_state))
+        self._status_label.setText(
+            review_status_text(cards_target, back_target, shared_back_status, self.review_state, back_mode)
+        )
         self._continue_btn.setEnabled(False)
 
     def _render_back_panel(self, back_target: CalibrationTarget, shared_back_status: SharedBackStatus) -> None:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
             self._back_thumb_label.setVisible(False)
-            self._back_caption.setText("This deck has no Shared Back.")
+            self._back_caption.setText("This deck is Front Only.")
             return
 
         # ASSIGNED and calibrated -- review_ready() already guarantees this.

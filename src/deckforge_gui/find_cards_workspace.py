@@ -1,9 +1,11 @@
 """Select Card Pages workspace: page-by-page semantic classification.
 
 The user pages through the loaded PDF and, for each page, says what it is:
-a Front Page, the Shared Back, or neither (the default -- most pages, e.g.
-instructions or reference material, need no marking at all). See
-find_cards_state.py for why this is a page-level role rather than a
+a Front Page, a Back page, or neither (the default -- most pages, e.g.
+instructions or reference material, need no marking at all). Whether one
+Back page (Shared Back) or several (Paired Backs) end up marked is a
+deck-level consequence of that count, not a choice made here -- see
+find_cards_state.py's BackMode. This is a page-level role rather than a
 clicked point: the state that matters is "what is this whole page," and a
 stored coordinate previously implied a click's location mattered when it
 never did.
@@ -40,7 +42,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from deckforge.pdf_renderer import PDFRenderer
 
-from .find_cards_state import FindCardsState, PageRole, SharedBackStatus, continue_blocked_text
+from .find_cards_state import BackMode, FindCardsState, PageRole, back_summary_clause, continue_blocked_text
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -117,13 +119,18 @@ QPushButton:hover {{ background: #f1effa; border-color: {ACCENT}; }}
 QPushButton:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: white; }}
 """
 
-# "Set as Shared Back" -- a secondary control, used at most once a session,
-# so it stays visually lighter than "Mark as Front" even when active (an
-# outline, not a fill). It still needs a real border and non-muted idle
-# text, though -- an earlier version used transparent border + muted text,
-# which was meant to read as "lightweight" but instead was nearly identical
-# to _CONTROL_BUTTON_STYLE's actual :disabled look (same muted color, no
+# "Mark as Back" -- a secondary control, used at most once a session under
+# Shared Back but potentially several times under Paired Backs, so it stays
+# visually lighter than "Mark as Front" even when active (an outline, not a
+# fill). It still needs a real border and non-muted idle text, though -- an
+# earlier version used transparent border + muted text, which was meant to
+# read as "lightweight" but instead was nearly identical to
+# _CONTROL_BUTTON_STYLE's actual :disabled look (same muted color, no
 # border), so the button was mistaken for disabled rather than secondary.
+# Deliberately mode-neutral wording (not "Set as Shared Back") -- this
+# button assigns the BACK role regardless of how many pages end up holding
+# it, and back_mode() (Shared vs. Paired) is derived from that count, not
+# chosen here (see find_cards_state.py's "BACK ROLE" docstring).
 _BACK_TOGGLE_STYLE = f"""
 QPushButton {{
     padding: 8px 16px;
@@ -134,15 +141,22 @@ QPushButton {{
     font-size: {FONT_BODY_SM}px;
 }}
 QPushButton:hover {{ color: {TEXT_HEADING}; background: #f1effa; border-color: {ACCENT}; }}
-QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; font-weight: 600; background: #f1effa; }}
+/* No font-weight here deliberately -- an earlier semibold (600) :checked
+   rule reproducibly corrupted this button's text rendering to a garbled
+   glyph (a capital U painted as what looked like a J) on at least one real
+   system, confirmed via runtime instrumentation of the widget's own text
+   property (ruling out a string/logic bug) and confirmed fixed by dropping
+   this one property. The other :checked properties (border/text color,
+   background) are unaffected and unchanged. */
+QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; background: #f1effa; }}
 """
 
-# The inline "Confirm there's no Shared Back" action -- appears only inside
-# the Deck Summary's Shared Back line, only once should_prompt_shared_back()
-# is true. At that point it is the one thing blocking Continue, so it gets
-# a light filled "chip" treatment (its own hover look, always on) instead
-# of plain underlined link text, which was easy to miss entirely against
-# the rest of the muted summary copy around it.
+# The inline "Confirm there's no Back" action -- appears only inside the
+# Deck Summary's back-configuration line, only once should_prompt_shared_
+# back() is true. At that point it is the one thing blocking Continue, so
+# it gets a light filled "chip" treatment (its own hover look, always on)
+# instead of plain underlined link text, which was easy to miss entirely
+# against the rest of the muted summary copy around it.
 _CONFIRM_NO_BACK_STYLE = f"""
 QPushButton {{
     border: 1px solid {ACCENT};
@@ -235,7 +249,7 @@ class _PageCanvas(QWidget):
             painter.end()
 
     def _draw_role_badge(self, painter: QPainter, image_x: float, image_y: float, role: PageRole) -> None:
-        text = "FRONT" if role is PageRole.FRONT else "SHARED BACK"
+        text = "FRONT" if role is PageRole.FRONT else "BACK"
         filled = role is PageRole.FRONT
 
         font = QFont(painter.font())
@@ -325,7 +339,7 @@ class FindCardsWorkspace(QWidget):
         self._front_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._front_btn.setStyleSheet(_FRONT_TOGGLE_STYLE)
 
-        self._back_btn = QPushButton("Set as Shared Back")
+        self._back_btn = QPushButton("Mark as Back")
         self._back_btn.setCheckable(True)
         self._back_btn.setAutoDefault(False)
         self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -362,7 +376,7 @@ class FindCardsWorkspace(QWidget):
         )
         back_row.addWidget(self._back_summary_label)
 
-        self._confirm_no_back_btn = QPushButton("Confirm there's no Shared Back")
+        self._confirm_no_back_btn = QPushButton("Confirm there's no Back")
         self._confirm_no_back_btn.setAutoDefault(False)
         self._confirm_no_back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._confirm_no_back_btn.setStyleSheet(_CONFIRM_NO_BACK_STYLE)
@@ -477,7 +491,22 @@ class FindCardsWorkspace(QWidget):
     def _on_continue_clicked(self) -> None:
         if self.state.front_page_count() == 0:
             return
-        if self.state.shared_back_resolved():
+        if not self.state.paired_page_counts_balanced():
+            # Paired Backs with mismatched counts -- the Continue button is
+            # already disabled for this case (see _refresh()), but guard
+            # here too rather than relying solely on the button's enabled
+            # state to keep this blocked.
+            return
+        # shared_back_resolved() is scoped to the zero/one-BACK-page
+        # decision only (see find_cards_state.py's own docstring warning)
+        # and is always False once back_mode() is PAIRED, since back_page()
+        # returns None for 2+ pages -- checking it alone here would silently
+        # block Continue for a fully valid, balanced Paired Backs deck. By
+        # this point paired_page_counts_balanced() has already confirmed
+        # PAIRED is resolved (the two-page mismatch case returned above), so
+        # PAIRED itself stands in for "resolved" here, same as
+        # shared_back_resolved() does for the other two modes.
+        if self.state.back_mode() is BackMode.PAIRED or self.state.shared_back_resolved():
             self.continue_clicked.emit()
             return
         # Shared Back is still unresolved -- this is the fallback trigger
@@ -501,11 +530,12 @@ class FindCardsWorkspace(QWidget):
         role = self.current_role()
         self._front_btn.setChecked(role is PageRole.FRONT)
         self._back_btn.setChecked(role is PageRole.BACK)
+        self._back_btn.setText("Unmark as Back" if role is PageRole.BACK else "Mark as Back")
         self._front_btn.setEnabled(self._page_count > 0)
         self._back_btn.setEnabled(self._page_count > 0)
 
         front_count = self.state.front_page_count()
-        self._continue_btn.setEnabled(front_count > 0)
+        self._continue_btn.setEnabled(front_count > 0 and self.state.paired_page_counts_balanced())
 
         blocked_message = continue_blocked_text(self.state)
         self._continue_blocked_label.setText(blocked_message or "")
@@ -526,21 +556,15 @@ class FindCardsWorkspace(QWidget):
             noun = "page" if front_count == 1 else "pages"
             self._front_summary_label.setText(f"{front_count} Front {noun} selected.")
 
-        status = self.state.shared_back_status()
-        if status is SharedBackStatus.ASSIGNED:
-            self._back_summary_label.setText(f"Shared Back: page {self.state.back_page()}.")
-            self._confirm_no_back_btn.setVisible(False)
-        elif status is SharedBackStatus.CONFIRMED_NONE:
-            self._back_summary_label.setText("Shared Back: none.")
-            self._confirm_no_back_btn.setVisible(False)
-        else:
-            # UNRESOLVED -- same wording as find_cards_status_text()'s
-            # status-bar line regardless of whether the inline confirm
-            # action below happens to be showing yet; that visibility is a
-            # separate timing concern (should_prompt_shared_back()), not a
-            # different fact about the Deck.
-            self._back_summary_label.setText("Shared Back: not yet decided.")
-            self._confirm_no_back_btn.setVisible(self.state.should_prompt_shared_back(self._page_count))
+        # back_summary_clause() is the single authoritative source for this
+        # line's wording across Front Only/Shared Back/Paired Backs (and the
+        # unresolved case) -- see find_cards_state.py's docstring for why
+        # that mode inference must not be duplicated here. should_prompt_
+        # shared_back() already covers every case where the inline confirm
+        # action should stay hidden (ASSIGNED, CONFIRMED_NONE, and PAIRED
+        # alike), so it alone decides this button's visibility too.
+        self._back_summary_label.setText(f"{back_summary_clause(self.state)}.")
+        self._confirm_no_back_btn.setVisible(self.state.should_prompt_shared_back(self._page_count))
 
     def set_pan_active(self, active: bool) -> None:
         """No-op: Select Card Pages has no pan mode -- it's not a

@@ -36,7 +36,7 @@ STEP_LABELS: dict[WorkflowStep, str] = {
     WorkflowStep.DECK: "Deck",
     WorkflowStep.FIND_CARDS: "Select Card Pages",
     WorkflowStep.CALIBRATE_CARDS: "Fronts",
-    WorkflowStep.CALIBRATE_BACK: "Shared Back",
+    WorkflowStep.CALIBRATE_BACK: "Back",
     WorkflowStep.REVIEW_CARDS: "Review Cards",
     WorkflowStep.EXPORT: "Export",
 }
@@ -49,7 +49,7 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
     ),
     WorkflowStep.FIND_CARDS: (
         "Show CardLift your cards.",
-        "Mark each page as a card front or the shared back. Most pages "
+        "Mark each page as a card front or a back. Most pages "
         "(instructions, reference material) need no marking at all.",
     ),
     WorkflowStep.CALIBRATE_CARDS: (
@@ -74,7 +74,7 @@ GUIDANCE: dict[WorkflowStep, tuple[str, str]] = {
 
 STATUS: dict[WorkflowStep, str] = {
     WorkflowStep.DECK: "Ready — Open a PDF to begin.",
-    WorkflowStep.FIND_CARDS: "Ready — mark your card fronts (and shared back, if any).",
+    WorkflowStep.FIND_CARDS: "Ready — mark your card fronts (and back pages, if any).",
     WorkflowStep.CALIBRATE_CARDS: "Ready — Click the upper-left corner of a card (its cutting guide, if it has one).",
     WorkflowStep.CALIBRATE_BACK: "Ready — Click the upper-left corner of the back design (its cutting guide, if it has one).",
     WorkflowStep.REVIEW_CARDS: "Ready — review your cards.",

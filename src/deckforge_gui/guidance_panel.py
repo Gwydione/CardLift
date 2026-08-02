@@ -164,6 +164,7 @@ class GuidancePanel(QWidget):
                 self.calibrate_state.target_for(step),
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
+                back_mode=self.find_cards_state.back_mode(),
             )
         if step is WorkflowStep.REVIEW_CARDS:
             return review_guidance_text(
@@ -171,6 +172,7 @@ class GuidancePanel(QWidget):
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),
                 self.review_cards_state,
+                back_mode=self.find_cards_state.back_mode(),
             )
         if step is WorkflowStep.EXPORT:
             # Deliberately the simple export_ready() check (no page-size-

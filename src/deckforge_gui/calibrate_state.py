@@ -71,7 +71,7 @@ from deckforge.measure import CardMeasurement, MeasureError, PixelBox, derive_ge
 from deckforge.profile import GridGeometry
 
 from .app_state import GUIDANCE, STATUS, WorkflowStep
-from .find_cards_state import SharedBackStatus
+from .find_cards_state import BackMode, SharedBackStatus
 
 if TYPE_CHECKING:
     from .find_cards_state import FindCardsState
@@ -591,20 +591,35 @@ def calibrate_guidance_text(
     front_page_count: int = 0,
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
     page_size: Optional[tuple[float, float]] = None,
+    back_mode: BackMode = BackMode.SHARED,
 ) -> tuple[str, str]:
+    if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.PAIRED:
+        # shared_back_status collapses to UNRESOLVED for 2+ BACK pages (see
+        # find_cards_state.py's own docstring warning that it isn't
+        # meaningful once back_mode() is PAIRED) -- this branch must come
+        # first, or a Paired deck falls through to the UNRESOLVED case below
+        # and is wrongly told the back decision hasn't been made yet, even
+        # though it has (Paired Backs). Paired calibration itself isn't
+        # implemented yet (a later milestone); this is wording only, and the
+        # deck stays exactly as blocked here as it already was.
+        return (
+            "Paired Backs calibration isn't available yet.",
+            "This deck uses Paired Backs. Calibrating individual back pages "
+            "isn't supported in this version yet.",
+        )
     if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
             return (
-                "This deck has no Shared Back.",
-                "Select Card Pages recorded that this deck has no Shared Back "
+                "This deck is Front Only.",
+                "Select Card Pages recorded that this deck is Front Only "
                 "— there's nothing to calibrate here. Continue to Review Cards "
                 "whenever you're ready.",
             )
         # UNRESOLVED -- Calibrate must not guess or default to "none"; the
         # decision belongs to Select Card Pages.
         return (
-            "Shared Back hasn't been decided yet.",
-            "Go back to Select Card Pages and either choose a Shared Back "
+            "Back hasn't been decided yet.",
+            "Go back to Select Card Pages and either choose a Back "
             "page or confirm this deck has none — Calibrate can't continue "
             "until that's decided.",
         )
@@ -650,11 +665,14 @@ def calibrate_status_text(
     front_page_count: int = 0,
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
     page_size: Optional[tuple[float, float]] = None,
+    back_mode: BackMode = BackMode.SHARED,
 ) -> str:
+    if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.PAIRED:
+        return "Paired Backs calibration isn't available yet — this version doesn't support it."
     if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
-            return "This deck has no Shared Back — nothing to calibrate. Continue to Review Cards."
-        return "Shared Back hasn't been decided yet — go back to Select Card Pages to resolve it."
+            return "This deck is Front Only — nothing to calibrate. Continue to Review Cards."
+        return "Back hasn't been decided yet — go back to Select Card Pages to resolve it."
     subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:

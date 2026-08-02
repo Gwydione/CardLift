@@ -1,5 +1,5 @@
 from deckforge_gui.calibrate_state import CalibratedGeometry, CalibrationTarget
-from deckforge_gui.find_cards_state import SharedBackStatus
+from deckforge_gui.find_cards_state import BackMode, SharedBackStatus
 from deckforge_gui.review_state import (
     ReviewCard,
     ReviewCardsState,
@@ -159,6 +159,15 @@ class TestReviewReady:
         # nothing to calibrate for an explicit "no Shared Back" deck.
         assert review_ready(complete_target(), incomplete_target(), SharedBackStatus.CONFIRMED_NONE) is True
 
+    def test_not_ready_when_paired(self) -> None:
+        # Paired Backs calibration isn't implemented yet -- shared_back_
+        # status() collapses to UNRESOLVED for 2+ BACK pages too, but this
+        # must block for the PAIRED reason, not be conflated with a
+        # genuinely-unresolved deck (see review_guidance_text()'s ordering).
+        assert review_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, BackMode.PAIRED,
+        ) is False
+
 
 class TestReviewGuidanceAndStatusText:
     def test_blocked_when_fronts_not_calibrated(self) -> None:
@@ -174,10 +183,29 @@ class TestReviewGuidanceAndStatusText:
         headline, body = review_guidance_text(
             complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
         )
-        assert headline == "Shared Back hasn't been decided yet."
+        assert headline == "Back hasn't been decided yet."
         assert "Select Card Pages" in body
         status = review_status_text(complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState())
         assert "Select Card Pages" in status
+
+    def test_blocked_when_paired_names_paired_backs_not_shared_back_or_undecided(self) -> None:
+        """PAIRED must be checked before the UNRESOLVED branch above --
+        shared_back_status() collapses to UNRESOLVED for 2+ BACK pages too,
+        which would otherwise wrongly claim the back decision hasn't been
+        made when it has (Paired Backs, just not yet calibratable)."""
+        headline, body = review_guidance_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
+            back_mode=BackMode.PAIRED,
+        )
+        assert "Shared Back" not in headline
+        assert "hasn't been decided" not in headline
+        assert "Paired Backs" in headline
+        status = review_status_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
+            back_mode=BackMode.PAIRED,
+        )
+        assert "Shared Back" not in status
+        assert "Paired Backs" in status
 
     def test_blocked_when_assigned_but_back_not_yet_calibrated(self) -> None:
         headline, body = review_guidance_text(

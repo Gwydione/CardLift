@@ -30,7 +30,7 @@ from PySide6.QtWidgets import QApplication
 from deckforge_gui.app_state import AppState
 from deckforge_gui.calibrate_state import CalibrateState
 from deckforge_gui.calibrate_workspace import CalibrateWorkspace
-from deckforge_gui.find_cards_state import FindCardsState
+from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.theme import ACCENT
 from deckforge_gui.workspaces import WorkflowStep
 
@@ -99,3 +99,80 @@ class TestPanModeIndicator:
         qapp.processEvents()
         img = workspace._canvas.grab().toImage()
         assert _accent_pixel_count(img) > 0
+
+
+class TestBackStepNeverMisrepresentsPairedBacksAsSharedBack:
+    """Regression coverage for a real UX gap found during manual Phase 2
+    verification: a Paired Backs deck was told "Continue to Shared Back"
+    and, once on that step, "Shared Back hasn't been decided yet -- go
+    back to Select Card Pages", even though the user correctly chose
+    Paired Backs. Root cause: shared_back_status() collapses to
+    UNRESOLVED for 2+ BACK pages (its own docstring warns it isn't
+    meaningful once back_mode() is PAIRED), and nothing checked back_mode()
+    first. Paired calibration itself is still not implemented -- this only
+    covers that the workflow no longer contradicts the user's choice while
+    it isn't."""
+
+    def _paired_find_cards_state(self) -> FindCardsState:
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(2, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.BACK)
+        find_cards.set_role(4, PageRole.BACK)
+        return find_cards
+
+    def test_fronts_step_continue_button_is_mode_neutral(self, qapp: QApplication) -> None:
+        ws = CalibrateWorkspace(
+            WorkflowStep.CALIBRATE_CARDS, AppState(), CalibrateState(), self._paired_find_cards_state(),
+        )
+        ws._update_continue_footer(ws.current_target())
+        assert ws._continue_btn.text() == "Continue to Back ›"
+        assert "Shared Back" not in ws._continue_btn.text()
+
+    def test_back_step_names_paired_backs_not_shared_back(self, qapp: QApplication) -> None:
+        ws = CalibrateWorkspace(
+            WorkflowStep.CALIBRATE_BACK, AppState(), CalibrateState(), self._paired_find_cards_state(),
+        )
+        ws._update_continue_footer(ws.current_target())
+        banner = ws._completion_banner.text()
+        assert "Shared Back" not in banner
+        assert "hasn't been decided" not in banner
+        assert "Paired Backs" in banner
+
+    def test_back_step_continue_stays_disabled_for_paired(self, qapp: QApplication) -> None:
+        """Gating is unchanged -- Paired was already effectively blocked
+        (via the UNRESOLVED fallthrough) before this fix; only the wording
+        and the misleading "back to Select Card Pages" button change."""
+        ws = CalibrateWorkspace(
+            WorkflowStep.CALIBRATE_BACK, AppState(), CalibrateState(), self._paired_find_cards_state(),
+        )
+        ws._update_continue_footer(ws.current_target())
+        assert ws._continue_btn.isEnabled() is False
+
+    def test_back_step_hides_the_back_to_select_cards_button_for_paired(self, qapp: QApplication) -> None:
+        """Showing "Back to Select Card Pages" for Paired Backs would imply
+        the user needs to redo a decision they already made correctly."""
+        ws = CalibrateWorkspace(
+            WorkflowStep.CALIBRATE_BACK, AppState(), CalibrateState(), self._paired_find_cards_state(),
+        )
+        ws._update_continue_footer(ws.current_target())
+        assert ws._back_to_select_btn.isVisibleTo(ws) is False
+
+    def test_back_step_page_label_names_paired_backs(self, qapp: QApplication) -> None:
+        ws = CalibrateWorkspace(
+            WorkflowStep.CALIBRATE_BACK, AppState(), CalibrateState(), self._paired_find_cards_state(),
+        )
+        ws._update_controls()
+        assert ws._page_label.text() == "Paired Backs calibration not yet available"
+
+    def test_genuinely_unresolved_case_is_unaffected(self, qapp: QApplication) -> None:
+        """The pre-existing, genuinely-unresolved (zero BACK pages) case
+        must still show its own message and its "back to Select Card
+        Pages" button -- this fix must not suppress that for the case it
+        was always correct for."""
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        ws = CalibrateWorkspace(WorkflowStep.CALIBRATE_BACK, AppState(), CalibrateState(), find_cards)
+        ws._update_continue_footer(ws.current_target())
+        assert ws._back_to_select_btn.isVisibleTo(ws) is True
+        assert "Back hasn't been decided" in ws._completion_banner.text()

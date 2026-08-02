@@ -1,21 +1,26 @@
 """Calibrate workspace: precise two-corner-click card geometry, for
-either the "Fronts" or "Shared Back" workflow step.
+either the "Fronts" or "Back" workflow step.
 
 One CalibrateWorkspace instance backs each step (see workspaces.py),
 sharing the same CalibrateState -- they differ only in which
 CalibrationTarget they read/write and where their page list comes from:
 Fronts is restricted to the Front Pages Select Card Pages assigned
-(find_cards_state), Shared Back opens directly on the single page Select
-Card Pages assigned as the Shared Back -- Calibrate never searches for it.
+(find_cards_state), Back opens directly on the single page Select Card
+Pages assigned as the Shared Back (when back_mode() is SHARED) -- Calibrate
+never searches for it.
 
-The Shared Back step must show one of three distinct states, per
-find_cards_state.SharedBackStatus, never conflating the last two:
-ASSIGNED (show and calibrate that page normally), CONFIRMED_NONE (an
-explicit "no Shared Back" Deck -- nothing to calibrate, treated as already
-complete), or UNRESOLVED (the question hasn't been answered in Select Card
-Pages yet -- Calibrate must not guess, must not offer Continue, and must
-point the user back to Select Card Pages rather than silently behaving
-like CONFIRMED_NONE). See _update_continue_footer().
+The Back step must show one of four distinct states, keyed off
+find_cards_state.BackMode/SharedBackStatus, never conflating any of them:
+ASSIGNED (show and calibrate that single Shared Back page normally),
+CONFIRMED_NONE (an explicit "no Back" Deck, i.e. Front Only -- nothing to
+calibrate, treated as already complete), UNRESOLVED (the question hasn't
+been answered in Select Card Pages yet -- Calibrate must not guess, must
+not offer Continue, and must point the user back to Select Card Pages
+rather than silently behaving like CONFIRMED_NONE), or PAIRED (2+ BACK
+pages -- a valid, already-made decision that this milestone doesn't yet
+know how to calibrate; see _update_continue_footer(), which must not
+conflate this with UNRESOLVED just because shared_back_status() also
+returns UNRESOLVED for it).
 
 Reuses the CLI's calibration math and click semantics (calibrate_state.py
 -- record_click/normalize_box/infer_second_cell, all ported/adapted from
@@ -60,7 +65,7 @@ from .calibrate_state import (
     suggested_second_card_offset,
     ungauged_axis_warning,
 )
-from .find_cards_state import FindCardsState, SharedBackStatus
+from .find_cards_state import BackMode, FindCardsState, SharedBackStatus
 from .theme import (
     ACCENT,
     ACCENT_HOVER,
@@ -110,7 +115,7 @@ QPushButton:disabled {{ color: {TEXT_CAPTION_MUTED}; background: {BG_WORKSPACE};
 """
 
 # Filled/accent variant for the one forward-progressing action on the Cards
-# step -- moving on to Shared Back once calibration is complete. Every other
+# step -- moving on to the Back step once calibration is complete. Every other
 # control here (page nav, Finish, Start Over) is secondary/outlined via
 # _CONTROL_BUTTON_STYLE, matching the same primary/secondary contrast
 # find_cards_workspace.py's "Continue to Calibrate" button establishes.
@@ -352,12 +357,12 @@ class _CalibrateCanvas(QWidget):
 
 
 class CalibrateWorkspace(QWidget):
-    """Central Calibrate page for one step (Cards or Shared Back)."""
+    """Central Calibrate page for one step (Cards or Back)."""
 
     calibration_changed = Signal()
     zoom_changed = Signal(int)  # percent
     continue_clicked = Signal()  # Cards only -- see _build_continue_footer
-    back_to_select_cards_clicked = Signal()  # Shared Back, UNRESOLVED only
+    back_to_select_cards_clicked = Signal()  # Back step, UNRESOLVED only (not PAIRED -- see _update_continue_footer)
 
     def __init__(
         self,
@@ -414,8 +419,8 @@ class CalibrateWorkspace(QWidget):
         outer.addLayout(controls)
 
         # Both steps get a forward-progressing Continue action -- Fronts to
-        # Shared Back, Shared Back to Review Cards -- and a completion
-        # banner; they differ only in label/enable-condition, handled in
+        # Back, Back to Review Cards -- and a completion banner; they differ
+        # only in label/enable-condition, handled in
         # _update_continue_footer().
         self._is_back_step = target_step is WorkflowStep.CALIBRATE_BACK
         self._completion_banner = QLabel("")
@@ -437,9 +442,10 @@ class CalibrateWorkspace(QWidget):
         outer.addWidget(self._status_label)
 
         footer = QHBoxLayout()
-        # Only ever shown for the Shared Back step's UNRESOLVED state -- the
+        # Only ever shown for the Back step's UNRESOLVED state (never
+        # PAIRED -- that's a decision already made, not one to redo) -- the
         # explicit route back to Select Card Pages so the user can resolve
-        # the Deck's Shared Back decision there, rather than Calibrate
+        # the Deck's back-page decision there, rather than Calibrate
         # guessing or defaulting to "none" on their behalf.
         self._back_to_select_btn = QPushButton("‹ Back to Select Card Pages")
         self._back_to_select_btn.setAutoDefault(False)
@@ -779,14 +785,19 @@ class CalibrateWorkspace(QWidget):
 
         front_page_count = self.find_cards_state.front_page_count()
         shared_back_status = self.find_cards_state.shared_back_status()
+        back_mode = self.find_cards_state.back_mode()
 
         if not navigable:
-            if self._is_back_step and shared_back_status is SharedBackStatus.UNRESOLVED:
-                self._page_label.setText("Shared Back not yet decided")
+            if self._is_back_step and back_mode is BackMode.PAIRED:
+                self._page_label.setText("Paired Backs calibration not yet available")
+            elif self._is_back_step and shared_back_status is SharedBackStatus.UNRESOLVED:
+                self._page_label.setText("Back not yet decided")
             else:
                 self._page_label.setText("No pages available")
             if self._is_back_step:
-                _, body = calibrate_guidance_text(self.target_step, target, front_page_count, shared_back_status)
+                _, body = calibrate_guidance_text(
+                    self.target_step, target, front_page_count, shared_back_status, back_mode=back_mode,
+                )
             else:
                 body = "Go back to Select Card Pages and mark at least one Front Page."
             self._status_label.setText(body)
@@ -794,7 +805,7 @@ class CalibrateWorkspace(QWidget):
 
         self._page_label.setText(self._page_label_text(target, index, navigable))
         _, body = calibrate_guidance_text(
-            self.target_step, target, front_page_count, shared_back_status, self.grid_page_size(),
+            self.target_step, target, front_page_count, shared_back_status, self.grid_page_size(), back_mode,
         )
         self._status_label.setText(body)
 
@@ -804,7 +815,30 @@ class CalibrateWorkspace(QWidget):
 
         if self._is_back_step:
             self._continue_btn.setText("Continue to Review Cards ›")
+            back_mode = self.find_cards_state.back_mode()
             status = self.find_cards_state.shared_back_status()
+
+            if back_mode is BackMode.PAIRED:
+                # shared_back_status collapses to UNRESOLVED for 2+ BACK
+                # pages, so this must be checked first -- otherwise a Paired
+                # deck falls into the UNRESOLVED branch below and is told
+                # (wrongly) that the back decision hasn't been made, with a
+                # "Back to Select Card Pages" button that would send the user
+                # to redo a decision they already made correctly. Continue
+                # stays disabled here exactly as it already was (Paired
+                # calibration isn't implemented yet); only the wording and
+                # that misleading button change.
+                self._back_to_select_btn.setVisible(False)
+                self._continue_btn.setEnabled(False)
+                self._completion_banner.setVisible(True)
+                self._completion_banner.setText(self._banner_html(
+                    "Paired Backs calibration isn't available yet",
+                    "This deck uses Paired Backs. Calibrating individual back "
+                    "pages isn't supported in this version yet.",
+                    complete=False,
+                ))
+                return
+
             self._back_to_select_btn.setVisible(status is SharedBackStatus.UNRESOLVED)
 
             if status is SharedBackStatus.UNRESOLVED:
@@ -814,8 +848,8 @@ class CalibrateWorkspace(QWidget):
                 self._continue_btn.setEnabled(False)
                 self._completion_banner.setVisible(True)
                 self._completion_banner.setText(self._banner_html(
-                    "Shared Back hasn't been decided",
-                    "Go back to Select Card Pages to choose a Shared Back "
+                    "Back hasn't been decided",
+                    "Go back to Select Card Pages to choose a Back "
                     "page or confirm this deck has none.",
                     complete=False,
                 ))
@@ -825,8 +859,8 @@ class CalibrateWorkspace(QWidget):
                 self._continue_btn.setEnabled(True)
                 self._completion_banner.setVisible(True)
                 self._completion_banner.setText(self._banner_html(
-                    "No Shared Back needed",
-                    "This deck has no Shared Back — continue whenever you're ready.",
+                    "No Back needed",
+                    "This deck is Front Only — continue whenever you're ready.",
                 ))
                 return
 
@@ -844,7 +878,7 @@ class CalibrateWorkspace(QWidget):
 
         self._back_to_select_btn.setVisible(False)
         complete = target.is_complete
-        self._continue_btn.setText("Continue to Shared Back ›")
+        self._continue_btn.setText("Continue to Back ›")
         self._continue_btn.setEnabled(complete)
         self._completion_banner.setVisible(complete)
         if complete:
@@ -852,7 +886,7 @@ class CalibrateWorkspace(QWidget):
                 "Fronts calibration complete",
                 f"Applies to all {front_page_count} selected front {noun}.{self._grid_note(target)}"
                 f"{ungauged_axis_warning(target, self.grid_page_size())} "
-                "Browsing other pages below is optional — continue to Shared Back whenever you're ready.",
+                "Browsing other pages below is optional — continue to Back whenever you're ready.",
             ))
 
     @staticmethod

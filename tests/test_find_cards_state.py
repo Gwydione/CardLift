@@ -3,6 +3,7 @@ from deckforge_gui.find_cards_state import (
     FindCardsState,
     PageRole,
     SharedBackStatus,
+    back_summary_clause,
     continue_blocked_text,
     find_cards_status_text,
 )
@@ -417,6 +418,54 @@ class TestShouldPromptSharedBack:
         assert state.should_prompt_shared_back(page_count=10) is False
 
 
+class TestBackSummaryClause:
+    """back_summary_clause() is the single source find_cards_status_text()
+    and FindCardsWorkspace._refresh_deck_summary() both build on -- see
+    approved decision 2 (docs given in the Phase 2 brief): deck-level
+    terminology must distinguish an unresolved no-back decision, Front
+    Only, Shared Back, and Paired Backs."""
+
+    def test_unresolved(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        assert back_summary_clause(state) == "Back: not yet decided"
+
+    def test_front_only_confirmed_none(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        state.confirm_no_shared_back()
+        assert back_summary_clause(state) == "Front Only — no Back Pages"
+
+    def test_shared_back(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(2)
+        state.toggle_back(8)
+        assert back_summary_clause(state) == "Shared Back: page 8"
+
+    def test_paired_backs_balanced(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5, 6):
+            state.set_role(page, PageRole.BACK)
+        assert back_summary_clause(state) == "Paired Backs: 3 pages each"
+
+    def test_paired_backs_mismatched_more_fronts(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5):
+            state.set_role(page, PageRole.BACK)
+        assert back_summary_clause(state) == "Paired Backs: 3 Front / 2 Back — mark 1 more Back page to continue"
+
+    def test_paired_backs_mismatched_more_backs(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        for page in (4, 5, 6):
+            state.set_role(page, PageRole.BACK)
+        assert back_summary_clause(state) == "Paired Backs: 1 Front / 3 Back — mark 2 more Front pages to continue"
+
+
 class TestFindCardsStatusText:
     def test_no_pdf_loaded(self) -> None:
         state = FindCardsState()
@@ -432,7 +481,7 @@ class TestFindCardsStatusText:
         state.toggle_front(2)
         text = find_cards_status_text(state, page_count=10)
         assert "1 front page marked" in text
-        assert "Shared Back: not yet decided." in text
+        assert "Back: not yet decided." in text
 
     def test_unresolved_wording_does_not_depend_on_prompt_timing(self) -> None:
         """The Deck Summary's inline confirm CTA appears only once
@@ -445,7 +494,7 @@ class TestFindCardsStatusText:
         state.toggle_front(2)
         state.note_page_viewed(10)  # would also trigger should_prompt_shared_back
         text = find_cards_status_text(state, page_count=10)
-        assert "Shared Back: not yet decided." in text
+        assert "Back: not yet decided." in text
 
     def test_back_page_assigned(self) -> None:
         state = FindCardsState()
@@ -459,7 +508,25 @@ class TestFindCardsStatusText:
         state.toggle_front(2)
         state.confirm_no_shared_back()
         text = find_cards_status_text(state, page_count=10)
-        assert "Shared Back: none." in text
+        assert "Front Only — no Back Pages." in text
+
+    def test_paired_backs_balanced(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5, 6):
+            state.set_role(page, PageRole.BACK)
+        text = find_cards_status_text(state, page_count=10)
+        assert "Paired Backs: 3 pages each." in text
+
+    def test_paired_backs_mismatched(self) -> None:
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        for page in (4, 5):
+            state.set_role(page, PageRole.BACK)
+        text = find_cards_status_text(state, page_count=10)
+        assert "Paired Backs: 3 Front / 2 Back — mark 1 more Back page to continue." in text
 
 
 class TestContinueBlockedText:

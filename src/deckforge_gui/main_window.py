@@ -425,6 +425,7 @@ class MainWindow(QMainWindow):
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
                 self.workspaces[step].grid_page_size(),
+                self.find_cards_state.back_mode(),
             )
         if step is WorkflowStep.REVIEW_CARDS:
             return review_status_text(
@@ -432,6 +433,7 @@ class MainWindow(QMainWindow):
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),
                 self.review_cards_state,
+                back_mode=self.find_cards_state.back_mode(),
             )
         if step is WorkflowStep.EXPORT:
             return export_status_text(
