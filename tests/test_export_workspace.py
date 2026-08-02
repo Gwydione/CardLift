@@ -73,6 +73,29 @@ def _make_ready(workspace: ExportWorkspace, front_page: int = FRONT_PAGE) -> Non
         workspace.review_state.toggle(extra_card)  # keep only the first cell included
 
 
+def _make_ready_paired(workspace: ExportWorkspace, front_page: int = FRONT_PAGE, back_page: int = 1) -> None:
+    """Like _make_ready(), but for a Paired Backs deck -- the one-page
+    Front/one-page Back combination, explicitly opted into Paired via
+    mark_single_back_page_as_paired() (the genuinely ambiguous case;
+    see find_cards_state.py). front_page and back_page must both be real
+    pages in the loaded sample PDF so the real export pipeline these
+    tests drive can actually render them."""
+    workspace.find_cards_state._roles.clear()
+    workspace.find_cards_state.set_role(front_page, PageRole.FRONT)
+    workspace.find_cards_state.set_role(back_page, PageRole.BACK)
+    workspace.find_cards_state.mark_single_back_page_as_paired()
+    workspace.calibrate_state.cards.reset()
+    workspace.calibrate_state.paired_back.reset()
+    workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+    workspace.calibrate_state.cards.calibrated_page_num = front_page
+    workspace.calibrate_state.paired_back.geometry = FRONT_GEOMETRY
+    workspace.calibrate_state.paired_back.calibrated_page_num = back_page
+    cards = build_review_cards([front_page], FRONT_GEOMETRY, workspace._page_size)
+    workspace.review_state.sync(cards)
+    for extra_card in cards[1:]:
+        workspace.review_state.toggle(extra_card)  # keep only the first cell included
+
+
 def _drain_until_worker_done(qapp: QApplication, workspace: ExportWorkspace, timeout_s: float = 5.0) -> None:
     deadline = time.monotonic() + timeout_s
     while workspace._worker is not None:
@@ -316,3 +339,90 @@ class TestExportReentry:
         assert workspace._exporting_label.isHidden() is True
         assert workspace._progress_bar.isHidden() is True
         assert workspace._plan is not None  # the new deck's own plan, rebuilt by on_shown()
+
+
+class TestPairedBackExport:
+    """Phase 5C: ExportPlan's paired_back field (Phase 5B) wired through
+    to the real export pipeline -- summary text, overwrite prediction,
+    and the actual _ExportWorker/export_cells() call, not just plan
+    construction (already covered in test_export_state.py)."""
+
+    def test_ready_plan_has_paired_back_not_shared_back(self, workspace: ExportWorkspace) -> None:
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        _make_ready_paired(workspace)
+        workspace.on_shown()
+
+        assert workspace._plan is not None
+        assert workspace._plan.has_paired_back is True
+        assert workspace._plan.has_back is False
+
+    def test_summary_text_mentions_paired_back_not_shared_back(self, workspace: ExportWorkspace) -> None:
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        _make_ready_paired(workspace)
+        workspace.on_shown()
+
+        text = workspace._summary_label.text()
+        assert "paired back" in text
+        assert "Shared Back" not in text
+        assert "shared back" not in text
+
+    def test_overwrite_prediction_uses_paired_filenames(self, workspace: ExportWorkspace, tmp_path: Path) -> None:
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        _make_ready_paired(workspace)
+        workspace.on_shown()
+        workspace._destination = tmp_path
+        (tmp_path / "001_back.png").write_bytes(b"old")
+
+        from deckforge_gui.export_state import existing_output_files
+        assert existing_output_files(tmp_path, workspace._plan) == ["001_back.png"]
+
+    def test_real_export_writes_paired_filenames_with_correct_content(
+        self, qapp: QApplication, workspace: ExportWorkspace, tmp_path: Path,
+    ) -> None:
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        _make_ready_paired(workspace, front_page=2, back_page=1)
+        workspace.on_shown()
+        workspace._destination = tmp_path
+        workspace._export_btn.setEnabled(True)
+
+        workspace._on_export_clicked()
+        _drain_until_worker_done(qapp, workspace)
+
+        assert workspace._export_complete is True
+        assert (tmp_path / "001_front.png").exists()
+        assert (tmp_path / "001_back.png").exists()
+        assert not (tmp_path / "front_001.png").exists()
+        assert not (tmp_path / "back.png").exists()
+
+        from PIL import Image
+
+        from deckforge.cropper import CardCropper
+        from deckforge.pdf_renderer import PDFRenderer
+        from deckforge.profile import TrimValues
+        from deckforge_gui.export_state import EXPORT_RENDER_SCALE
+
+        zero_trim = TrimValues(0.0, 0.0, 0.0, 0.0)
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            cropper = CardCropper(EXPORT_RENDER_SCALE)
+            expected_front = cropper.crop_card(
+                renderer.render_page(2, EXPORT_RENDER_SCALE), FRONT_GEOMETRY.to_grid_geometry(), zero_trim, 0, 0,
+            )
+            expected_back = cropper.crop_card(
+                renderer.render_page(1, EXPORT_RENDER_SCALE), FRONT_GEOMETRY.to_grid_geometry(), zero_trim, 0, 0,
+            )
+        assert Image.open(tmp_path / "001_front.png").tobytes() == expected_front.tobytes()
+        assert Image.open(tmp_path / "001_back.png").tobytes() == expected_back.tobytes()
+
+    def test_completion_message_counts_both_front_and_back_files(
+        self, qapp: QApplication, workspace: ExportWorkspace, tmp_path: Path,
+    ) -> None:
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        _make_ready_paired(workspace)
+        workspace.on_shown()
+        workspace._destination = tmp_path
+        workspace._export_btn.setEnabled(True)
+
+        workspace._on_export_clicked()
+        _drain_until_worker_done(qapp, workspace)
+
+        assert workspace._result_label.text() == f"Exported 2 files to {tmp_path}."

@@ -190,10 +190,20 @@ class GuidancePanel(QWidget):
             # Deliberately the simple export_ready() check (no page-size-
             # dependent stale-snapshot check) -- see export_workspace.py's
             # module docstring for why that check is workspace-only.
+            # paired_topology_ok stays at its default (True) for the same
+            # reason the REVIEW_CARDS branch above leaves it default: the
+            # real comparison needs an open PDFRenderer, which only
+            # ExportWorkspace has (see export_state.export_ready()'s
+            # docstring) -- this guidance may lag in the narrow case of a
+            # genuine topology mismatch, the same already-accepted gap
+            # documented for review_state.review_ready().
             return export_guidance_text(
                 self.calibrate_state.cards,
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),
                 self.review_cards_state,
+                back_mode=self.find_cards_state.back_mode(),
+                paired_back_target=self.calibrate_state.paired_back,
+                find_cards_state=self.find_cards_state,
             )
         return self.state.guidance_text()

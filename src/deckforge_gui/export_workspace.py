@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -57,10 +57,10 @@ from PySide6.QtWidgets import (
 )
 
 from deckforge.cell_export import export_cells
-from deckforge.pdf_renderer import PDFRenderer
+from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 from deckforge.profile import GridGeometry
 
-from .calibrate_state import CalibrateState, CalibrationTarget
+from .calibrate_state import CalibrateState, CalibrationTarget, paired_topology_mismatch
 from .export_state import (
     EXPORT_RENDER_SCALE,
     ExportPlan,
@@ -73,7 +73,7 @@ from .export_state import (
     stale_review_guidance_text,
     stale_review_status_text,
 )
-from .find_cards_state import FindCardsState, SharedBackStatus
+from .find_cards_state import BackMode, FindCardsState, SharedBackStatus
 from .review_state import ReviewCardsState
 from .theme import (
     ACCENT,
@@ -160,6 +160,7 @@ class _ExportWorker(QThread):
         cells: list[tuple[int, int, int]],
         destination: Path,
         back: Optional[tuple[int, GridGeometry]],
+        paired_back: Optional[tuple[GridGeometry, Sequence[int]]],
         pdf_generation: int,
         parent: QWidget | None = None,
     ) -> None:
@@ -170,6 +171,7 @@ class _ExportWorker(QThread):
         self._cells = cells
         self._destination = destination
         self._back = back
+        self._paired_back = paired_back
         # Stamped with ExportWorkspace._pdf_generation at dispatch time --
         # set_pdf() bumps that counter on every (re)load, so a completion
         # signal that arrives after the user has already switched to a
@@ -182,7 +184,7 @@ class _ExportWorker(QThread):
         try:
             written = export_cells(
                 self._renderer, self._render_scale, self._front_geometry,
-                self._cells, self._destination, back=self._back,
+                self._cells, self._destination, back=self._back, paired_back=self._paired_back,
             )
         except Exception as exc:
             # Blanket, not just (OSError, PDFRenderError): this is a thread
@@ -478,15 +480,52 @@ class ExportWorkspace(QWidget):
         assert self._renderer is not None
         return self._renderer.page_size(page_num)
 
+    def _paired_topology_ok(
+        self, cards_target: CalibrationTarget, paired_back_target: CalibrationTarget,
+    ) -> bool:
+        """True unless Front and Paired Back are both calibrated and
+        suggest incompatible grid topology -- mirrors review_workspace.
+        ReviewWorkspace._paired_topology_ok() (the analogous gate for
+        Review Cards' own PAIRED branch), reused here via the same pure
+        calibrate_state.paired_topology_mismatch() rather than
+        re-deriving the comparison or importing review_workspace itself.
+        Vacuously True whenever either target isn't complete yet
+        (already blocks via export_ready()) or the page sizes can't be
+        read."""
+        if not cards_target.is_complete or not paired_back_target.is_complete:
+            return True
+        if self._renderer is None:
+            return True
+        try:
+            front_size = self._renderer.page_size(cards_target.calibrated_page_num)
+            back_size = self._renderer.page_size(paired_back_target.calibrated_page_num)
+        except PDFRenderError:
+            return True
+        assert cards_target.geometry is not None and paired_back_target.geometry is not None
+        mismatch = paired_topology_mismatch(cards_target.geometry, front_size, paired_back_target.geometry, back_size)
+        return mismatch is None
+
     def _rebuild(self) -> None:
         cards_target = self.calibrate_state.cards
         back_target = self.calibrate_state.back
+        paired_back_target = self.calibrate_state.paired_back
         shared_back_status = self.find_cards_state.shared_back_status()
+        back_mode = self.find_cards_state.back_mode()
+        paired_topology_ok = self._paired_topology_ok(cards_target, paired_back_target)
 
-        if not export_ready(cards_target, back_target, shared_back_status, self.review_state):
+        if not export_ready(
+            cards_target, back_target, shared_back_status, self.review_state,
+            back_mode, paired_back_target, paired_topology_ok, self.find_cards_state,
+        ):
             self._show_blocked(
-                export_guidance_text(cards_target, back_target, shared_back_status, self.review_state)[1],
-                export_status_text(cards_target, back_target, shared_back_status, self.review_state),
+                export_guidance_text(
+                    cards_target, back_target, shared_back_status, self.review_state,
+                    back_mode, paired_back_target, paired_topology_ok, self.find_cards_state,
+                )[1],
+                export_status_text(
+                    cards_target, back_target, shared_back_status, self.review_state,
+                    back_mode, paired_back_target, paired_topology_ok, self.find_cards_state,
+                ),
             )
             return
 
@@ -503,7 +542,7 @@ class ExportWorkspace(QWidget):
             self._show_blocked(body, stale_review_status_text())
             return
 
-        self._show_ready(cards_target, back_target, shared_back_status)
+        self._show_ready(cards_target, back_target, shared_back_status, back_mode, paired_back_target)
 
     def _show_blocked(self, body: str, status: str) -> None:
         self._ready_panel.setVisible(False)
@@ -516,6 +555,8 @@ class ExportWorkspace(QWidget):
         cards_target: CalibrationTarget,
         back_target: CalibrationTarget,
         shared_back_status: SharedBackStatus,
+        back_mode: BackMode = BackMode.SHARED,
+        paired_back_target: Optional[CalibrationTarget] = None,
     ) -> None:
         self._blocked_label.setVisible(False)
         self._ready_panel.setVisible(True)
@@ -528,7 +569,10 @@ class ExportWorkspace(QWidget):
         self._exporting_label.setVisible(False)
         self._progress_bar.setVisible(False)
 
-        self._plan = build_export_plan(self.review_state, cards_target, back_target, shared_back_status)
+        self._plan = build_export_plan(
+            self.review_state, cards_target, back_target, shared_back_status,
+            back_mode, paired_back_target, self.find_cards_state,
+        )
         if self._export_complete and self._plan != self._completed_plan:
             # Something changed (e.g. a card toggled back in Review Cards)
             # since the export that completed -- the completion banner
@@ -541,15 +585,27 @@ class ExportWorkspace(QWidget):
             # unconditionally hides _result_label) or recomputing it.
             self._show_result(self._completed_result_message, is_error=False)
         noun = "card" if self._plan.card_count == 1 else "cards"
-        back_clause = " plus a shared back" if self._plan.has_back else " (this deck has no Shared Back)"
+        if self._plan.has_paired_back:
+            back_clause = " with a paired back for each"
+        elif self._plan.has_back:
+            back_clause = " plus a shared back"
+        else:
+            back_clause = " (this deck has no Shared Back)"
         self._summary_label.setText(f"{self._plan.card_count} {noun}{back_clause}, saved as individual PNG files.")
 
         self._update_destination_label()
         self._apply_completion_visibility()
         if not self._export_complete:
             self._export_btn.setEnabled(self._destination is not None)
+        # paired_topology_ok omitted (defaults True): _show_ready() is only
+        # ever reached once _rebuild() has already confirmed export_ready(),
+        # which for PAIRED means topology already matched -- same reasoning
+        # ReviewWorkspace._update_footer() documents for its own status text.
         self._status_label.setText(
-            export_status_text(cards_target, back_target, shared_back_status, self.review_state)
+            export_status_text(
+                cards_target, back_target, shared_back_status, self.review_state,
+                back_mode, paired_back_target, find_cards_state=self.find_cards_state,
+            )
         )
 
     def _apply_completion_visibility(self) -> None:
@@ -627,7 +683,7 @@ class ExportWorkspace(QWidget):
 
         self._worker = _ExportWorker(
             self._renderer, EXPORT_RENDER_SCALE, self._plan.front_geometry,
-            cells, self._destination, self._plan.back,
+            cells, self._destination, self._plan.back, self._plan.paired_back,
             pdf_generation=self._pdf_generation, parent=self,
         )
         _logger.info(
