@@ -74,7 +74,7 @@ A Deck is also the primary object CardLift seeks to understand.
 A Deck owns:
 
 - its Card Pages
-- optional Shared Back(s)
+- a Back Mode
 - calibration
 - preview
 - export settings
@@ -97,18 +97,59 @@ the same card arrangement.
 Future versions may support multiple card arrangements within a single
 Deck.
 
+See Back Pages, below, for the reverse side of a Deck's cards.
+
 ---
 
-# Shared Back
+# Back Pages
 
-A **Shared Back** is an optional Card Page whose artwork is used as the
-reverse side for every card in a Deck.
+**Back Pages** are the Card Pages containing the reverse side of a
+Deck's cards.
 
-Some Decks contain a Shared Back.
+A Deck may have no Back Pages, one Back Page, or many Back Pages.
 
-Some Decks do not.
+Not every Deck has Back Pages. Some cards are printed front-only.
 
-Future versions may support multiple Shared Back groups.
+---
+
+# Back Mode
+
+**Back Mode** is how a Deck's Back Pages relate to its Front Pages.
+
+CardLift supports three Back Modes:
+
+- **Front Only** — the Deck has no Back Pages. No back is exported.
+- **Shared Back** — the Deck has exactly one Back Page. Its artwork is
+  used as the reverse side for every card in the Deck.
+- **Paired Back Pages** — the Deck has one Back Page for every Front
+  Page. Every card has its own, unique reverse side, paired with the
+  Front Page it appears on.
+
+Back Mode is a property of the Deck, not a setting the user configures
+directly. Whenever possible, CardLift derives it from how many pages
+the user has marked as Back Pages: none means Front Only, one means
+Shared Back, more than one means Paired Back Pages.
+
+Exactly one Back Page is the one case count alone cannot resolve — it
+could be a Shared Back, or a Deck whose Front and Back Pages both
+happen to be a single page each, but where every card still has its own
+unique reverse (a one-page Paired Back Pages Deck). CardLift asks the
+user to choose explicitly only in this one case, rather than
+introducing a general mode selector every Deck would otherwise have to
+answer. See
+[docs/design/MULTIPLE_BACK_MODES.md](design/MULTIPLE_BACK_MODES.md) for
+the full behavior, including this ambiguity and its resolution.
+
+Back Mode is established during **Select Card Pages** and, once set,
+shapes what later workflow steps do without those steps determining or
+storing it themselves:
+
+- **Calibration** measures a representative Back Page only when the
+  Deck has one (see Calibration, below).
+- **Preview** shows each card's paired back alongside its front when the
+  Deck's Back Mode is Paired Back Pages.
+- **Export** produces one back image per card, one shared back image,
+  or no back image at all, depending on Back Mode.
 
 ---
 
@@ -121,7 +162,9 @@ Calibration belongs to a Deck rather than to the PDF itself.
 The current workflow measures:
 
 - one representative front card
-- one representative shared back card (if present)
+- one representative back card, if the Deck has Back Pages -- that one
+  measurement applies to every Back Page, whether there is a single one
+  (Shared Back) or one per Front Page (Paired Back Pages)
 
 Future versions may calibrate multiple card arrangements as needed.
 
@@ -170,6 +213,7 @@ Users think in terms of:
 - Pages
 - Card Pages
 - Decks
+- Back Mode
 
 The software may internally use card arrangements, geometry, calibration
 targets, page ranges, or other implementation details, but those
