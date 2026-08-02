@@ -6,12 +6,17 @@ also tracks the post-release feedback loop with private alpha testers —
 this is the single place to check "where does the project stand right
 now."
 
-Last updated: 2026-07-20.
+Last updated: 2026-08-02.
 
 ## Current phase: Alpha — Feedback & Iteration
 
-The current release is **`v0.1.1-alpha`** (tag `v0.1.1-alpha`, commit
-`dbbb102`, current HEAD), shipped 2026-07-19. `v0.1.0-alpha` (tag
+The last shipped release was **`v0.1.1-alpha`** (tag `v0.1.1-alpha`,
+commit `dbbb102`), released 2026-07-19. Multiple Back Modes (Front
+Only / Shared Back / Paired Back Pages) is now complete and documented
+(see `docs/design/MULTIPLE_BACK_MODES.md` and DEVELOPER.md's Multiple
+Back Modes notes), and `deckforge.__version__` has been bumped to
+**`v0.2.0-alpha`** in preparation for the next release -- not yet
+built, tagged, or shipped as of this writing. `v0.1.0-alpha` (tag
 `v0.1.0-alpha`, commit `221eb96`) went out first, on 2026-07-16, as a
 packaged Windows build (one-folder PyInstaller bundle, ZIP + SHA-256
 checksum) to private alpha testers via the **RPG Frequencies Discord**,
@@ -272,7 +277,7 @@ Preserved for the investigation detail, even though each is resolved.
   sufficient confidence to proceed automatically, not as proof of
   correctness.
 - **Release versioning (GUI version identity).** `deckforge.__version__`
-  (`0.1.1-alpha` as of this writing) is the single authoritative version
+  (`0.2.0-alpha` as of this writing) is the single authoritative version
   constant; the GUI had no version display anywhere. `MainWindow`'s
   window title and a new muted `TopBar` label both import and display it
   directly, so bug reports/screenshots can be tied to a build. See
@@ -439,9 +444,9 @@ Preserved for the investigation detail, even though each is resolved.
   and the release ZIP itself, verified after a fresh extraction. This is
   the release referenced throughout this document as "shipped to
   testers."
-- **v0.1.1-alpha shipped** (commit `dbbb102`, tag `v0.1.1-alpha`,
-  current HEAD). Patch release containing the tooltip-contrast root-cause
-  fix — see "Bugs found and fixed during alpha testing" above for detail.
+- **v0.1.1-alpha shipped** (commit `dbbb102`, tag `v0.1.1-alpha`). Patch
+  release containing the tooltip-contrast root-cause fix — see "Bugs
+  found and fixed during alpha testing" above for detail.
 
 ---
 
