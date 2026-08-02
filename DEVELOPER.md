@@ -7,6 +7,12 @@ it. If you're looking for _what CardLift is_ and _how the calibration
 model works conceptually_, see [README.md](README.md) — this file is
 about the mechanics of working on the code.
 
+For Multiple Back Modes (Front Only / Shared Back / Paired Back Pages)
+specifically, [docs/design/MULTIPLE_BACK_MODES.md](docs/design/MULTIPLE_BACK_MODES.md)
+covers the product design and user-facing workflow; this file covers
+only why the implementation is structured the way it is, so the two
+should be read together rather than either duplicating the other.
+
 ## Security and Network Access
 
 The core CardLift workflow is local-first and must not require network access. Do not add telemetry, uploads, update checks, licensing calls, or other outbound communication without an explicit product decision, clear user disclosure, and documentation.
@@ -595,6 +601,48 @@ CLI's `--card`/`--measure` syntax and the separate Tkinter `calibrate_ui.py`
 prompt (same rationale as the "Deliberately not touched" note above --
 developer-facing, not shared code with the GUI).
 
+**Multiple Back Modes: Phase 3 (Paired Back calibration).** `CalibrateState`
+gained a `paired_back` field: a full-grid `CalibrationTarget`, sibling to
+`cards`/`back`, reusing the exact same two-corner-click-plus-optional-
+second-measurement machinery `cards` already uses -- Paired Back
+calibration is not a new calibration model, just a second target of the
+kind that already existed.
+
+Deliberately **not** added to `CalibrateState.target_for(step)`: that
+method must stay pure and step-based, and deciding *whether* the Back
+step should read/write `back` (Shared) or `paired_back` (Paired) needs
+`find_cards_state.back_mode()`, which `CalibrateState` deliberately has
+no dependency on (same purity discipline `cards`/`back` already follow).
+`resolve_back_target()` (a new module-level function in
+`calibrate_workspace.py`) and `CalibrateWorkspace.current_target()` are
+where that mode-aware routing actually happens instead -- `target_for()`
+itself never resolves to `paired_back`.
+
+`calibrate_state.paired_topology_mismatch()` is the pure comparison this
+milestone added: Front's and Paired Back's suggested grid shape (rows,
+cols), computed from whichever page each side was calibrated on. Returns
+`None` when they match, otherwise the two differing shapes for the
+caller to build a message from. `CalibrateWorkspace._paired_topology_mismatch()`
+uses it to block Calibrate's own Continue button on a real mismatch,
+with no PDF/geometry logic duplicated between the two calibrate steps.
+
+Three smaller extensions completed the same milestone: `paired_back_is_stale()`
+joined `cards_is_stale()`/`back_is_stale()`, sharing a new `_target_is_stale()`
+helper (pulled out once a third near-identical staleness check made the
+duplication worth removing); `CalibrateWorkspace._navigable_pages()`
+gained a third case -- Paired Back's Back step navigates the *full* list
+of marked Back pages (`find_cards_state.back_pages()`), not the single
+page Shared Back's Back step navigates; and `_page_label_text()`'s
+secondary line reads "Back page N of M" for Paired Back, the same
+FRONT-relative-position pattern "Presenting one shared geometry" above
+already established for Fronts.
+
+Deliberately out of scope for this milestone: Review Cards' own pairing
+display, Export, CLI/profile support, and versioning/docs -- each
+deferred to its own later, separately-reviewable phase (see "Lessons
+from Multiple Back Modes" at the end of this file for why phases stayed
+this narrow).
+
 **Review Cards milestone.** The last checkpoint before Export: every
 suggested card is rendered as a clickable thumbnail so the user can catch
 a miscount or a bad crop before anything is written to disk -- docs/CORE_CONCEPTS.md's
@@ -674,6 +722,104 @@ its guidance/status text) branches on, covering three blocked states: Fronts
 not calibrated, Shared Back still `UNRESOLVED`, and Shared Back `ASSIGNED`
 but not yet calibrated (reachable via the same stale-reset path).
 
+**Multiple Back Modes: Review Cards reaches Paired Backs.** Phase 2 left
+a hardcoded stopgap in `review_state.py`: PAIRED unconditionally reported
+"not available yet," correct while Paired calibration didn't exist but
+stale the moment Phase 3 shipped it -- a fully-valid, calibrated Paired
+deck could no longer reach Review Cards at all. `review_ready()`/
+`review_guidance_text()`/`review_status_text()` gained `back_mode`/
+`paired_back_target`/`paired_topology_ok` parameters (the same optional,
+default-preserving shape used everywhere else in this feature -- see
+"Lessons from Multiple Back Modes"), unblocking PAIRED once
+`paired_back_target.is_complete` and topology matches, with distinct
+guidance/status wording for "not calibrated yet" vs. "grids don't match"
+vs. ready. `paired_topology_ok` itself is computed by
+`ReviewWorkspace._paired_topology_ok()` -- the only place in Review Cards
+with an open `PDFRenderer`, needed for the real page-size comparison --
+reusing the same pure `calibrate_state.paired_topology_mismatch()`
+Calibrate's own gate already uses, not re-derived.
+
+A second, related fix landed in the same pass: Review Cards' back panel
+used to hide entirely for PAIRED, a leftover Phase 2 placeholder. Since
+the main grid always showed fronts only regardless of mode, this made a
+Paired deck's Review Cards screen visually indistinguishable from Front
+Only, with nothing indicating a back side was even part of the deck.
+Fixed by keeping the panel visible with an honest caption ("Paired
+Backs -- click 'look closer' on any card to compare it with its paired
+back") instead of hiding it -- deliberately not by building the pairing
+UI early to compensate; that UI is Phase 4, below.
+
+**Multiple Back Modes: the one-page BackMode ambiguity.** Manual testing
+surfaced a case the original design never considered: exactly one Front
+page and one Back page is genuinely ambiguous between Shared Back and a
+one-page Paired Backs deck (a full grid of unique cards, all paired with
+that single Front page). `back_mode()`'s original count-only derivation
+(0 -> NONE, 1 -> SHARED, 2+ -> PAIRED) had no way to represent this
+second, valid reading of the one-page case.
+
+The fix: `_single_back_page_is_paired`, an explicit boolean override on
+`FindCardsState`, consulted only when exactly one page holds the BACK
+role. It defaults to `False`, so every deck with exactly one Back page
+-- including every one that existed before this feature shipped --
+keeps resolving to SHARED with zero migration; the user opts into Paired
+explicitly via `mark_single_back_page_as_paired()`, surfaced as an
+inline toggle in Select Card Pages' Deck Summary, shown only when the
+count is exactly one. `_sync_single_back_page_intent()` resets the
+override back to `False` automatically whenever the count leaves one
+(a second Back page gets marked, or the only one gets un-marked), so a
+stale "Paired" choice can never silently reapply later.
+
+The architectural payoff is worth naming explicitly: fixing this at its
+single source -- `FindCardsState.back_mode()` -- required **zero code
+changes** in `calibrate_workspace.py` or `review_workspace.py`, verified
+by new regression tests rather than just asserted, because every
+downstream consumer already gated through `back_mode()` instead of
+re-deriving BackMode from raw page counts itself. This is the sharpest
+concrete evidence for the single-source-of-truth discipline this whole
+feature was built on (see "Lessons from Multiple Back Modes").
+
+**Multiple Back Modes: Phase 4 (Card Inspection paired review).**
+Extended the existing Card Inspection overlay (`review_workspace.py`'s
+`_CardInspector`/`_CardTile`) rather than building a new screen or a
+second grid -- Review Cards' main grid still shows fronts only; a
+Paired deck's pairing is shown only on demand, when a user opens one
+card's "look closer" view, which then shows that card's front and its
+paired back side by side.
+
+Resolution reuses two things already built for other purposes:
+`find_cards_state.paired_back_page_for(card.page_num)` (Phase 1's
+ordered-index pairing) picks the back page, and the same `(row, col)` is
+reused on `calibrate_state.paired_back`'s own, independently-calibrated
+geometry -- Front and Back are only guaranteed to share row/column
+topology, not margins/card size/gaps (Phase 3), so the cell index is the
+one thing safe to reuse as-is. An unresolvable pair (an unbalanced deck
+reached via a stale sidebar jump, or a render failure) falls back to the
+same honest gray placeholder Card Inspection already used for a front
+render failure, with an explanatory caption -- never a crash, never a
+silently blank or wrong image.
+
+Discoverability took two iterations after manual-testing feedback, not
+one. A tooltip wording update shipped first and didn't fix the actual
+problem: users weren't failing to understand the interaction once
+found, they weren't discovering a richer interaction existed at all.
+The actual fix was an always-visible icon-glyph swap -- two overlapping
+rounded-card shapes replacing the magnifying glass, Paired Backs tiles
+only -- at the exact point of interaction, following this project's
+existing convention of always-visible rather than hover-gated
+affordances (see the tooltip-rendering gotcha below for another
+instance of this same "the discoverable thing has to be visible before
+interaction, not explained after it" principle).
+
+A later manual-testing pass found the side-by-side view's page context
+(registration marks, neighboring cards) competing visually with the
+actual front/back comparison, once two context-laden crops sat next to
+each other instead of one. Fixed with a reduced, gap-derived margin
+(`PAIRED_INSPECT_MARGIN_FLOOR_PT`, computed from the tighter of Front's
+and Back's own calibrated gap, clamped to never exceed the existing
+single-image margin and never collapse to zero) used only for Paired
+Backs' side-by-side view; Front Only/Shared Back's single-image
+inspection margin is untouched.
+
 **Why `review_workspace.py` calls `CardCropper` directly, not
 `DeckExporter`.** `deckforge.exporter.DeckExporter` is CLI-shaped: it
 discovers the PDF by scanning `sample_decks/`/the project root via
@@ -724,28 +870,99 @@ behavior is unaffected.
 
 `deckforge/cell_export.py` is the new engine primitive instead:
 `export_cells(renderer, render_scale, front_geometry, cells, output_dir,
-back=None)` takes an explicit, ordered `(page_num, row, col)` sequence --
-no notion of a "complete grid" at all -- and reuses `PDFRenderer`/
-`CardCropper` exactly as `DeckExporter` does, just keyed by an explicit
-cell list rather than `profile.layouts`. It renders each distinct page at
-most once via an internal cache keyed by page number, regardless of
-whether the caller's cells happen to be grouped by page (they are, by
-construction -- see below -- but the function doesn't rely on that).
-`front_NNN.png` numbering follows the caller's list order exactly,
-1-indexed; trim is always zero (same reasoning as Review Cards' own
-`_ZERO_TRIM`: Calibrate's two-corner click already *is* the exact crop
-box). `back`, if given, is `(page_num, geometry)`; omitting it (the
-default) writes no `back.png` -- this is how a Deck with a confirmed no
-Shared Back exports, with no change to `profile.py`'s `back_page`
-schema needed, since Export never constructs a profile at all.
+back=None, paired_back=None)` takes an explicit, ordered `(page_num, row,
+col)` sequence -- no notion of a "complete grid" at all -- and reuses
+`PDFRenderer`/`CardCropper` exactly as `DeckExporter` does, just keyed by
+an explicit cell list rather than `profile.layouts`. It renders each
+distinct page at most once via an internal cache keyed by page number,
+regardless of whether the caller's cells (or back pages) happen to be
+grouped by page. `front_NNN.png` numbering follows the caller's list
+order exactly, 1-indexed; trim is always zero (same reasoning as Review
+Cards' own `_ZERO_TRIM`: Calibrate's two-corner click already *is* the
+exact crop box). `back`, if given, is `(page_num, geometry)` for one
+Shared Back card; `paired_back`, if given, is `(geometry, back_page_nums)`
+-- one shared geometry (Paired Back, like Fronts, is one representative
+calibrated geometry reused for every back page) plus a back page number
+per entry in `cells`, cropped at each cell's own `(row, col)`. The two are
+mutually exclusive (asserted); omitting both (the default) writes no back
+file at all -- this is how a Front Only deck, or one with a confirmed no
+Shared Back, exports. `output_filenames(cell_count, has_back, paired=False)`
+switches between the two on-disk conventions this implies (`back.png`
+appended once, vs. `NNN_front.png`/`NNN_back.png` pairs -- see "Multiple
+Back Modes: Phase 5" below). None of this changes `profile.py`'s
+`back_page` schema, since Export never constructs a profile at all.
+`cell_export.py` has no `BackMode`/`SharedBackStatus` concept of its own
+and never will -- see "Multiple Back Modes: Phase 5" below for why.
 
 `deckforge_gui/export_state.py` is the pure (no PySide6/PDF import)
 builder: `build_export_plan()` reads `ReviewCardsState.included_cards()`
 verbatim -- the exact order and exclusions Review Cards produced, with no
 re-sorting or re-derivation -- converts `CalibratedGeometry` to
 `profile.GridGeometry` via `to_grid_geometry()`, and bundles the Shared
-Back page/geometry only when `shared_back_status()` is `ASSIGNED`.
-`export_ready()` is `review_ready()` plus "at least one card included".
+Back page/geometry only when `shared_back_status()` is `ASSIGNED`, or the
+paired-back geometry plus a resolved back page per included cell
+(`find_cards_state.paired_back_page_for()`) when `back_mode()` is
+`PAIRED`. `export_ready()` is `review_ready()` plus "at least one card
+included", plus -- PAIRED only -- a hard requirement that the deck's
+Front/Back page counts are balanced (see "Multiple Back Modes: Phase 5"
+below for why this is stricter than `review_ready()`'s own PAIRED
+branch).
+
+**Multiple Back Modes: Phase 5 (Export architecture).** `cell_export.py`
+deliberately gained no `BackMode`/`SharedBackStatus` concept of its own,
+and never will: `deckforge` (core) must never depend on `deckforge_gui`
+(a boundary this project maintains everywhere else), and a `BackMode`
+parameter would have been the convenient, wrong way to add Paired Backs
+support here. `shared_back`/`paired_back` as two independent, mutually
+exclusive optional shapes let the engine stay ignorant of *why* a deck
+has the back shape it has -- `deckforge_gui.export_state` is the one
+place that decision gets made, exactly the same division of
+responsibility `build_export_plan()` already had for Shared Back.
+
+`ExportPlan` gained one new optional `paired_back` field (mirroring
+`cell_export`'s own shape) rather than being split into a plan type per
+back mode -- considered and rejected, since every prior mode-specific
+extension in this codebase (`CalibrationTarget.paired_back`,
+`review_ready()`'s optional parameters) used the same "one shape,
+optional fields" pattern, and a type split would have forced an
+`isinstance()` branch into `ExportWorkspace`, which reads `ExportPlan`
+uniformly today regardless of back mode.
+
+`export_ready()`'s balanced-counts hard gate (above) is a deliberate
+*divergence* from `review_ready()`'s more permissive PAIRED branch, not
+an oversight that the two don't match. Review Cards is a non-destructive,
+human-inspectable preview that can afford to show "no paired back could
+be found" for one card and let the user notice and fix it before
+continuing; Export writes real files to disk, a one-way action with no
+equivalent safety net, so it refuses to run at all rather than risk
+silently shipping a front image with no matching back.
+
+`ExportWorkspace`'s own wiring mirrors `ReviewWorkspace`'s precedent
+directly rather than re-deriving it: `_paired_topology_ok()` is the same
+method, reusing the same pure `calibrate_state.paired_topology_mismatch()`,
+since `ExportWorkspace` also owns its own `PDFRenderer`. `_ExportWorker`
+gained a `paired_back` constructor field threaded straight through to
+`export_cells()`. Notably, most of Export's user-facing surface needed
+*no* PAIRED-specific branch at all: overwrite prediction
+(`existing_output_files()`) and the completion message both already
+worked generically off `ExportPlan`/the real written-file list, so they
+were already correct for Paired Backs once the plan itself carried the
+right data -- only the pre-export summary text needed a new
+`has_paired_back` branch.
+
+**Guidance panel wiring.** `guidance_panel.py`'s `EXPORT` branch was
+found, after the rest of Phase 5 shipped, to still be calling
+`export_guidance_text()` with the original four-argument shape -- the
+same class of bug `ExportWorkspace` itself had before this phase,
+recurring in a third location (`guidance_panel.py`'s own `REVIEW_CARDS`
+branch, in the same file, had already been fixed correctly). Fixed by
+mirroring that adjacent branch's exact wiring: `back_mode`,
+`paired_back_target`, and `find_cards_state` threaded through.
+`paired_topology_ok` stays at its default `True` here too, since this
+panel has no `PDFRenderer` and giving it one would mean threading a
+workspace reference into a component whose whole design is "reads only
+plain state, no widget dependency" -- the same accepted, narrow gap
+already documented above for `review_snapshot_is_current()`.
 
 **Review Cards must stay authoritative, even after `AppState.is_reached`
 lets the sidebar jump straight to Export.** The same mechanism that lets
@@ -903,17 +1120,21 @@ check at all for a destination folder that already contained files
 `export_cells()` was about to overwrite (e.g. re-exporting into the same
 folder, or picking a folder used for a previous deck) -- `Image.save()`
 just clobbers a same-named file silently. `deckforge.cell_export.
-output_filenames(cell_count, has_back)` is a new small function pulling
-the `front_{i:03d}.png`/`back.png` naming convention out of
-`export_cells()`'s write loop into one place, so it can be reused by a
-caller that needs to *predict* filenames without duplicating (and
-risking drift from) the format string; `export_cells()` itself now calls
-it once up front rather than formatting `front_NNN.png` inline per cell.
-`deckforge_gui.export_state.existing_output_files(destination, plan)`
-is the pure pre-flight check built on top of it -- which of a plan's
-predicted filenames already exist in a given folder -- and
-`ExportWorkspace._confirm_overwrite_if_needed()` calls it right before
-dispatching the export worker (not at folder-choose time, since the
+output_filenames(cell_count, has_back, paired=False)` is a small function
+pulling the naming convention out of `export_cells()`'s write loop into
+one place, so it can be reused by a caller that needs to *predict*
+filenames without duplicating (and risking drift from) the format
+strings; `export_cells()` itself calls it once up front rather than
+formatting names inline per cell. `paired=True` switches it to the
+`NNN_front.png`/`NNN_back.png` convention (Phase 5) instead of
+`front_NNN.png` plus one trailing `back.png` -- `predicted_output_filenames()`
+passes `plan.has_paired_back` through automatically, so a caller never
+has to know which convention applies. `deckforge_gui.export_state.
+existing_output_files(destination, plan)` is the pure pre-flight check
+built on top of it -- which of a plan's predicted filenames already exist
+in a given folder -- and `ExportWorkspace._confirm_overwrite_if_needed()`
+calls it right before dispatching the export worker (not at folder-choose
+time, since the
 plan and the folder's contents can both still change before Export is
 actually clicked). A non-empty result shows a `QMessageBox` naming the
 count of files that would be overwritten, with **Cancel** as both the
@@ -1021,6 +1242,61 @@ and clears the pending close; and `QThread.wait()` is asserted to never
 be called on the worker from `closeEvent()` or the deferred path. Same
 real `PDFRenderer`/`QThread`/`export_cells()` pattern `TestExportReentry`
 established, no `pytest-qt` needed. See `docs/ALPHA_HARDENING_PLAN.md` §2.
+
+## Lessons from Multiple Back Modes
+
+Six phases (Select Card Pages through Export) added a third back mode --
+Paired Back Pages -- without changing how Front Only or Shared Back
+behave. What made that possible, worth carrying into future features:
+
+**Single-source-of-truth gating.** `find_cards_state.back_mode()` is the
+one and only place BackMode is derived from raw page-role counts; every
+downstream consumer (Calibrate, Review Cards, Export, the guidance
+panel) reads that value rather than re-deriving it locally. The one-page
+ambiguity fix (above) is the sharpest proof this paid for itself: fixing
+it at its single source required zero changes in `calibrate_workspace.py`
+or `review_workspace.py`.
+
+**Optional, default-preserving API evolution.** Every function that
+needed to become BackMode-aware (`review_ready()`, `export_ready()`,
+`build_export_plan()`, `calibrate_guidance_text()`,
+`guidance_panel._guidance_text()`) grew new parameters with defaults that
+reproduce prior behavior exactly when omitted, rather than changing an
+existing parameter's meaning or requiring every caller to update in
+lockstep. This is what let Phases 3-5 ship incrementally -- each phase's
+new parameters sat unused by not-yet-updated callers without breaking
+them, closed out later by whichever phase actually wired that caller
+through (the guidance panel fix above is the one place this was left
+dangling longer than intended, not a flaw in the pattern itself).
+
+**The `deckforge`/`deckforge_gui` layering boundary held under real
+pressure.** `cell_export.py` could have taken a `BackMode` parameter for
+convenience -- less code in the short term. It didn't, because
+`deckforge` (core) must never depend on `deckforge_gui` (a GUI-only
+concept); `shared_back`/`paired_back` as two independent optional shapes
+preserves that boundary at the one point in this feature it was
+genuinely tempting to cross.
+
+**Manual testing found what code review couldn't.** The one-page
+ambiguity and Card Inspection's discoverability gap were both invisible
+to unit tests and code review, because both are about a user's
+moment-to-moment experience, not logical correctness -- a test can
+confirm `back_mode()` returns the right enum value, not that a real
+person would ever think to look for "one Back page" as a special case,
+or would notice a magnifying-glass icon implying more than "zoom in."
+
+**Phased implementation kept each change reviewable.** Each phase had an
+explicit, narrow scope and an explicit "stop here, do not implement X
+yet" boundary, so every phase's diff stayed small enough to review and
+test in isolation, and every phase after the first built on a codebase
+that was already fully working for every mode that already existed.
+
+**Backward compatibility was a design constraint, not a test to pass
+afterward.** Every override defaults to the pre-existing behavior
+(Shared Back for a single Back page, no `paired_back` populated, no
+change to existing filenames) by construction, so "does this break an
+existing Front Only or Shared Back deck" was answered by the shape of
+the change itself, not by a separate compatibility pass at the end.
 
 ## Common Commands
 
@@ -1261,7 +1537,7 @@ CardLift/
 │   ├── exporter.py              # DeckExporter: orchestrates preview/export/overlay/inspect/contact-sheet
 │   ├── measure.py               # --measure: pixel coords → suggested profile patch (no rendering)
 │   ├── calibrate_ui.py          # --calibrate: interactive click-to-measure window
-│   ├── cell_export.py           # export_cells(): explicit ordered cell list → PNGs, no CardLayout/DeckProfile involved
+│   ├── cell_export.py           # export_cells(): explicit ordered cell list → PNGs, Shared or Paired back, no CardLayout/DeckProfile involved
 │   └── cli.py                   # argparse wiring — the only file that knows about CLI flags
 ├── src/deckforge_gui/            # PySide6 desktop app (Phase II)
 │   ├── app_state.py              # Pure navigation/state model — no PySide6 import, unit tested directly
@@ -1271,15 +1547,15 @@ CardLift/
 │   ├── sidebar.py                # Fixed-width workflow sidebar
 │   ├── guidance_panel.py         # Collapsible right-hand guidance panel
 │   ├── calibrate_toolbar.py      # Fit/Zoom/Pan toolbar shown above the Calibrate workspace
-│   ├── calibrate_state.py        # Pure CalibrateState/CalibrationTarget model -- two-corner-click geometry, in PDF points
-│   ├── calibrate_workspace.py    # Calibrate page (Cards/Shared Back): PDF canvas, click handling, zoom/pan, overlays
+│   ├── calibrate_state.py        # Pure CalibrateState/CalibrationTarget model -- two-corner-click geometry (incl. Paired Back's own full-grid target), in PDF points
+│   ├── calibrate_workspace.py    # Calibrate page (Cards/Shared Back/Paired Back): PDF canvas, click handling, zoom/pan, overlays
 │   ├── view_transform.py         # Ported ViewTransform + pure zoom/pan/fit math (from calibrate_ui.py), shared GUI infra
 │   ├── deck_workspace.py         # Deck page: drag-and-drop/click-to-browse PDF drop zone
-│   ├── find_cards_state.py       # Pure FindCardsState/PageRole/SharedBackStatus model -- per-page Front/Back roles
+│   ├── find_cards_state.py       # Pure FindCardsState/PageRole/BackMode/SharedBackStatus model -- per-page Front/Back roles, deck-level back mode
 │   ├── find_cards_workspace.py   # Select Card Pages workspace: PDF page-by-page preview + role toggle buttons
 │   ├── review_state.py           # Pure ReviewCard/ReviewCardsState model -- suggested-grid cards, include/exclude toggle
-│   ├── review_workspace.py       # Review Cards workspace: per-page card thumbnail grid, Shared Back preview, toggles
-│   ├── export_state.py           # Pure ExportPlan/export_ready() model -- built from Review Cards' approved cells
+│   ├── review_workspace.py       # Review Cards workspace: per-page card thumbnail grid, Shared/Paired Back preview, Card Inspection (incl. paired side-by-side), toggles
+│   ├── export_state.py           # Pure ExportPlan/export_ready() model -- built from Review Cards' approved cells, Shared or Paired back
 │   ├── export_workspace.py       # Export workspace: summary, destination folder picker, Export action, result message
 │   └── workspaces.py             # Central workspace per workflow step
 └── tests/                        # pytest suite, mirrors the src/deckforge module split
