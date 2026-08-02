@@ -1,6 +1,8 @@
 from collections import Counter
 from pathlib import Path
 
+import pytest
+
 from deckforge.cell_export import export_cells, output_filenames
 from deckforge.cropper import CardCropper
 from deckforge.pdf_renderer import PDFRenderer
@@ -57,6 +59,25 @@ class TestOutputFilenames:
                 renderer, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path, back=(BACK_PAGE, BACK_GEOMETRY),
             )
         assert [p.name for p in written] == output_filenames(len(cells), has_back=True)
+
+
+class TestOutputFilenamesPaired:
+    """The approved Paired Backs convention -- NNN_front.png/NNN_back.png
+    pairs, grouped by card number rather than has_back's single trailing
+    back.png -- see docs/design/MULTIPLE_BACK_MODES.md's "Export"
+    section."""
+
+    def test_paired_filenames(self) -> None:
+        assert output_filenames(2, has_back=False, paired=True) == [
+            "001_front.png", "001_back.png", "002_front.png", "002_back.png",
+        ]
+
+    def test_no_cells_paired(self) -> None:
+        assert output_filenames(0, has_back=False, paired=True) == []
+
+    def test_has_back_and_paired_are_mutually_exclusive(self) -> None:
+        with pytest.raises(AssertionError):
+            output_filenames(2, has_back=True, paired=True)
 
 
 class TestExportCellsOrderingAndNumbering:
@@ -137,6 +158,105 @@ class TestPageRenderCaching:
                 back=(BACK_PAGE, BACK_GEOMETRY),
             )
         assert Counter(counting.calls) == Counter({1: 1, 2: 1, 3: 1})
+
+
+class TestPairedBackExport:
+    """Paired Backs: one back page *per front cell*, cropped at that
+    cell's own (row, col) on a separate, independently-calibrated
+    geometry -- see cell_export.py's module docstring."""
+
+    def test_paired_filenames_and_count(self, tmp_path: Path) -> None:
+        cells = [(2, 0, 0), (2, 0, 1)]
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            written = export_cells(
+                renderer, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path,
+                paired_back=(BACK_GEOMETRY, [1, 3]),
+            )
+        assert [p.name for p in written] == [
+            "001_front.png", "001_back.png", "002_front.png", "002_back.png",
+        ]
+        assert all(p.exists() for p in written)
+
+    def test_each_pair_uses_its_own_resolved_back_page(self, tmp_path: Path) -> None:
+        # The two front cells are deliberately paired with *different*
+        # back pages (1 and 3) -- a bug that always used whichever back
+        # page resolved first for every card would produce identical
+        # 001_back.png/002_back.png content.
+        cells = [(2, 0, 0), (2, 0, 1)]
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            export_cells(
+                renderer, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path,
+                paired_back=(BACK_GEOMETRY, [1, 3]),
+            )
+
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            cropper = CardCropper(RENDER_SCALE)
+            expected_back_1 = cropper.crop_card(
+                renderer.render_page(1, RENDER_SCALE), BACK_GEOMETRY, _ZERO_TRIM, 0, 0,
+            )
+            expected_back_2 = cropper.crop_card(
+                renderer.render_page(3, RENDER_SCALE), BACK_GEOMETRY, _ZERO_TRIM, 0, 1,
+            )
+        assert _open(tmp_path / "001_back.png").tobytes() == expected_back_1.tobytes()
+        assert _open(tmp_path / "002_back.png").tobytes() == expected_back_2.tobytes()
+        assert expected_back_1.tobytes() != expected_back_2.tobytes()
+
+    def test_back_crop_reuses_the_front_cells_own_row_and_col(self, tmp_path: Path) -> None:
+        # A single cell at (row=0, col=1) -- proves the back crop uses
+        # *that* (row, col), not always (0, 0).
+        cells = [(2, 0, 1)]
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            export_cells(
+                renderer, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path,
+                paired_back=(BACK_GEOMETRY, [BACK_PAGE]),
+            )
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            cropper = CardCropper(RENDER_SCALE)
+            expected = cropper.crop_card(
+                renderer.render_page(BACK_PAGE, RENDER_SCALE), BACK_GEOMETRY, _ZERO_TRIM, 0, 1,
+            )
+        actual = _open(tmp_path / "001_back.png")
+        assert expected.tobytes() == actual.tobytes()
+
+    def test_empty_cells_with_paired_back(self, tmp_path: Path) -> None:
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            written = export_cells(
+                renderer, RENDER_SCALE, FRONT_GEOMETRY, [], tmp_path,
+                paired_back=(BACK_GEOMETRY, []),
+            )
+        assert written == []
+
+    def test_back_and_paired_back_are_mutually_exclusive(self, tmp_path: Path) -> None:
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            with pytest.raises(AssertionError):
+                export_cells(
+                    renderer, RENDER_SCALE, FRONT_GEOMETRY, [(2, 0, 0)], tmp_path,
+                    back=(BACK_PAGE, BACK_GEOMETRY),
+                    paired_back=(BACK_GEOMETRY, [BACK_PAGE]),
+                )
+
+    def test_paired_back_page_list_must_match_cells_length(self, tmp_path: Path) -> None:
+        with PDFRenderer(SAMPLE_PDF) as renderer:
+            with pytest.raises(AssertionError):
+                export_cells(
+                    renderer, RENDER_SCALE, FRONT_GEOMETRY, [(2, 0, 0), (2, 0, 1)], tmp_path,
+                    paired_back=(BACK_GEOMETRY, [BACK_PAGE]),  # only one entry for two cells
+                )
+
+
+class TestPairedBackPageCaching:
+    def test_each_distinct_front_and_back_page_rendered_at_most_once(self, tmp_path: Path) -> None:
+        # Both front cells share page 2; both are paired with the same
+        # back page (3) -- each of the two distinct pages must still be
+        # rendered exactly once.
+        cells = [(2, 0, 0), (2, 0, 1)]
+        with PDFRenderer(SAMPLE_PDF) as real:
+            counting = _CountingRenderer(real)
+            export_cells(
+                counting, RENDER_SCALE, FRONT_GEOMETRY, cells, tmp_path,
+                paired_back=(BACK_GEOMETRY, [BACK_PAGE, BACK_PAGE]),
+            )
+        assert Counter(counting.calls) == Counter({2: 1, 3: 1})
 
 
 class TestOutputDirectory:
