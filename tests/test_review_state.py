@@ -159,14 +159,32 @@ class TestReviewReady:
         # nothing to calibrate for an explicit "no Shared Back" deck.
         assert review_ready(complete_target(), incomplete_target(), SharedBackStatus.CONFIRMED_NONE) is True
 
-    def test_not_ready_when_paired(self) -> None:
-        # Paired Backs calibration isn't implemented yet -- shared_back_
-        # status() collapses to UNRESOLVED for 2+ BACK pages too, but this
-        # must block for the PAIRED reason, not be conflated with a
-        # genuinely-unresolved deck (see review_guidance_text()'s ordering).
+    def test_not_ready_when_paired_and_paired_back_target_missing(self) -> None:
         assert review_ready(
             complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, BackMode.PAIRED,
         ) is False
+
+    def test_not_ready_when_paired_and_paired_back_incomplete(self) -> None:
+        assert review_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, BackMode.PAIRED,
+            paired_back_target=incomplete_target(),
+        ) is False
+
+    def test_not_ready_when_paired_and_topology_mismatched(self) -> None:
+        assert review_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, BackMode.PAIRED,
+            paired_back_target=complete_target(), paired_topology_ok=False,
+        ) is False
+
+    def test_ready_when_paired_complete_and_topology_ok(self) -> None:
+        """Once Paired Back calibration is complete and Front/Back grid
+        topology matches, Review Cards must become reachable -- Paired
+        Backs calibration existing (Phase 3) is no longer a permanent
+        block, unlike the Phase 2 stopgap this replaces."""
+        assert review_ready(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, BackMode.PAIRED,
+            paired_back_target=complete_target(), paired_topology_ok=True,
+        ) is True
 
 
 class TestReviewGuidanceAndStatusText:
@@ -188,24 +206,62 @@ class TestReviewGuidanceAndStatusText:
         status = review_status_text(complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState())
         assert "Select Card Pages" in status
 
-    def test_blocked_when_paired_names_paired_backs_not_shared_back_or_undecided(self) -> None:
+    def test_blocked_when_paired_back_not_yet_calibrated(self) -> None:
         """PAIRED must be checked before the UNRESOLVED branch above --
         shared_back_status() collapses to UNRESOLVED for 2+ BACK pages too,
         which would otherwise wrongly claim the back decision hasn't been
-        made when it has (Paired Backs, just not yet calibratable)."""
+        made when it has (Paired Backs). Must not say "Shared Back" or
+        claim calibration is unsupported (the stale Phase 2 wording) --
+        Paired Backs just isn't calibrated yet, the same way Shared Back's
+        own "assigned but not calibrated" case reads."""
         headline, body = review_guidance_text(
             complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
             back_mode=BackMode.PAIRED,
         )
         assert "Shared Back" not in headline
         assert "hasn't been decided" not in headline
-        assert "Paired Backs" in headline
+        assert "isn't supported" not in body
+        assert "isn't available" not in body
+        assert headline == "Paired Back hasn't been calibrated yet."
+        assert "Calibrate" in body
         status = review_status_text(
             complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
             back_mode=BackMode.PAIRED,
         )
         assert "Shared Back" not in status
-        assert "Paired Backs" in status
+        assert "isn't supported" not in status
+        assert "Calibrate" in status
+
+    def test_blocked_when_paired_topology_mismatched(self) -> None:
+        headline, body = review_guidance_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(), paired_topology_ok=False,
+        )
+        assert headline == "Front and Back grids don't match."
+        assert "Calibrate" in body
+        status = review_status_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, ReviewCardsState(),
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(), paired_topology_ok=False,
+        )
+        assert "match" in status.lower()
+
+    def test_ready_when_paired_complete_and_topology_ok_shows_ordinary_check_your_cards(self) -> None:
+        """Once ready, Paired Backs falls through to the exact same
+        "Check your cards" text every other ready deck shows -- Review
+        Cards' own front-card display is unaffected; no special Paired
+        copy is needed for the success path."""
+        state = ReviewCardsState()
+        state.sync([ReviewCard(2, 0, 0)])
+        headline, body = review_guidance_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(), paired_topology_ok=True,
+        )
+        assert headline == "Check your cards."
+        status = review_status_text(
+            complete_target(), incomplete_target(), SharedBackStatus.UNRESOLVED, state,
+            back_mode=BackMode.PAIRED, paired_back_target=complete_target(), paired_topology_ok=True,
+        )
+        assert status == "1 of 1 card included."
 
     def test_blocked_when_assigned_but_back_not_yet_calibrated(self) -> None:
         headline, body = review_guidance_text(

@@ -5,9 +5,13 @@ One CalibrateWorkspace instance backs each step (see workspaces.py),
 sharing the same CalibrateState -- they differ only in which
 CalibrationTarget they read/write and where their page list comes from:
 Fronts is restricted to the Front Pages Select Card Pages assigned
-(find_cards_state), Back opens directly on the single page Select Card
-Pages assigned as the Shared Back (when back_mode() is SHARED) -- Calibrate
-never searches for it.
+(find_cards_state). The Back step's page list depends on back_mode():
+SHARED opens directly on the single page Select Card Pages assigned as
+the Shared Back; PAIRED (2+ BACK pages) opens on the full marked BACK-page
+set, exactly like Fronts, letting the user pick any one of them as the
+representative page for an independent full-grid calibration
+(calibrate_state.CalibrateState.paired_back) -- Calibrate never searches
+for either, only measures whichever page is current.
 
 The Back step must show one of four distinct states, keyed off
 find_cards_state.BackMode/SharedBackStatus, never conflating any of them:
@@ -17,10 +21,12 @@ calibrate, treated as already complete), UNRESOLVED (the question hasn't
 been answered in Select Card Pages yet -- Calibrate must not guess, must
 not offer Continue, and must point the user back to Select Card Pages
 rather than silently behaving like CONFIRMED_NONE), or PAIRED (2+ BACK
-pages -- a valid, already-made decision that this milestone doesn't yet
-know how to calibrate; see _update_continue_footer(), which must not
-conflate this with UNRESOLVED just because shared_back_status() also
-returns UNRESOLVED for it).
+pages -- full-grid calibration via current_target()'s mode-aware
+resolution to paired_back, gated additionally on Front/Back page counts
+staying balanced and on Front/Back grid topology matching; see
+_update_paired_continue_footer(), which must not conflate any of this
+with UNRESOLVED just because shared_back_status() also returns
+UNRESOLVED for 2+ BACK pages).
 
 Reuses the CLI's calibration math and click semantics (calibrate_state.py
 -- record_click/normalize_box/infer_second_cell, all ported/adapted from
@@ -60,6 +66,7 @@ from .calibrate_state import (
     calibrate_guidance_text,
     calibrate_status_text,
     parse_human_cell_label,
+    paired_topology_mismatch,
     predicted_neighbor_box,
     suggested_grid,
     suggested_second_card_offset,
@@ -146,6 +153,22 @@ QLabel {{
     padding: 10px 14px;
 }}
 """
+
+
+def resolve_back_target(calibrate_state: CalibrateState, find_cards_state: FindCardsState) -> CalibrationTarget:
+    """The Back step's active CalibrationTarget for the deck's current
+    back_mode() -- Paired Backs' full-grid `paired_back`, or Shared Back's
+    single-card `back` for every other mode. The one place this decision
+    is made (CalibrateState.target_for() stays pure and
+    FindCardsState-independent, per docs/design/MULTIPLE_BACK_MODES.md's
+    Phase 3 approved decisions); CalibrateWorkspace.current_target() calls
+    this directly, and any other reader that needs the same resolution
+    without a live PDFRenderer (GuidancePanel has no workspace reference)
+    can call it too, rather than re-deriving the back_mode() branch
+    itself."""
+    if find_cards_state.back_mode() is BackMode.PAIRED:
+        return calibrate_state.paired_back
+    return calibrate_state.target_for(WorkflowStep.CALIBRATE_BACK)
 
 
 class _CalibrateCanvas(QWidget):
@@ -481,6 +504,15 @@ class CalibrateWorkspace(QWidget):
         return self._view
 
     def current_target(self) -> CalibrationTarget:
+        """The CalibrationTarget this workspace instance reads and writes.
+        Mode-aware for the Back step via resolve_back_target() (module-
+        level, reused by GuidancePanel/MainWindow too, since they need the
+        same resolution without a live workspace instance). Every reader
+        below (painting, page navigation, click handling, Continue gating)
+        goes through this one method, so Paired Backs never has to be
+        special-cased at each call site."""
+        if self.target_step is WorkflowStep.CALIBRATE_BACK:
+            return resolve_back_target(self.calibrate_state, self.find_cards_state)
         return self.calibrate_state.target_for(self.target_step)
 
     # -- page set/navigation --------------------------------------------
@@ -514,6 +546,11 @@ class CalibrateWorkspace(QWidget):
 
     def _navigable_pages(self) -> list[int]:
         if self.target_step is WorkflowStep.CALIBRATE_BACK:
+            if self.find_cards_state.back_mode() is BackMode.PAIRED:
+                # Paired Backs works like Fronts: the whole marked BACK-page
+                # set is navigable, and the user picks any one of them as
+                # the representative page to calibrate.
+                return self.find_cards_state.back_pages()
             back_page = self.find_cards_state.back_page()
             return [back_page] if back_page is not None else []
         return self.find_cards_state.front_pages()
@@ -573,8 +610,8 @@ class CalibrateWorkspace(QWidget):
 
         x_pt, y_pt = img_x / self.render_scale, img_y / self.render_scale
         hint_col_offset, hint_row_offset = self._hint_offsets_for_conflict_check()
-        outcome = self.calibrate_state.record_click(
-            self.target_step, x_pt, y_pt,
+        outcome = self.calibrate_state.record_click_on(
+            self.current_target(), x_pt, y_pt,
             hint_col_offset=hint_col_offset, hint_row_offset=hint_row_offset,
         )
 
@@ -620,21 +657,21 @@ class CalibrateWorkspace(QWidget):
         while True:
             text, ok = QInputDialog.getText(self, "Which card is this?", prompt)
             if not ok:
-                self.calibrate_state.cancel_ambiguous_second_card(self.target_step)
+                self.calibrate_state.cancel_ambiguous_second_card_on(self.current_target())
                 return
             cell = parse_human_cell_label(text.strip())
             if cell is not None:
                 row, col = cell
-                self.calibrate_state.add_measurement_with_cell(self.target_step, row, col)
+                self.calibrate_state.add_measurement_with_cell_on(self.current_target(), row, col)
                 return
             # Invalid label -- loop and ask again, same as the CLI.
 
     def _on_finish_one_card(self) -> None:
-        self.calibrate_state.finish_with_one_card(self.target_step)
+        self.calibrate_state.finish_with_one_card_on(self.current_target())
         self._after_state_change()
 
     def _on_start_over(self) -> None:
-        self.calibrate_state.start_over(self.target_step)
+        self.calibrate_state.start_over_on(self.current_target())
         self._after_state_change()
 
     def _after_state_change(self) -> None:
@@ -715,35 +752,42 @@ class CalibrateWorkspace(QWidget):
             self._renderer.close()
             self._renderer = None
 
-    def grid_page_size(self) -> Optional[tuple[float, float]]:
-        """Point-size of the calibrated Fronts page, for the completion
-        text's informational grid-size guess -- None for Shared Back (no
-        grid concept applies to a single card) or before a page has been
-        calibrated. Used by this workspace's own caption/banner and by
-        MainWindow's status-bar text, so the same lookup backs every
-        surface that mentions it."""
-        if self.target_step is not WorkflowStep.CALIBRATE_CARDS:
-            return None
-        target = self.current_target()
-        if self._renderer is None or target.calibrated_page_num is None:
+    def _page_size_for(self, page_num: Optional[int]) -> Optional[tuple[float, float]]:
+        """Point-size of an arbitrary page number in this workspace's open
+        PDF, or None if there's no renderer yet, no page number, or the
+        page fails to render. The one shared lookup grid_page_size() and
+        _current_page_size() below both build on, rather than each
+        duplicating the same renderer-guard/try-except."""
+        if self._renderer is None or page_num is None:
             return None
         try:
-            return self._renderer.page_size(target.calibrated_page_num)
+            return self._renderer.page_size(page_num)
         except PDFRenderError:
             return None
+
+    def grid_page_size(self) -> Optional[tuple[float, float]]:
+        """Point-size of the calibrated page whose geometry has a grid
+        concept worth reporting -- Fronts' representative page always;
+        the Paired Backs representative page too, once back_mode() is
+        PAIRED (full-grid, same as Fronts); still None for Shared Back (a
+        single representative card has no grid concept) or before a page
+        has been calibrated. Used by this workspace's own caption/banner
+        and by MainWindow's status-bar text, so the same lookup backs
+        every surface that mentions it."""
+        if self.target_step is WorkflowStep.CALIBRATE_CARDS:
+            target = self.calibrate_state.cards
+        elif self._is_back_step and self.find_cards_state.back_mode() is BackMode.PAIRED:
+            target = self.calibrate_state.paired_back
+        else:
+            return None
+        return self._page_size_for(target.calibrated_page_num)
 
     def _current_page_size(self) -> Optional[tuple[float, float]]:
         """Point-size of whatever page is currently being viewed, unlike
         grid_page_size() (which only resolves once a page is calibrated).
         Needed to estimate a good second-card hint before calibration
         completes -- see suggested_second_card_offsets()."""
-        target = self.current_target()
-        if self._renderer is None or target.page_num is None:
-            return None
-        try:
-            return self._renderer.page_size(target.page_num)
-        except PDFRenderError:
-            return None
+        return self._page_size_for(self.current_target().page_num)
 
     def suggested_second_card_offsets(
         self, first_box: tuple[float, float, float, float], card_width: float, card_height: float,
@@ -769,6 +813,28 @@ class CalibrateWorkspace(QWidget):
             return ""
         return f" Looks like a {rows}×{cols} grid per page."
 
+    def _paired_topology_mismatch(self) -> Optional[tuple[tuple[int, int], tuple[int, int]]]:
+        """((front_rows, front_cols), (back_rows, back_cols)) once both
+        Fronts and Paired Back are calibrated and their suggested grid
+        shapes differ -- None while either is incomplete, either page's
+        size can't be read, or the shapes already match. Only meaningful
+        (and only ever called) on the Back step's own workspace instance,
+        but reads calibrate_state.cards directly rather than going through
+        self.current_target() -- cards.geometry belongs to the Fronts
+        target regardless of which workspace instance asks. This is the
+        one place a PDFRenderer is available to resolve both pages' point-
+        sizes, so the actual (rows, cols) comparison itself is the pure
+        calibrate_state.paired_topology_mismatch()."""
+        cards_target = self.calibrate_state.cards
+        paired_target = self.calibrate_state.paired_back
+        if not cards_target.is_complete or not paired_target.is_complete:
+            return None
+        front_size = self._page_size_for(cards_target.calibrated_page_num)
+        back_size = self._page_size_for(paired_target.calibrated_page_num)
+        if front_size is None or back_size is None:
+            return None
+        return paired_topology_mismatch(cards_target.geometry, front_size, paired_target.geometry, back_size)
+
     def _update_controls(self) -> None:
         navigable = self._navigable_pages()
         target = self.current_target()
@@ -786,17 +852,22 @@ class CalibrateWorkspace(QWidget):
         front_page_count = self.find_cards_state.front_page_count()
         shared_back_status = self.find_cards_state.shared_back_status()
         back_mode = self.find_cards_state.back_mode()
+        back_page_count = len(self.find_cards_state.back_pages())
 
         if not navigable:
-            if self._is_back_step and back_mode is BackMode.PAIRED:
-                self._page_label.setText("Paired Backs calibration not yet available")
-            elif self._is_back_step and shared_back_status is SharedBackStatus.UNRESOLVED:
+            # Reachable for the Back step only when back_mode() is NONE --
+            # Paired Backs (2+ pages) and Shared Back (an assigned page)
+            # both always yield a non-empty navigable list (see
+            # _navigable_pages()), so only the UNRESOLVED/CONFIRMED_NONE
+            # split matters here.
+            if self._is_back_step and shared_back_status is SharedBackStatus.UNRESOLVED:
                 self._page_label.setText("Back not yet decided")
             else:
                 self._page_label.setText("No pages available")
             if self._is_back_step:
                 _, body = calibrate_guidance_text(
                     self.target_step, target, front_page_count, shared_back_status, back_mode=back_mode,
+                    back_page_count=back_page_count,
                 )
             else:
                 body = "Go back to Select Card Pages and mark at least one Front Page."
@@ -806,6 +877,7 @@ class CalibrateWorkspace(QWidget):
         self._page_label.setText(self._page_label_text(target, index, navigable))
         _, body = calibrate_guidance_text(
             self.target_step, target, front_page_count, shared_back_status, self.grid_page_size(), back_mode,
+            back_page_count,
         )
         self._status_label.setText(body)
 
@@ -820,23 +892,12 @@ class CalibrateWorkspace(QWidget):
 
             if back_mode is BackMode.PAIRED:
                 # shared_back_status collapses to UNRESOLVED for 2+ BACK
-                # pages, so this must be checked first -- otherwise a Paired
-                # deck falls into the UNRESOLVED branch below and is told
-                # (wrongly) that the back decision hasn't been made, with a
-                # "Back to Select Card Pages" button that would send the user
-                # to redo a decision they already made correctly. Continue
-                # stays disabled here exactly as it already was (Paired
-                # calibration isn't implemented yet); only the wording and
-                # that misleading button change.
-                self._back_to_select_btn.setVisible(False)
-                self._continue_btn.setEnabled(False)
-                self._completion_banner.setVisible(True)
-                self._completion_banner.setText(self._banner_html(
-                    "Paired Backs calibration isn't available yet",
-                    "This deck uses Paired Backs. Calibrating individual back "
-                    "pages isn't supported in this version yet.",
-                    complete=False,
-                ))
+                # pages, so this branch must come first -- otherwise a
+                # Paired deck falls into the UNRESOLVED branch below and is
+                # told (wrongly) that the back decision hasn't been made,
+                # with a "Back to Select Card Pages" button that would send
+                # the user to redo a decision they already made correctly.
+                self._update_paired_continue_footer(target)
                 return
 
             self._back_to_select_btn.setVisible(status is SharedBackStatus.UNRESOLVED)
@@ -889,6 +950,76 @@ class CalibrateWorkspace(QWidget):
                 "Browsing other pages below is optional — continue to Back whenever you're ready.",
             ))
 
+    def _update_paired_continue_footer(self, target: CalibrationTarget) -> None:
+        """The Back step's Continue/banner logic once back_mode() is
+        PAIRED -- `target` is already self.current_target()'s resolution,
+        i.e. calibrate_state.paired_back, passed through by
+        _update_continue_footer() rather than re-fetched here. Three
+        things must all hold before Continue enables, checked in the order
+        a user would actually need to fix them:
+
+        1. Front/Back page counts still balanced (paired_page_counts_
+           balanced()) -- Select Card Pages already blocks reaching here
+           unbalanced, but AppState.is_reached's one-way ratchet lets the
+           sidebar jump straight back into Calibrate after the user
+           changes page counts there without revisiting Continue (the same
+           class of gap DEVELOPER.md's "Select Card Pages redesign"/"Alpha
+           Polish" sections already document elsewhere in this app), so
+           this is checked live rather than trusted from Select Card
+           Pages' own gate.
+        2. The Paired Back target itself is complete -- the actual
+           calibration this method exists to gate.
+        3. Front and Paired Back suggest the same grid topology
+           (_paired_topology_mismatch()) -- validated only once both are
+           complete, since comparing an incomplete geometry means nothing.
+
+        Not implemented here (explicitly deferred, per docs/design/
+        MULTIPLE_BACK_MODES.md's Phase 3 scope): per-card pairing UI,
+        mirroring/rotation, or any topology transformation -- a mismatch
+        blocks with an explanation, it is never silently reconciled."""
+        if not self.find_cards_state.paired_page_counts_balanced():
+            self._back_to_select_btn.setVisible(True)
+            self._continue_btn.setEnabled(False)
+            self._completion_banner.setVisible(True)
+            self._completion_banner.setText(self._banner_html(
+                "Front/Back page counts don't match",
+                "Go back to Select Card Pages — Paired Backs needs the same "
+                "number of Front and Back pages.",
+                complete=False,
+            ))
+            return
+
+        self._back_to_select_btn.setVisible(False)
+        complete = target.is_complete
+        mismatch = self._paired_topology_mismatch() if complete else None
+
+        if complete and mismatch is not None:
+            front_shape, back_shape = mismatch
+            self._continue_btn.setEnabled(False)
+            self._completion_banner.setVisible(True)
+            self._completion_banner.setText(self._banner_html(
+                "Front and Back grids don't match",
+                f"Front pages suggest a {front_shape[0]}×{front_shape[1]} "
+                f"grid; Back pages suggest a {back_shape[0]}×{back_shape[1]} "
+                "grid. Paired Backs needs matching rows and columns — click "
+                "Start Over below and recheck your Back calibration.",
+                complete=False,
+            ))
+            return
+
+        self._continue_btn.setEnabled(complete)
+        self._completion_banner.setVisible(complete)
+        if complete:
+            back_page_count = len(self.find_cards_state.back_pages())
+            back_noun = "page" if back_page_count == 1 else "pages"
+            self._completion_banner.setText(self._banner_html(
+                "Paired Backs calibration complete",
+                f"Applied to all {back_page_count} Back {back_noun}."
+                f"{self._grid_note(target)}"
+                f"{ungauged_axis_warning(target, self.grid_page_size())} "
+                "Continue whenever you're ready.",
+            ))
+
     @staticmethod
     def _banner_html(title: str, body: str, *, complete: bool = True) -> str:
         prefix = "✓ " if complete else ""
@@ -904,17 +1035,24 @@ class CalibrateWorkspace(QWidget):
 
     def _page_label_text(self, target: CalibrationTarget, index: int, navigable: list[int]) -> str:
         """Grounds the reader in the original PDF's page numbers first --
-        the ones on their mental model of the document -- with the
-        front-page-relative position as a secondary, lighter-weight line,
-        rather than replacing PDF numbering with a filtered sequence (see
-        DEVELOPER.md "Calibrate milestone")."""
+        the ones on their mental model of the document -- with a
+        secondary, lighter-weight line giving position within the
+        navigable set, rather than replacing PDF numbering with a filtered
+        sequence (see DEVELOPER.md "Calibrate milestone"). Fronts always
+        gets this secondary line; Shared Back never does (navigating a
+        single page has no "N of M" to report); Paired Backs gets it too,
+        once there is a real multi-page set to navigate, for the same
+        reason Fronts does."""
         pdf_line = f"PDF page {target.page_num} of {self._page_count}"
-        if self.target_step is not WorkflowStep.CALIBRATE_CARDS:
+        if self.target_step is WorkflowStep.CALIBRATE_CARDS:
+            secondary_line = f"Front page {index + 1} of {len(navigable)}"
+        elif self._is_back_step and self.find_cards_state.back_mode() is BackMode.PAIRED:
+            secondary_line = f"Back page {index + 1} of {len(navigable)}"
+        else:
             return pdf_line
-        front_line = f"Front page {index + 1} of {len(navigable)}"
         return (
             '<div style="text-align:center;">'
             f'<div style="color:{TEXT_HEADING}; font-weight:600; font-size:{FONT_BODY_SM}px;">{pdf_line}</div>'
-            f'<div style="color:{TEXT_CAPTION_MUTED}; font-weight:400; font-size:{FONT_CAPTION}px;">{front_line}</div>'
+            f'<div style="color:{TEXT_CAPTION_MUTED}; font-weight:400; font-size:{FONT_CAPTION}px;">{secondary_line}</div>'
             "</div>"
         )

@@ -30,7 +30,7 @@ is ever treated as final without a pass through this state.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 from deckforge.geometry import iter_grid_positions
 
@@ -115,26 +115,37 @@ def review_ready(
     back_target: CalibrationTarget,
     shared_back_status: SharedBackStatus,
     back_mode: BackMode = BackMode.SHARED,
+    paired_back_target: Optional[CalibrationTarget] = None,
+    paired_topology_ok: bool = True,
 ) -> bool:
     """Whether Review Cards has enough from Calibrate to show anything.
     False means: Fronts hasn't been calibrated yet; the back-page question
     is still unresolved; a Shared Back page IS assigned but hasn't actually
-    been calibrated yet; or the deck is Paired Backs, which this milestone
-    doesn't yet know how to calibrate (see calibrate_workspace.py's
-    PAIRED branch -- Continue is disabled there for the same reason, so
-    Review Cards staying unreachable here isn't a new restriction, just the
-    same one reached from a different entry point). The unresolved/
-    assigned-but-uncalibrated cases are reachable even though Calibrate's
-    own Continue is gated on them, because AppState.is_reached lets the
-    sidebar route straight to Review Cards -- and MainWindow re-checks
-    back_is_stale() on Review Cards' own entry (the Shared Back page could
-    have been reassigned to a different page since it was last calibrated,
-    resetting it back to incomplete while shared_back_status stays
-    ASSIGNED)."""
+    been calibrated yet; or (Paired Backs) the Paired Back target isn't
+    complete yet, or Front/Back grid topology doesn't match.
+
+    `paired_back_target`/`paired_topology_ok` are only meaningful for
+    PAIRED. `paired_topology_ok` defaults to True because computing the
+    real comparison needs both pages' point-sizes, which needs an open
+    PDFRenderer -- only ReviewWorkspace has one (see its
+    _paired_topology_ok()); GuidancePanel and MainWindow's status bar do
+    not, the same already-accepted, narrowly-scoped gap DEVELOPER.md
+    documents for export_state.review_snapshot_is_current(). Review Cards
+    currently shows front cards only regardless of BackMode -- Paired
+    Backs' per-card pairing display is explicitly deferred to a later
+    milestone; this function only decides whether that existing front-card
+    grid is reachable at all.
+
+    The unresolved/assigned-but-uncalibrated cases are reachable even
+    though Calibrate's own Continue is gated on them, because
+    AppState.is_reached lets the sidebar route straight to Review Cards --
+    and MainWindow re-checks back_is_stale()/paired_back_is_stale() on
+    Review Cards' own entry (the relevant Back page could have been
+    reassigned since it was last calibrated)."""
     if not cards_target.is_complete:
         return False
     if back_mode is BackMode.PAIRED:
-        return False
+        return paired_back_target is not None and paired_back_target.is_complete and paired_topology_ok
     if shared_back_status is SharedBackStatus.UNRESOLVED:
         return False
     if shared_back_status is SharedBackStatus.ASSIGNED and not back_target.is_complete:
@@ -148,6 +159,8 @@ def review_guidance_text(
     shared_back_status: SharedBackStatus,
     review_state: ReviewCardsState,
     back_mode: BackMode = BackMode.SHARED,
+    paired_back_target: Optional[CalibrationTarget] = None,
+    paired_topology_ok: bool = True,
 ) -> tuple[str, str]:
     if not cards_target.is_complete:
         return (
@@ -157,14 +170,24 @@ def review_guidance_text(
     if back_mode is BackMode.PAIRED:
         # Must be checked before the UNRESOLVED branch below -- shared_back_
         # status() collapses to UNRESOLVED for 2+ BACK pages too, and this
-        # deck's back decision was already made (Paired Backs), just not
-        # yet calibratable.
-        return (
-            "Paired Backs calibration isn't available yet.",
-            "This deck uses Paired Backs. Calibrating individual back pages "
-            "isn't supported in this version yet.",
-        )
-    if shared_back_status is SharedBackStatus.UNRESOLVED:
+        # deck's back decision was already made (Paired Backs).
+        if paired_back_target is None or not paired_back_target.is_complete:
+            return (
+                "Paired Back hasn't been calibrated yet.",
+                "Go back to Calibrate and measure a representative Back "
+                "page before reviewing cards.",
+            )
+        if not paired_topology_ok:
+            return (
+                "Front and Back grids don't match.",
+                "Go back to Calibrate and recheck your Back calibration — "
+                "Paired Backs needs matching rows and columns between "
+                "Front and Back pages.",
+            )
+        # Ready -- falls through to the ordinary "Check your cards" text
+        # below, same as every other ready deck. Review Cards shows front
+        # cards only for now; per-card back pairing is a later milestone.
+    elif shared_back_status is SharedBackStatus.UNRESOLVED:
         return (
             "Back hasn't been decided yet.",
             "Go back to Select Card Pages and either choose a Back "
@@ -202,12 +225,17 @@ def review_status_text(
     shared_back_status: SharedBackStatus,
     review_state: ReviewCardsState,
     back_mode: BackMode = BackMode.SHARED,
+    paired_back_target: Optional[CalibrationTarget] = None,
+    paired_topology_ok: bool = True,
 ) -> str:
     if not cards_target.is_complete:
         return "Fronts hasn't been calibrated yet — go back to Calibrate."
     if back_mode is BackMode.PAIRED:
-        return "Paired Backs calibration isn't available yet — this version doesn't support it."
-    if shared_back_status is SharedBackStatus.UNRESOLVED:
+        if paired_back_target is None or not paired_back_target.is_complete:
+            return "Paired Back hasn't been calibrated yet — go back to Calibrate."
+        if not paired_topology_ok:
+            return "Front and Back grids don't match — recheck your Back calibration."
+    elif shared_back_status is SharedBackStatus.UNRESOLVED:
         return "Back hasn't been decided yet — go back to Select Card Pages."
     if shared_back_status is SharedBackStatus.ASSIGNED and not back_target.is_complete:
         return "Shared Back hasn't been calibrated yet — go back to Calibrate."

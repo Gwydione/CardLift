@@ -17,19 +17,37 @@ a clicked (x, y) point per page, which implied a click's *location* on the
 page mattered -- it never did. The state that matters is purely "what is
 this whole page," so a page either has a role or it doesn't.
 
-BACK ROLE: ANY NUMBER OF PAGES, ONE DERIVED MODE
---------------------------------------------------
+BACK ROLE: ANY NUMBER OF PAGES, MOSTLY-DERIVED MODE
+------------------------------------------------------
 The BACK role is symmetric with FRONT -- any number of pages may hold it
-simultaneously. How many currently do determines the deck's BackMode (see
-back_mode()): zero means Front Only (pending an explicit "no back"
-confirmation -- see below), exactly one means Shared Back (today's
-original behavior, unchanged), and two or more means Paired Back Pages,
-where each BACK-role page pairs positionally with a FRONT-role page (see
-paired_back_page_for()). Earlier revisions of this module capped BACK at
-a single page, evicting whichever page held it before -- that cap is gone
-now that Paired Back Pages needs several BACK pages at once, but nothing
-about the zero/one-page behavior below changed: assigning a lone BACK
-page still behaves exactly as it always has.
+simultaneously. How many currently do mostly determines the deck's
+BackMode (see back_mode()): zero means Front Only (pending an explicit
+"no back" confirmation -- see below), and two or more means Paired Back
+Pages, where each BACK-role page pairs positionally with a FRONT-role page
+(see paired_back_page_for()). Earlier revisions of this module capped BACK
+at a single page, evicting whichever page held it before -- that cap is
+gone now that Paired Back Pages needs several BACK pages at once, but
+nothing about the zero-page behavior below changed.
+
+EXACTLY ONE BACK PAGE IS GENUINELY AMBIGUOUS
+------------------------------------------------
+Unlike zero or 2+, a count of exactly one BACK page cannot, by itself,
+tell CardLift which mode the user means: one marked page could be a
+Shared Back (a single design applied to every Front card), or it could be
+a one-page Paired Backs deck -- exactly one Front sheet paired with
+exactly one Back sheet, each internally a full grid of unique cards. Page
+count alone cannot distinguish these, so `_single_back_page_is_paired` is
+an explicit override consulted only in this one case (see back_mode()).
+It defaults to False (Shared Back), preserving every existing single-
+back-page deck's behavior exactly -- the override exists purely so a user
+can opt into the Paired reading when that's what they actually have.
+set_role()/clear_role() reset it the instant the BACK-page count moves
+away from exactly one, the same "a new fact supersedes an earlier
+explicit answer" rule already applied to back_confirmed_none below --
+letting a stale override silently reappear once the count returns to one
+later would be its own bug, the same class DEVELOPER.md's "Select Card
+Pages redesign"/"Alpha Polish" sections already document being fixed
+elsewhere in this app.
 
 Because "no shared back" is a valid Deck state that must be distinguished
 from "haven't decided yet" (CORE_CONCEPTS.md), that answer is tracked
@@ -85,10 +103,15 @@ class SharedBackStatus(Enum):
 
 class BackMode(Enum):
     """Which of CardLift's three deck-level back configurations the
-    current page markings represent, derived purely from how many pages
-    currently hold the BACK role (see FindCardsState.back_mode()) --
-    never stored independently, so it can't drift out of sync with the
-    page roles it's computed from.
+    current page markings represent -- mostly derived from how many pages
+    currently hold the BACK role (see FindCardsState.back_mode()), except
+    at exactly one page, where count alone is genuinely ambiguous (see
+    this module's docstring, "EXACTLY ONE BACK PAGE IS GENUINELY
+    AMBIGUOUS") and back_mode() also consults the explicit
+    _single_back_page_is_paired override. Still never stored
+    independently as a BackMode value itself, so it can't drift out of
+    sync with the page roles (and, for the one-page case, the override
+    flag) it's computed from.
 
     Deliberately independent of SharedBackStatus's CONFIRMED_NONE/
     UNRESOLVED distinction: NONE covers both "confirmed no back" and "not
@@ -106,6 +129,13 @@ class FindCardsState:
     continue_attempted: bool = False
     back_confirmed_none: bool = False
     _roles: dict[int, PageRole] = field(default_factory=dict)
+    # Explicit override for the one case back_mode() cannot infer from
+    # page count alone -- see this module's docstring, "EXACTLY ONE BACK
+    # PAGE IS GENUINELY AMBIGUOUS". Only ever consulted when exactly one
+    # page holds the BACK role; set_role()/clear_role() reset it back to
+    # False (Shared Back, the default) the instant that count changes in
+    # either direction, via _sync_single_back_page_intent().
+    _single_back_page_is_paired: bool = False
 
     # -- role assignment ---------------------------------------------------
 
@@ -114,15 +144,33 @@ class FindCardsState:
         already had. BACK is symmetric with FRONT -- any number of pages
         may hold it simultaneously, so assigning it to a new page no
         longer evicts other BACK-role pages (see this module's docstring,
-        "BACK ROLE: ANY NUMBER OF PAGES, ONE DERIVED MODE"). Still clears
-        back_confirmed_none on a BACK assignment -- a page picked as a
-        back supersedes an earlier "no shared back" answer."""
+        "BACK ROLE: ANY NUMBER OF PAGES, MOSTLY-DERIVED MODE"). Still
+        clears back_confirmed_none on a BACK assignment -- a page picked
+        as a back supersedes an earlier "no shared back" answer. Also
+        resyncs the single-back-page override (see
+        _sync_single_back_page_intent()), since any role change can move
+        the BACK-page count into or out of the one-page ambiguous case."""
         if role is PageRole.BACK:
             self.back_confirmed_none = False
         self._roles[page_num] = role
+        self._sync_single_back_page_intent()
 
     def clear_role(self, page_num: int) -> None:
         self._roles.pop(page_num, None)
+        self._sync_single_back_page_intent()
+
+    def _sync_single_back_page_intent(self) -> None:
+        """The single-back-page Paired override only means anything while
+        exactly one page holds the BACK role -- once a role change moves
+        the count away from exactly one (in either direction), the
+        override is stale and must reset to its default (Shared Back),
+        the same "a new fact supersedes an earlier explicit answer" rule
+        already applied to back_confirmed_none in set_role(). Without
+        this, marking a second Back page then later removing it back down
+        to one page could silently resurrect a Paired override the user
+        never re-confirmed for that specific configuration."""
+        if len(self.back_pages()) != 1:
+            self._single_back_page_is_paired = False
 
     def role_for_page(self, page_num: int) -> PageRole | None:
         return self._roles.get(page_num)
@@ -157,30 +205,57 @@ class FindCardsState:
         return sorted(p for p, r in self._roles.items() if r is PageRole.BACK)
 
     def back_page(self) -> int | None:
-        """The single Shared Back page, when back_mode() is SHARED
-        (exactly one page holds the BACK role). Returns None both when no
-        page holds it and when two or more do (Paired Back Pages) --
-        callers wanting the full set regardless of mode should use
-        back_pages() instead. Unchanged from the original single-back-page
-        behavior for every case that behavior ever covered."""
-        pages = self.back_pages()
-        return pages[0] if len(pages) == 1 else None
+        """The single Shared Back page, when back_mode() is SHARED.
+        Returns None both when no page holds the BACK role and when
+        back_mode() is PAIRED -- including the one-page Paired case (see
+        this module's docstring, "EXACTLY ONE BACK PAGE IS GENUINELY
+        AMBIGUOUS"), where exactly one page holds BACK but the explicit
+        override means it is not a Shared Back. Derives from back_mode()
+        rather than raw page count so the two can never disagree -- a
+        one-page Paired deck must never also appear to have a Shared
+        Back. Callers wanting the full set regardless of mode should use
+        back_pages() instead."""
+        if self.back_mode() is not BackMode.SHARED:
+            return None
+        return self.back_pages()[0]
 
     # -- the Back Mode decision ----------------------------------------------
 
     def back_mode(self) -> BackMode:
-        """The deck's back-page configuration, purely a function of how
-        many pages currently hold the BACK role -- see BackMode. Zero
-        pages yields NONE regardless of back_confirmed_none; callers
-        needing the confirmed/unresolved distinction for that case use
-        shared_back_status() instead, which this method leaves
-        untouched."""
+        """The deck's back-page configuration. Zero pages yields NONE
+        regardless of back_confirmed_none (callers needing the confirmed/
+        unresolved distinction for that case use shared_back_status()
+        instead); two or more pages always yields PAIRED. Exactly one page
+        is the one case count alone cannot resolve (see this module's
+        docstring, "EXACTLY ONE BACK PAGE IS GENUINELY AMBIGUOUS") --
+        _single_back_page_is_paired is the explicit override consulted
+        only there, defaulting to SHARED so every existing single-back-
+        page deck keeps behaving exactly as before unless the user
+        explicitly opts into the Paired reading."""
         count = len(self.back_pages())
         if count == 0:
             return BackMode.NONE
         if count == 1:
-            return BackMode.SHARED
+            return BackMode.PAIRED if self._single_back_page_is_paired else BackMode.SHARED
         return BackMode.PAIRED
+
+    def mark_single_back_page_as_paired(self) -> None:
+        """Explicit override for the one-page ambiguous case: this deck's
+        single marked BACK page is a one-page Paired Backs deck (a full
+        grid of unique cards paired with a single Front sheet), not a
+        Shared Back. No-op unless exactly one page currently holds the
+        BACK role -- the GUI only ever offers this action in that state
+        (see FindCardsWorkspace._refresh_deck_summary()), but the guard
+        holds regardless of caller discipline, the same defensive pattern
+        confirm_no_shared_back() already uses."""
+        if len(self.back_pages()) == 1:
+            self._single_back_page_is_paired = True
+
+    def mark_single_back_page_as_shared(self) -> None:
+        """Reverses mark_single_back_page_as_paired() -- also this
+        state's default, so this mainly lets the user flip back after
+        having chosen Paired for the one-page case."""
+        self._single_back_page_is_paired = False
 
     def paired_back_page_for(self, front_page_num: int) -> int | None:
         """The back page paired with `front_page_num` under Paired Back
@@ -300,6 +375,7 @@ class FindCardsState:
     def clear_all(self) -> None:
         self._roles.clear()
         self.back_confirmed_none = False
+        self._single_back_page_is_paired = False
         self.continue_attempted = False
         self.current_page = 1
         self.furthest_page_viewed = 1
@@ -346,16 +422,22 @@ def back_summary_clause(state: FindCardsState) -> str:
     if mode is BackMode.PAIRED:
         front = state.front_page_count()
         back = len(state.back_pages())
+        # "Paired Back Page" (singular) for the one-page case -- reachable
+        # here only via the explicit single_back_page override, since
+        # back_mode() would otherwise report SHARED at one page; "Paired
+        # Backs" (plural) whenever 2+ pages hold the BACK role.
+        label = "Paired Back Page" if back == 1 else "Paired Backs"
         if front == back:
-            noun = "page" if front == 1 else "pages"
-            return f"Paired Backs: {front} {noun} each"
+            if back == 1:
+                return f"{label}: page {state.back_pages()[0]}"
+            return f"{label}: {front} pages each"
         if front > back:
             missing = front - back
             noun = "page" if missing == 1 else "pages"
-            return f"Paired Backs: {front} Front / {back} Back — mark {missing} more Back {noun} to continue"
+            return f"{label}: {front} Front / {back} Back — mark {missing} more Back {noun} to continue"
         missing = back - front
         noun = "page" if missing == 1 else "pages"
-        return f"Paired Backs: {front} Front / {back} Back — mark {missing} more Front {noun} to continue"
+        return f"{label}: {front} Front / {back} Back — mark {missing} more Front {noun} to continue"
     if state.shared_back_status() is SharedBackStatus.CONFIRMED_NONE:
         return "Front Only — no Back Pages"
     return "Back: not yet decided"

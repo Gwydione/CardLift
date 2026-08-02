@@ -32,7 +32,7 @@ from .calibrate_state import CalibrateState, calibrate_status_text
 from .calibrate_toolbar import CalibrateToolbar
 from .calibrate_workspace import CalibrateWorkspace
 from .export_state import export_status_text
-from .find_cards_state import FindCardsState, find_cards_status_text
+from .find_cards_state import BackMode, FindCardsState, find_cards_status_text
 from .guidance_panel import GuidancePanel
 from .review_state import ReviewCardsState, review_status_text
 from .session import DeckLoadError, DeckSession
@@ -395,9 +395,19 @@ class MainWindow(QMainWindow):
         stale_steps = (WorkflowStep.CALIBRATE_CARDS, WorkflowStep.REVIEW_CARDS, WorkflowStep.EXPORT)
         if step in stale_steps and self.calibrate_state.cards_is_stale(self.find_cards_state):
             self.calibrate_state.cards.reset()
+        # Which Back target to check depends on back_mode() -- Shared
+        # Back's single-page target and Paired Backs' full-grid target are
+        # independent CalibrationTargets, only one of which is actually in
+        # play for the deck's current mode (see calibrate_workspace.py's
+        # current_target()). Checking/resetting the wrong one would either
+        # miss real staleness or reset a target that was never active.
         back_stale_steps = (WorkflowStep.CALIBRATE_BACK, WorkflowStep.REVIEW_CARDS, WorkflowStep.EXPORT)
-        if step in back_stale_steps and self.calibrate_state.back_is_stale(self.find_cards_state):
-            self.calibrate_state.back.reset()
+        if step in back_stale_steps:
+            if self.find_cards_state.back_mode() is BackMode.PAIRED:
+                if self.calibrate_state.paired_back_is_stale(self.find_cards_state):
+                    self.calibrate_state.paired_back.reset()
+            elif self.calibrate_state.back_is_stale(self.find_cards_state):
+                self.calibrate_state.back.reset()
         if is_calibrate:
             self.calibrate_toolbar.sync_pan_button()
             self.workspaces[step].on_shown()
@@ -419,21 +429,36 @@ class MainWindow(QMainWindow):
         if step is WorkflowStep.FIND_CARDS:
             return find_cards_status_text(self.find_cards_state, self.session.page_count)
         if step in CALIBRATE_STEPS and not self.state.pan_mode:
+            # self.workspaces[step].current_target() (not calibrate_state.
+            # target_for(step) directly) since the Back step's active
+            # target is mode-aware -- Shared Back's single-card target or
+            # Paired Backs' full-grid target -- and that resolution belongs
+            # to CalibrateWorkspace alone (see its current_target()
+            # docstring), not duplicated here.
             return calibrate_status_text(
                 step,
-                self.calibrate_state.target_for(step),
+                self.workspaces[step].current_target(),
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
                 self.workspaces[step].grid_page_size(),
                 self.find_cards_state.back_mode(),
+                len(self.find_cards_state.back_pages()),
             )
         if step is WorkflowStep.REVIEW_CARDS:
+            # paired_topology_ok is left at its default (True) here -- the
+            # real page-size-dependent check needs an open PDFRenderer,
+            # which only ReviewWorkspace has (see review_state.review_
+            # ready()'s docstring); this status-bar text may lag in the
+            # narrow case of a genuine topology mismatch, the same
+            # already-accepted gap documented for export_state.
+            # review_snapshot_is_current().
             return review_status_text(
                 self.calibrate_state.cards,
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),
                 self.review_cards_state,
                 back_mode=self.find_cards_state.back_mode(),
+                paired_back_target=self.calibrate_state.paired_back,
             )
         if step is WorkflowStep.EXPORT:
             return export_status_text(

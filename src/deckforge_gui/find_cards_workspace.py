@@ -376,6 +376,18 @@ class FindCardsWorkspace(QWidget):
         )
         back_row.addWidget(self._back_summary_label)
 
+        # Shown only while exactly one page holds the BACK role -- the one
+        # count CardLift cannot resolve to a mode by itself (see
+        # find_cards_state.py's "EXACTLY ONE BACK PAGE IS GENUINELY
+        # AMBIGUOUS"). Lets the user flip between the two valid readings
+        # of that single page rather than CardLift silently guessing.
+        self._single_back_intent_btn = QPushButton("")
+        self._single_back_intent_btn.setAutoDefault(False)
+        self._single_back_intent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._single_back_intent_btn.setStyleSheet(_CONFIRM_NO_BACK_STYLE)
+        self._single_back_intent_btn.setVisible(False)
+        back_row.addWidget(self._single_back_intent_btn)
+
         self._confirm_no_back_btn = QPushButton("Confirm there's no Back")
         self._confirm_no_back_btn.setAutoDefault(False)
         self._confirm_no_back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -418,6 +430,7 @@ class FindCardsWorkspace(QWidget):
         self._front_btn.clicked.connect(self._on_front_toggled)
         self._back_btn.clicked.connect(self._on_back_toggled)
         self._confirm_no_back_btn.clicked.connect(self._on_confirm_no_back)
+        self._single_back_intent_btn.clicked.connect(self._on_single_back_intent_toggled)
         self._continue_btn.clicked.connect(self._on_continue_clicked)
 
         self._refresh()
@@ -485,6 +498,19 @@ class FindCardsWorkspace(QWidget):
 
     def _on_confirm_no_back(self) -> None:
         self.state.confirm_no_shared_back()
+        self._refresh()
+        self.state_changed.emit()
+
+    def _on_single_back_intent_toggled(self) -> None:
+        """Flips the one-page ambiguity's explicit answer -- Shared Back
+        or a one-page Paired Backs deck -- in whichever direction it
+        isn't currently set. Only ever clickable while the button showing
+        it is visible (exactly one BACK-role page), per _refresh_deck_
+        summary()."""
+        if self.state.back_mode() is BackMode.PAIRED:
+            self.state.mark_single_back_page_as_shared()
+        else:
+            self.state.mark_single_back_page_as_paired()
         self._refresh()
         self.state_changed.emit()
 
@@ -565,6 +591,19 @@ class FindCardsWorkspace(QWidget):
         # alike), so it alone decides this button's visibility too.
         self._back_summary_label.setText(f"{back_summary_clause(self.state)}.")
         self._confirm_no_back_btn.setVisible(self.state.should_prompt_shared_back(self._page_count))
+
+        # Shown only while exactly one page holds the BACK role -- the one
+        # count back_mode() cannot resolve without the explicit override
+        # (see find_cards_state.py's "EXACTLY ONE BACK PAGE IS GENUINELY
+        # AMBIGUOUS"). Its own wording states the *other* reading, since
+        # clicking it switches to that reading.
+        single_back_page = len(self.state.back_pages()) == 1
+        self._single_back_intent_btn.setVisible(single_back_page)
+        if single_back_page:
+            if self.state.back_mode() is BackMode.PAIRED:
+                self._single_back_intent_btn.setText("Use as Shared Back instead")
+            else:
+                self._single_back_intent_btn.setText("Use as Paired Back Page instead")
 
     def set_pan_active(self, active: bool) -> None:
         """No-op: Select Card Pages has no pan mode -- it's not a

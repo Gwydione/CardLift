@@ -271,3 +271,205 @@ class TestOnDemandCachedRendering:
         # they were ever made equal, the "cached" test above would pass
         # for the wrong reason.
         assert INSPECT_RENDER_SCALE != REVIEW_RENDER_SCALE
+
+
+class TestPairedBacksReachesReviewCards:
+    """Regression coverage for a real gap found during Phase 3 manual
+    verification: review_state.review_ready() had an unconditional "False
+    for PAIRED" branch left over from Phase 2 (when paired-back calibration
+    didn't exist), so Review Cards stayed permanently unreachable and
+    showed a stale "isn't supported" message even after Phase 3 shipped
+    real Paired Backs calibration. Fixed by making PAIRED ready once
+    paired_back is complete and Front/Back grid topology matches -- Review
+    Cards still shows front cards only (per-card pairing is Phase 4), but
+    the back panel stays visible with an honest caption explaining that,
+    rather than disappearing -- a silently-missing panel was itself a
+    follow-up UX gap (a Paired deck looked identical to Front Only, with no
+    indication backs existed but weren't reviewable yet)."""
+
+    BACK_PAGE = 1  # distinct from FRONT_PAGE (2); both real pages in the sample PDF
+
+    def test_blocked_while_paired_back_incomplete(self, workspace: ReviewWorkspace) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        # build_review_cards() looks up every marked FRONT page's real
+        # page size (to enumerate its suggested cards), but never touches
+        # a BACK page beyond whichever one is calibrated -- so both FRONT
+        # pages must be real (in-range) pages, while the second BACK page
+        # (purely for balancing the count) need not be.
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)  # balances the count; real page, never calibrated
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.set_role(4, PageRole.BACK)  # balances the count; never calibrated/looked up
+        assert find_cards.back_mode().name == "PAIRED"
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        # paired_back left incomplete.
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        assert workspace._scroll_area.isHidden() is True
+        assert workspace._blocked_label.isHidden() is False
+        assert "representative Back page" in workspace._blocked_label.text()
+        assert "Paired Back hasn't been calibrated yet" in workspace._status_label.text()
+        assert workspace._continue_btn.isEnabled() is False
+
+    def test_blocked_with_clear_copy_when_topology_mismatched(self, workspace: ReviewWorkspace) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        # build_review_cards() looks up every marked FRONT page's real
+        # page size (to enumerate its suggested cards), but never touches
+        # a BACK page beyond whichever one is calibrated -- so both FRONT
+        # pages must be real (in-range) pages, while the second BACK page
+        # (purely for balancing the count) need not be.
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)  # balances the count; real page, never calibrated
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.set_role(4, PageRole.BACK)  # balances the count; never calibrated/looked up
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY  # 2x3 on this sample page
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = CalibratedGeometry(
+            left=0.0, top=0.0, card_width=400.0, card_height=500.0,
+            gap_x=0.0, gap_y=0.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        assert workspace._scroll_area.isHidden() is True
+        assert "grid" in workspace._status_label.text().lower()
+        assert "match" in workspace._status_label.text().lower()
+        assert workspace._continue_btn.isEnabled() is False
+
+    def test_ready_shows_paired_backs_panel_with_honest_caption_no_crash(self, workspace: ReviewWorkspace) -> None:
+        """The actual crash risk this fix closes: _render_back_panel()'s
+        Shared Back branch asserts calibrate_state.back.geometry is not
+        None, which is never true for Paired Backs (that target is
+        calibrate_state.paired_back instead) -- calling that branch would
+        raise AssertionError. The Paired Backs branch must be reached
+        instead, with the panel visible (not hidden) and no thumbnail."""
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        # build_review_cards() looks up every marked FRONT page's real
+        # page size (to enumerate its suggested cards), but never touches
+        # a BACK page beyond whichever one is calibrated -- so both FRONT
+        # pages must be real (in-range) pages, while the second BACK page
+        # (purely for balancing the count) need not be.
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)  # balances the count; real page, never calibrated
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.set_role(4, PageRole.BACK)  # balances the count; never calibrated/looked up
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = FRONT_GEOMETRY  # matching topology
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()  # must not raise
+
+        assert workspace._blocked_label.isHidden() is True
+        assert workspace._scroll_area.isHidden() is False
+        assert len(workspace._card_list) > 0
+        assert workspace._continue_btn.isEnabled() is True
+
+        # The panel itself: visible, caption-only (no thumbnail), exact copy.
+        assert workspace._back_panel.isHidden() is False
+        assert workspace._back_thumb_label.isHidden() is True
+        assert workspace._back_caption.text() == (
+            "Paired Backs — back-card review isn't available yet. Showing front cards only."
+        )
+
+    def test_front_only_panel_regression(self, workspace: ReviewWorkspace) -> None:
+        """Approved decision 8: Front Only's own back-panel branch must
+        remain exactly as it was, unaffected by the new Paired Backs
+        branch alongside it."""
+        _make_ready(workspace)
+        assert workspace._back_panel.isHidden() is False
+        assert workspace._back_thumb_label.isHidden() is True
+        assert workspace._back_caption.text() == "This deck is Front Only."
+
+    def test_shared_back_panel_regression(self, workspace: ReviewWorkspace) -> None:
+        """Approved decision 8: Shared Back's own back-panel branch --
+        thumbnail plus "Shared Back: page N" caption -- must remain
+        exactly as it was, unaffected by the new Paired Backs branch
+        alongside it."""
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        assert find_cards.back_mode().name == "SHARED"
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.back.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        assert workspace._back_panel.isHidden() is False
+        assert workspace._back_thumb_label.isHidden() is False
+        assert workspace._back_caption.text() == (
+            f"Shared Back — from page {self.BACK_PAGE}, applied to every card below."
+        )
+
+
+class TestOnePageFrontOneBackPairedDeckReachesReviewCards:
+    """Regression coverage for the BackMode design correction: a deck with
+    exactly one Front page and one explicitly-Paired Back page must reach
+    Review Cards' Paired gating (paired_back completeness + topology),
+    not be silently treated as Shared Back -- proving Review Cards needed
+    no code changes once find_cards_state.back_mode() itself was
+    corrected, since _rebuild() already only ever asks back_mode()."""
+
+    BACK_PAGE = 1
+
+    def _mark_one_page_paired(self, workspace: ReviewWorkspace) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.mark_single_back_page_as_paired()
+        assert find_cards.back_mode().name == "PAIRED"
+
+    def test_blocked_while_paired_back_incomplete(self, workspace: ReviewWorkspace) -> None:
+        self._mark_one_page_paired(workspace)
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        assert workspace._scroll_area.isHidden() is True
+        assert "representative Back page" in workspace._blocked_label.text()
+
+    def test_ready_shows_paired_backs_panel_once_calibrated(self, workspace: ReviewWorkspace) -> None:
+        self._mark_one_page_paired(workspace)
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = FRONT_GEOMETRY  # matching topology
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()  # must not raise
+
+        assert workspace._blocked_label.isHidden() is True
+        assert workspace._scroll_area.isHidden() is False
+        assert len(workspace._card_list) > 0
+        assert workspace._back_panel.isHidden() is False
+        assert workspace._back_thumb_label.isHidden() is True
+        assert workspace._back_caption.text() == (
+            "Paired Backs — back-card review isn't available yet. Showing front cards only."
+        )
+        assert workspace._continue_btn.isEnabled() is True

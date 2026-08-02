@@ -214,6 +214,115 @@ class TestBackMode:
         assert state.back_mode() is BackMode.PAIRED
 
 
+class TestSingleBackPageIntent:
+    """Approved design correction: a count of exactly one BACK page is
+    genuinely ambiguous -- it could be a Shared Back (one design for every
+    Front card) or a one-page Paired Backs deck (a full grid of unique
+    cards, paired with a single Front sheet). mark_single_back_page_as_
+    paired()/mark_single_back_page_as_shared() are the explicit override
+    for that one case; back_mode() defaults to SHARED (today's original
+    behavior) unless the override is set."""
+
+    def test_default_is_shared_backward_compatible(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        assert state.back_mode() is BackMode.SHARED
+
+    def test_mark_as_paired_at_one_page_switches_mode(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.back_mode() is BackMode.PAIRED
+
+    def test_mark_as_shared_reverses_it(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        state.mark_single_back_page_as_shared()
+        assert state.back_mode() is BackMode.SHARED
+
+    def test_mark_as_paired_is_a_no_op_with_zero_back_pages(self) -> None:
+        state = FindCardsState()
+        state.mark_single_back_page_as_paired()
+        assert state.back_mode() is BackMode.NONE
+
+    def test_mark_as_paired_is_a_no_op_with_two_or_more_back_pages(self) -> None:
+        state = FindCardsState()
+        state.set_role(4, PageRole.BACK)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()  # already PAIRED; no-op either way
+        assert state.back_mode() is BackMode.PAIRED
+
+    def test_override_resets_when_a_second_back_page_is_marked(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        state.set_role(4, PageRole.BACK)  # now 2 pages -- unambiguously PAIRED anyway
+        assert state.back_mode() is BackMode.PAIRED
+        # But the override itself must have reset, not just be masked --
+        # removing the second page again must land back on SHARED
+        # (the default), not silently resurrect the earlier PAIRED choice.
+        state.clear_role(4)
+        assert state.back_mode() is BackMode.SHARED
+
+    def test_override_resets_when_the_back_page_is_cleared(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        state.clear_role(8)
+        assert state.back_mode() is BackMode.NONE
+        # Re-marking a (possibly different) single page must start from
+        # the default again, not inherit the earlier override.
+        state.set_role(9, PageRole.BACK)
+        assert state.back_mode() is BackMode.SHARED
+
+    def test_override_resets_when_the_back_page_is_reassigned_to_front(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        state.set_role(8, PageRole.FRONT)  # overwrites the role directly
+        assert state.back_mode() is BackMode.NONE
+
+    def test_back_page_returns_none_for_a_one_page_paired_deck(self) -> None:
+        """back_page() must derive from back_mode(), not raw count -- a
+        one-page Paired deck must never also appear to have a Shared
+        Back."""
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.back_page() is None
+        assert state.back_pages() == [8]  # the full set is still visible
+
+    def test_shared_back_status_is_not_assigned_for_a_one_page_paired_deck(self) -> None:
+        state = FindCardsState()
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.shared_back_status() is SharedBackStatus.UNRESOLVED
+
+    def test_should_prompt_shared_back_never_fires_for_a_one_page_paired_deck(self) -> None:
+        state = FindCardsState()
+        state.toggle_front(1)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        state.note_page_viewed(10)
+        state.note_continue_attempted()
+        assert state.should_prompt_shared_back(page_count=10) is False
+
+    def test_paired_page_counts_balanced_for_one_front_one_back(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.paired_page_counts_balanced() is True
+
+    def test_paired_back_page_for_pairs_the_single_front_and_back_page(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert state.paired_back_page_for(1) == 8
+
+
 class TestPairedBackPageFor:
     def _paired_state(self) -> FindCardsState:
         state = FindCardsState()
@@ -306,6 +415,15 @@ class TestConfirmNoSharedBackWithPairedPages:
         state.set_role(1, PageRole.FRONT)
         state.set_role(4, PageRole.BACK)
         state.set_role(5, PageRole.BACK)
+        state.confirm_no_shared_back()
+        assert state.back_confirmed_none is False
+        assert state.back_mode() is BackMode.PAIRED
+
+    def test_is_a_no_op_for_a_one_page_paired_deck_too(self) -> None:
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
         state.confirm_no_shared_back()
         assert state.back_confirmed_none is False
         assert state.back_mode() is BackMode.PAIRED
@@ -464,6 +582,27 @@ class TestBackSummaryClause:
         for page in (4, 5, 6):
             state.set_role(page, PageRole.BACK)
         assert back_summary_clause(state) == "Paired Backs: 1 Front / 3 Back — mark 2 more Front pages to continue"
+
+    def test_paired_back_page_singular_for_one_page_case(self) -> None:
+        """"Paired Back Page" (singular) is only reachable via the
+        explicit single-back-page override -- back_mode() would otherwise
+        report SHARED at one page."""
+        state = FindCardsState()
+        state.set_role(1, PageRole.FRONT)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert back_summary_clause(state) == "Paired Back Page: page 8"
+
+    def test_paired_back_page_singular_label_used_even_when_mismatched(self) -> None:
+        """The singular label is driven by the BACK-page count (still
+        exactly one here), independent of whether Front/Back counts
+        happen to match."""
+        state = FindCardsState()
+        for page in (1, 2, 3):
+            state.set_role(page, PageRole.FRONT)
+        state.set_role(8, PageRole.BACK)
+        state.mark_single_back_page_as_paired()
+        assert back_summary_clause(state) == "Paired Back Page: 3 Front / 1 Back — mark 2 more Back pages to continue"
 
 
 class TestFindCardsStatusText:

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from .app_state import AppState, CALIBRATE_STEPS, WorkflowStep
 from .calibrate_state import CalibrateState, calibrate_guidance_text
+from .calibrate_workspace import resolve_back_target
 from .export_state import export_guidance_text
 from .find_cards_state import FindCardsState
 from .review_state import ReviewCardsState, review_guidance_text
@@ -159,20 +160,31 @@ class GuidancePanel(QWidget):
     def _guidance_text(self) -> tuple[str, str]:
         step = self.state.current_step
         if step in CALIBRATE_STEPS:
+            target = (
+                resolve_back_target(self.calibrate_state, self.find_cards_state)
+                if step is WorkflowStep.CALIBRATE_BACK
+                else self.calibrate_state.target_for(step)
+            )
             return calibrate_guidance_text(
                 step,
-                self.calibrate_state.target_for(step),
+                target,
                 self.find_cards_state.front_page_count(),
                 self.find_cards_state.shared_back_status(),
                 back_mode=self.find_cards_state.back_mode(),
+                back_page_count=len(self.find_cards_state.back_pages()),
             )
         if step is WorkflowStep.REVIEW_CARDS:
+            # paired_topology_ok stays at its default (True) -- see
+            # review_state.review_ready()'s docstring for why only
+            # ReviewWorkspace (which has an open PDFRenderer) can compute
+            # the real comparison.
             return review_guidance_text(
                 self.calibrate_state.cards,
                 self.calibrate_state.back,
                 self.find_cards_state.shared_back_status(),
                 self.review_cards_state,
                 back_mode=self.find_cards_state.back_mode(),
+                paired_back_target=self.calibrate_state.paired_back,
             )
         if step is WorkflowStep.EXPORT:
             # Deliberately the simple export_ready() check (no page-size-

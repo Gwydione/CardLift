@@ -78,7 +78,7 @@ from deckforge.cropper import CardCropper
 from deckforge.pdf_renderer import PDFRenderError, PDFRenderer
 from deckforge.profile import GridGeometry, TrimValues
 
-from .calibrate_state import CalibratedGeometry, CalibrateState, CalibrationTarget
+from .calibrate_state import CalibratedGeometry, CalibrateState, CalibrationTarget, paired_topology_mismatch
 from .find_cards_state import BackMode, FindCardsState, SharedBackStatus
 from .review_state import (
     ReviewCard,
@@ -560,11 +560,18 @@ class ReviewWorkspace(QWidget):
 
         cards_target = self.calibrate_state.cards
         back_target = self.calibrate_state.back
+        paired_back_target = self.calibrate_state.paired_back
         shared_back_status = self.find_cards_state.shared_back_status()
         back_mode = self.find_cards_state.back_mode()
+        paired_topology_ok = self._paired_topology_ok(cards_target, paired_back_target)
 
-        if not review_ready(cards_target, back_target, shared_back_status, back_mode) or self._renderer is None:
-            self._show_blocked(cards_target, back_target, shared_back_status, back_mode)
+        ready = review_ready(
+            cards_target, back_target, shared_back_status, back_mode, paired_back_target, paired_topology_ok,
+        )
+        if not ready or self._renderer is None:
+            self._show_blocked(
+                cards_target, back_target, shared_back_status, back_mode, paired_back_target, paired_topology_ok,
+            )
             return
 
         geometry = cards_target.geometry
@@ -581,19 +588,48 @@ class ReviewWorkspace(QWidget):
             # message as the other blocked states rather than leaving the
             # main content area silently blank with the explanation only
             # in the status bar (see DEVELOPER.md's UX Validation note).
-            self._show_blocked(cards_target, back_target, shared_back_status, back_mode)
+            self._show_blocked(
+                cards_target, back_target, shared_back_status, back_mode, paired_back_target, paired_topology_ok,
+            )
             return
 
         self._blocked_label.setVisible(False)
         self._scroll_area.setVisible(True)
         self._back_panel.setVisible(True)
-        self._render_back_panel(back_target, shared_back_status)
+        self._render_back_panel(back_target, shared_back_status, back_mode)
         self._render_grid(card_list, geometry)
-        self._update_footer(cards_target, back_target, shared_back_status)
+        self._update_footer(cards_target, back_target, shared_back_status, back_mode, paired_back_target)
 
     def _page_size(self, page_num: int) -> tuple[float, float]:
         assert self._renderer is not None
         return self._renderer.page_size(page_num)
+
+    def _paired_topology_ok(
+        self, cards_target: CalibrationTarget, paired_back_target: CalibrationTarget,
+    ) -> bool:
+        """True unless Front and Paired Back are both calibrated and
+        suggest incompatible grid topology. Vacuously True whenever either
+        target isn't complete yet (that incompleteness alone already
+        blocks via review_ready()) or the page sizes can't be read -- this
+        is purely a refinement on top of the completeness check, not a
+        substitute for it. The only place this workspace's own open
+        PDFRenderer is needed for the Paired Backs gate; mirrors
+        calibrate_workspace.CalibrateWorkspace._paired_topology_mismatch(),
+        the analogous check gating Calibrate's own Continue button, reused
+        here via the same pure calibrate_state.paired_topology_mismatch()
+        rather than re-deriving the comparison."""
+        if not cards_target.is_complete or not paired_back_target.is_complete:
+            return True
+        if self._renderer is None:
+            return True
+        try:
+            front_size = self._renderer.page_size(cards_target.calibrated_page_num)
+            back_size = self._renderer.page_size(paired_back_target.calibrated_page_num)
+        except PDFRenderError:
+            return True
+        assert cards_target.geometry is not None and paired_back_target.geometry is not None
+        mismatch = paired_topology_mismatch(cards_target.geometry, front_size, paired_back_target.geometry, back_size)
+        return mismatch is None
 
     def _show_blocked(
         self,
@@ -601,20 +637,46 @@ class ReviewWorkspace(QWidget):
         back_target: CalibrationTarget,
         shared_back_status: SharedBackStatus,
         back_mode: BackMode = BackMode.SHARED,
+        paired_back_target: Optional[CalibrationTarget] = None,
+        paired_topology_ok: bool = True,
     ) -> None:
         self._clear_content()
         self._tiles = {}
         self._scroll_area.setVisible(False)
         self._back_panel.setVisible(False)
-        _, body = review_guidance_text(cards_target, back_target, shared_back_status, self.review_state, back_mode)
+        _, body = review_guidance_text(
+            cards_target, back_target, shared_back_status, self.review_state,
+            back_mode, paired_back_target, paired_topology_ok,
+        )
         self._blocked_label.setText(body)
         self._blocked_label.setVisible(True)
         self._status_label.setText(
-            review_status_text(cards_target, back_target, shared_back_status, self.review_state, back_mode)
+            review_status_text(
+                cards_target, back_target, shared_back_status, self.review_state,
+                back_mode, paired_back_target, paired_topology_ok,
+            )
         )
         self._continue_btn.setEnabled(False)
 
-    def _render_back_panel(self, back_target: CalibrationTarget, shared_back_status: SharedBackStatus) -> None:
+    def _render_back_panel(
+        self, back_target: CalibrationTarget, shared_back_status: SharedBackStatus, back_mode: BackMode = BackMode.SHARED,
+    ) -> None:
+        """The one place Review Cards explains back-related state --
+        Front Only and Shared Back's branches are unchanged; Paired Backs
+        gets its own honest caption rather than the panel disappearing.
+        There is no single "the back" to preview for Paired Backs
+        (calibrate_state.back was never calibrated for this mode, and
+        per-card back pairing is a later milestone -- docs/design/
+        MULTIPLE_BACK_MODES.md's Phase 3 scope), so this stays
+        caption-only, the same treatment Front Only already uses, with no
+        thumbnail."""
+        if back_mode is BackMode.PAIRED:
+            self._back_thumb_label.setVisible(False)
+            self._back_caption.setText(
+                "Paired Backs — back-card review isn't available yet. Showing front cards only."
+            )
+            return
+
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
             self._back_thumb_label.setVisible(False)
             self._back_caption.setText("This deck is Front Only.")
@@ -695,15 +757,28 @@ class ReviewWorkspace(QWidget):
         cards_target = self.calibrate_state.cards
         back_target = self.calibrate_state.back
         shared_back_status = self.find_cards_state.shared_back_status()
-        self._update_footer(cards_target, back_target, shared_back_status)
+        back_mode = self.find_cards_state.back_mode()
+        self._update_footer(cards_target, back_target, shared_back_status, back_mode, self.calibrate_state.paired_back)
         self.state_changed.emit()
 
     def _update_footer(
-        self, cards_target: CalibrationTarget, back_target: CalibrationTarget, shared_back_status: SharedBackStatus,
+        self,
+        cards_target: CalibrationTarget,
+        back_target: CalibrationTarget,
+        shared_back_status: SharedBackStatus,
+        back_mode: BackMode = BackMode.SHARED,
+        paired_back_target: Optional[CalibrationTarget] = None,
     ) -> None:
+        # A toggle only ever happens once _rebuild() has already confirmed
+        # review_ready() -- for PAIRED that means paired_back_target is
+        # complete and topology already matched, so paired_topology_ok can
+        # be assumed True here rather than re-resolving page sizes on every
+        # single toggle.
         self._continue_btn.setEnabled(self.review_state.included_count() > 0)
         self._status_label.setText(
-            review_status_text(cards_target, back_target, shared_back_status, self.review_state)
+            review_status_text(
+                cards_target, back_target, shared_back_status, self.review_state, back_mode, paired_back_target,
+            )
         )
 
     # -- card inspection ---------------------------------------------------

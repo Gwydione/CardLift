@@ -4,11 +4,13 @@ from deckforge_gui.app_state import GUIDANCE, STATUS, AppState, WorkflowStep
 from deckforge_gui.calibrate_state import (
     CalibratedGeometry,
     CalibrateState,
+    CalibrationTarget,
     ClickOutcome,
     calibrate_guidance_text,
     calibrate_status_text,
     infer_second_cell,
     normalize_box,
+    paired_topology_mismatch,
     parse_human_cell_label,
     predicted_neighbor_box,
     suggested_grid,
@@ -830,31 +832,302 @@ class TestBackPairedGuidanceAndStatus:
     above -- shared_back_status() collapses to UNRESOLVED for 2+ BACK
     pages too (find_cards_state.py's own docstring warning), which would
     otherwise wrongly tell a Paired Backs deck its back decision "hasn't
-    been decided" when it has been -- just not yet calibratable (Paired
-    calibration is a later milestone)."""
+    been decided" when it has been. Unlike Phase 2 (where Paired
+    calibration didn't exist yet and this branch was a static "not
+    available" stopgap), Phase 3 routes PAIRED through the same
+    click-progress flow Cards/Shared Back already share -- these tests
+    cover the PAIRED-specific pieces of that flow: "card" (not "back
+    design") as the click-guidance subject, and a distinct "Paired Backs
+    calibration complete" message naming the Back page count."""
 
-    def test_guidance_names_paired_backs_not_shared_back_or_undecided(self) -> None:
+    def _completed_paired_target(self) -> CalibrationTarget:
         state = CalibrateState()
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 100.0)
+        state.finish_with_one_card_on(state.paired_back)
+        assert state.paired_back.is_complete
+        return state.paired_back
+
+    def test_initial_guidance_is_shared_and_mode_neutral(self) -> None:
+        """Before any click, Paired Backs shows the same static guidance
+        Shared Back's initial state already shows -- no dedicated Paired
+        copy exists (or is needed) for this state."""
+        state = CalibrateState()
+        assert calibrate_guidance_text(BACK, state.paired_back, back_mode=BackMode.PAIRED) == GUIDANCE[BACK]
+
+    def test_click_guidance_subject_is_card_not_back_design(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        _, body = calibrate_guidance_text(BACK, state.paired_back, back_mode=BackMode.PAIRED)
+        assert "same card" in body
+        assert "back design" not in body
+
+    def test_guidance_names_paired_backs_complete_not_shared_back(self) -> None:
+        target = self._completed_paired_target()
         headline, body = calibrate_guidance_text(
-            BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED, back_mode=BackMode.PAIRED,
+            BACK, target, back_mode=BackMode.PAIRED, back_page_count=3,
         )
+        assert headline == "Paired Backs calibration complete"
         assert "Shared Back" not in headline
-        assert "hasn't been decided" not in headline
-        assert "Paired Backs" in headline
-        assert "Paired Backs" in body
+        assert "Shared Back" not in body
+        assert "3 Back pages" in body
 
-    def test_status_names_paired_backs_not_shared_back_or_undecided(self) -> None:
-        state = CalibrateState()
-        status = calibrate_status_text(
-            BACK, state.back, shared_back_status=SharedBackStatus.UNRESOLVED, back_mode=BackMode.PAIRED,
-        )
+    def test_guidance_singular_back_page_count(self) -> None:
+        target = self._completed_paired_target()
+        _, body = calibrate_guidance_text(BACK, target, back_mode=BackMode.PAIRED, back_page_count=1)
+        assert "1 Back page " in body
+
+    def test_status_names_paired_backs_complete_not_shared_back(self) -> None:
+        target = self._completed_paired_target()
+        status = calibrate_status_text(BACK, target, back_mode=BackMode.PAIRED, back_page_count=3)
         assert "Shared Back" not in status
         assert "hasn't been decided" not in status
-        assert "Paired Backs" in status
+        assert "3 Back pages" in status
 
     def test_paired_is_ignored_for_the_cards_step(self) -> None:
         state = CalibrateState()
         assert calibrate_guidance_text(CARDS, state.cards, back_mode=BackMode.PAIRED) == GUIDANCE[CARDS]
+
+
+class TestPairedBackTarget:
+    """Approved decision 1/3: Paired Backs gets its own full-grid
+    CalibrationTarget, reusing the same machinery Fronts already uses --
+    not the single-card Shared Back target."""
+
+    def test_paired_back_exists_and_starts_empty(self) -> None:
+        state = CalibrateState()
+        assert state.paired_back.is_complete is False
+        assert state.paired_back.geometry is None
+
+    def test_paired_back_allows_a_second_measurement_like_cards(self) -> None:
+        state = CalibrateState()
+        assert state.paired_back.allows_second_measurement is True
+        assert state.cards.allows_second_measurement is True
+
+    def test_paired_back_is_a_distinct_target_from_cards_and_back(self) -> None:
+        state = CalibrateState()
+        assert state.paired_back is not state.cards
+        assert state.paired_back is not state.back
+
+    def test_paired_back_supports_full_grid_two_card_calibration(self) -> None:
+        """Same two-corner-click + second-card measurement behavior Fronts
+        uses -- reused, not reimplemented, via record_click_on()."""
+        state = CalibrateState()
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 150.0)
+        state.record_click_on(state.paired_back, 200.0, 0.0)
+        outcome = state.record_click_on(state.paired_back, 300.0, 150.0)
+        assert outcome is ClickOutcome.COMPLETE
+        assert state.paired_back.geometry is not None
+        assert state.paired_back.geometry.gap_x_derived is True
+
+    def test_reset_all_resets_paired_back_too(self) -> None:
+        state = CalibrateState()
+        state.paired_back.page_num = 8
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 100.0)
+        state.reset_all()
+        assert state.paired_back.is_complete is False
+        assert state.paired_back.measurements == []
+
+
+class TestSharedBackTargetRemainsSingleCard:
+    """Approved decision 8: existing Shared Back behavior must remain
+    unchanged -- back stays capped at one card, regardless of
+    paired_back's addition."""
+
+    def test_back_still_disallows_a_second_measurement(self) -> None:
+        state = CalibrateState()
+        assert state.back.allows_second_measurement is False
+
+    def test_back_still_completes_on_one_card(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.back, 0.0, 0.0)
+        outcome = state.record_click_on(state.back, 100.0, 100.0)
+        assert outcome is ClickOutcome.COMPLETE
+
+
+class TestTargetOnMethodsMatchStepBasedMethods:
+    """record_click_on()/finish_with_one_card_on()/start_over_on()/etc.
+    are the extracted core logic the step-based methods (record_click(),
+    etc.) already delegate to -- these must produce identical results to
+    the pre-existing step-based calls for Cards/Shared Back, since nothing
+    about their behavior is supposed to have changed."""
+
+    def test_record_click_on_target_matches_record_click_on_step(self) -> None:
+        state = CalibrateState()
+        outcome = state.record_click_on(state.cards, 10.0, 20.0)
+        assert outcome is ClickOutcome.PENDING_SET
+        assert state.cards.pending_point == (10.0, 20.0)
+
+    def test_finish_with_one_card_on_target(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.cards, 0.0, 0.0)
+        state.record_click_on(state.cards, 100.0, 100.0)
+        outcome = state.finish_with_one_card_on(state.cards)
+        assert outcome is ClickOutcome.COMPLETE
+        assert state.cards.geometry is not None
+
+    def test_start_over_on_target(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.cards, 0.0, 0.0)
+        state.start_over_on(state.cards)
+        assert state.cards.pending_point is None
+
+    def test_cancel_ambiguous_second_card_on_target(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.cards, 0.0, 0.0)
+        state.record_click_on(state.cards, 100.0, 100.0)
+        state.record_click_on(state.cards, 5.0, 5.0)  # nearly on top of the first card
+        outcome = state.record_click_on(state.cards, 105.0, 105.0)
+        assert outcome is ClickOutcome.NEEDS_CELL_LABEL
+        assert state.cards._pending_second_box is not None
+        state.cancel_ambiguous_second_card_on(state.cards)
+        assert state.cards._pending_second_box is None
+        assert state.cards.is_complete is False
+
+    def test_add_measurement_with_cell_on_target(self) -> None:
+        state = CalibrateState()
+        state.record_click_on(state.cards, 0.0, 0.0)
+        state.record_click_on(state.cards, 100.0, 100.0)
+        state.record_click_on(state.cards, 5.0, 5.0)
+        state.record_click_on(state.cards, 105.0, 105.0)
+        outcome = state.add_measurement_with_cell_on(state.cards, row=1, col=1)
+        assert outcome is ClickOutcome.COMPLETE
+
+
+class TestPairedBackStaleness:
+    """Approved decision 2: Paired Backs gets its own staleness check,
+    sharing the same internal helper Shared Back's back_is_stale() uses
+    (_target_is_stale()) rather than duplicating the comparison logic."""
+
+    def test_not_stale_when_never_calibrated(self) -> None:
+        state = CalibrateState()
+        find_cards = FindCardsState()
+        assert state.paired_back_is_stale(find_cards) is False
+
+    def test_not_stale_while_calibrated_page_is_still_a_back_page(self) -> None:
+        state = CalibrateState()
+        state.paired_back.page_num = 8
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 100.0)
+        state.finish_with_one_card_on(state.paired_back)
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(2, PageRole.FRONT)
+        find_cards.set_role(8, PageRole.BACK)
+        find_cards.set_role(9, PageRole.BACK)
+        assert state.paired_back_is_stale(find_cards) is False
+
+    def test_stale_once_the_calibrated_page_is_no_longer_a_back_page(self) -> None:
+        state = CalibrateState()
+        state.paired_back.page_num = 8
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 100.0)
+        state.finish_with_one_card_on(state.paired_back)
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(2, PageRole.FRONT)
+        # Page 8 reassigned away from BACK; 4 and 9 marked BACK instead.
+        find_cards.set_role(4, PageRole.BACK)
+        find_cards.set_role(9, PageRole.BACK)
+        assert state.paired_back_is_stale(find_cards) is True
+
+    def test_not_stale_merely_because_counts_became_unbalanced(self) -> None:
+        """Staleness is about the calibrated page's role, not about
+        whether the deck's page counts currently balance -- that is a
+        separate, continuously-checked validation concern (see
+        CalibrateWorkspace's Continue gating), not a staleness one."""
+        state = CalibrateState()
+        state.paired_back.page_num = 8
+        state.record_click_on(state.paired_back, 0.0, 0.0)
+        state.record_click_on(state.paired_back, 100.0, 100.0)
+        state.finish_with_one_card_on(state.paired_back)
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(2, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)
+        find_cards.set_role(8, PageRole.BACK)
+        find_cards.set_role(9, PageRole.BACK)
+        assert find_cards.paired_page_counts_balanced() is False
+        assert state.paired_back_is_stale(find_cards) is False
+
+
+class TestBackStalenessRegression:
+    """Approved decision 8: Shared Back's existing staleness behavior must
+    remain unchanged after refactoring cards_is_stale()/back_is_stale() to
+    share _target_is_stale()."""
+
+    def test_not_stale_when_never_calibrated(self) -> None:
+        state = CalibrateState()
+        find_cards = FindCardsState()
+        assert state.back_is_stale(find_cards) is False
+
+    def test_not_stale_while_still_the_assigned_back_page(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click_on(state.back, 0.0, 0.0)
+        state.record_click_on(state.back, 100.0, 100.0)
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(8, PageRole.BACK)
+        assert state.back_is_stale(find_cards) is False
+
+    def test_stale_once_reassigned_to_a_different_page(self) -> None:
+        state = CalibrateState()
+        state.back.page_num = 8
+        state.record_click_on(state.back, 0.0, 0.0)
+        state.record_click_on(state.back, 100.0, 100.0)
+        find_cards = FindCardsState()
+        find_cards.set_role(1, PageRole.FRONT)
+        find_cards.set_role(4, PageRole.BACK)
+        assert state.back_is_stale(find_cards) is True
+
+    def test_cards_is_stale_regression(self) -> None:
+        """cards_is_stale() also now shares _target_is_stale() -- same
+        pre-existing behavior."""
+        state = CalibrateState()
+        state.cards.page_num = 2
+        state.record_click_on(state.cards, 0.0, 0.0)
+        state.record_click_on(state.cards, 100.0, 100.0)
+        state.finish_with_one_card_on(state.cards)
+        find_cards = FindCardsState()
+        find_cards.set_role(3, PageRole.FRONT)
+        assert state.cards_is_stale(find_cards) is True
+
+
+class TestPairedTopologyMismatch:
+    """Approved decision/objective 5: Front and Back grid topology must be
+    compatible enough for later Review Cards pairing -- if rows/columns
+    differ, this pure function reports the mismatch for the workspace to
+    build an actionable message from."""
+
+    def test_none_when_shapes_match(self) -> None:
+        front_geo = CalibratedGeometry(
+            left=0.0, top=0.0, card_width=100.0, card_height=150.0,
+            gap_x=0.0, gap_y=0.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        back_geo = CalibratedGeometry(
+            # Different margins/card size -- topology (3x2) still matches.
+            left=10.0, top=5.0, card_width=95.0, card_height=145.0,
+            gap_x=2.0, gap_y=2.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        assert paired_topology_mismatch(front_geo, (300.0, 300.0), back_geo, (300.0, 300.0)) is None
+
+    def test_mismatch_reports_both_shapes(self) -> None:
+        front_geo = CalibratedGeometry(
+            left=0.0, top=0.0, card_width=100.0, card_height=150.0,
+            gap_x=0.0, gap_y=0.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        back_geo = CalibratedGeometry(
+            left=0.0, top=0.0, card_width=150.0, card_height=150.0,
+            gap_x=0.0, gap_y=0.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        result = paired_topology_mismatch(front_geo, (300.0, 300.0), back_geo, (300.0, 300.0))
+        assert result is not None
+        front_shape, back_shape = result
+        assert front_shape == (2, 3)
+        assert back_shape == (2, 2)
 
 
 class TestUnresolvedSharedBackReachedViaSidebar:

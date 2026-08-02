@@ -1,5 +1,6 @@
 """Calibrate state -- precise per-card geometry, derived from two-corner
-clicks on one representative page each for "Fronts" and "Shared Back".
+clicks on one representative page each for "Fronts", "Shared Back", and
+(when back_mode() is PAIRED) "Paired Backs".
 
 Deliberately free of any PySide6 import, same rationale as app_state.py/
 session.py/find_cards_state.py: this is the controller/session layer the
@@ -40,8 +41,8 @@ render_scale immediately before calling it, and derive_geometry's own
 division by that same scale recovers the original point exactly -- a
 lossless round trip, not a re-measurement.
 
-ONE SHARED LAYOUT
-------------------
+ONE SHARED LAYOUT (AND, FOR PAIRED BACKS, A SECOND ONE)
+---------------------------------------------------------
 All Front Pages (see find_cards_state.FindCardsState.front_pages()) are
 assumed to share one card grid: `cards` holds a single CalibrationTarget,
 calibrated from whichever one Front Page the user chooses to click on (see
@@ -50,13 +51,34 @@ that step). `back` is calibrated on the single page Select Card Pages
 assigned as the Shared Back -- Calibrate never searches for it, only
 measures it.
 
+Paired Backs (2+ BACK-role pages, find_cards_state.BackMode.PAIRED) works
+the same way as Fronts, not as Shared Back: `paired_back` holds its own
+independent full-grid CalibrationTarget, calibrated from whichever one
+representative BACK page the user chooses, and that one geometry is then
+assumed to apply to every marked BACK page -- Front and Back page sets are
+expected to share row/column topology (see
+docs/design/MULTIPLE_BACK_MODES.md's Initial Assumptions), though not
+necessarily identical margins, card size, or gaps, since a back design can
+legitimately be printed with different bleed/trim than its front.
+CalibrateWorkspace.current_target() is the one place that decides whether
+the Back step's active target is `back` or `paired_back`, based on
+find_cards_state.back_mode() -- target_for() below deliberately never
+resolves to `paired_back`, staying pure and FindCardsState-independent
+(this class exposes `*_on(target, ...)` operations precisely so a caller
+that has already resolved its own target, like CalibrateWorkspace, never
+needs target_for() to do it instead).
+
 Absence of an assigned page is not, by itself, "no Shared Back": Select
 Card Pages distinguishes CONFIRMED_NONE (an explicit answer) from
 UNRESOLVED (not decided yet) via find_cards_state.SharedBackStatus, and
 Calibrate must preserve that distinction rather than treating both as
 "nothing to calibrate." See calibrate_guidance_text()/calibrate_status_text()
 below and CalibrateWorkspace._update_continue_footer(), which is exactly
-where an earlier revision collapsed the two.
+where an earlier revision collapsed the two. Note that shared_back_status()
+collapses to UNRESOLVED for Paired Backs too (2+ pages means back_page()
+returns None) -- every branch keyed off shared_back_status() below checks
+back_mode() first for that reason, per find_cards_state.py's own docstring
+warning.
 """
 
 from __future__ import annotations
@@ -386,9 +408,24 @@ class CalibrationTarget:
 
 @dataclass
 class CalibrateState:
+    """`target_for()` intentionally only ever resolves Cards or the single
+    Shared Back target -- it must stay pure and free of any FindCardsState
+    dependency (see docs/design/MULTIPLE_BACK_MODES.md's Phase 3 approved
+    decisions). `paired_back` is a separate, independent full-grid target
+    for Paired Backs, reusing the exact same CalibrationTarget machinery
+    (two-corner-click + optional second-card measurement) `cards` already
+    uses -- it is never returned by `target_for()`. Deciding *whether* the
+    Back step should read/write `back` or `paired_back` is
+    CalibrateWorkspace's job (it already holds a FindCardsState reference),
+    via `current_target()`; this class only supplies the target-based
+    `*_on()` operations a caller resolving its own target needs, alongside
+    the existing step-based methods (which remain exactly as before, for
+    Cards and for Shared Back's single-card target)."""
+
     render_scale: float = CALIBRATE_RENDER_SCALE
     cards: CalibrationTarget = field(default_factory=CalibrationTarget)
     back: CalibrationTarget = field(default_factory=lambda: CalibrationTarget(allows_second_measurement=False))
+    paired_back: CalibrationTarget = field(default_factory=CalibrationTarget)
 
     def target_for(self, step: WorkflowStep) -> CalibrationTarget:
         return self.back if step is WorkflowStep.CALIBRATE_BACK else self.cards
@@ -399,6 +436,20 @@ class CalibrateState:
         MainWindow already applies to FindCardsState."""
         self.cards.reset()
         self.back.reset()
+        self.paired_back.reset()
+
+    @staticmethod
+    def _target_is_stale(target: CalibrationTarget, valid_pages: Sequence[int]) -> bool:
+        """Shared by every *_is_stale() check below: a target is stale once
+        its calibrated page no longer belongs to the set of pages Select
+        Card Pages currently considers valid for it. `valid_pages` may be a
+        single-page list (Shared Back) or the full marked-page list (Fronts,
+        Paired Backs) -- membership-in-a-list covers both shapes without
+        each caller re-deriving the comparison itself."""
+        page = target.calibrated_page_num
+        if page is None:
+            return False
+        return page not in valid_pages
 
     def cards_is_stale(self, find_cards_state: "FindCardsState") -> bool:
         """True if Cards (Fronts) was calibrated from a page that is no
@@ -406,25 +457,42 @@ class CalibrateState:
         changed its role) -- the geometry no longer corresponds to a
         confirmed front page. Marking additional front pages does not
         make an existing calibration stale."""
-        page = self.cards.calibrated_page_num
-        if page is None:
-            return False
-        return page not in find_cards_state.front_pages()
+        return self._target_is_stale(self.cards, find_cards_state.front_pages())
 
     def back_is_stale(self, find_cards_state: "FindCardsState") -> bool:
         """True if Shared Back was calibrated from a page that is no
         longer the Deck's assigned Shared Back page -- either the user
         reassigned it to a different page, or cleared it entirely (back to
         unresolved, or confirmed no shared back)."""
-        page = self.back.calibrated_page_num
-        if page is None:
-            return False
-        return page != find_cards_state.back_page()
+        back_page = find_cards_state.back_page()
+        valid_pages = [back_page] if back_page is not None else []
+        return self._target_is_stale(self.back, valid_pages)
+
+    def paired_back_is_stale(self, find_cards_state: "FindCardsState") -> bool:
+        """The Paired Backs equivalent of back_is_stale(): True once the
+        representative page Paired Back was calibrated from is no longer
+        one of the Deck's currently marked BACK pages (the user reassigned
+        or unmarked it in Select Card Pages). Marking additional Back
+        pages, or the page counts becoming unbalanced, does not by itself
+        make an existing calibration stale -- that is a separate,
+        continuously-checked validation concern (see CalibrateWorkspace's
+        Continue gating), not a staleness one."""
+        return self._target_is_stale(self.paired_back, find_cards_state.back_pages())
 
     # -- click handling ---------------------------------------------------
+    #
+    # Each operation below has two forms: a `*_on(target, ...)` form that
+    # takes an explicit CalibrationTarget, and the original step-based form
+    # (unchanged signature/behavior) that resolves its target via
+    # target_for() -- which, per this class's docstring, never resolves to
+    # `paired_back`. CalibrateWorkspace calls the `*_on()` forms directly
+    # with whichever target its own mode-aware current_target() resolved
+    # (self.back or self.paired_back for the Back step), so the one set of
+    # click-handling algorithms below is exercised identically regardless
+    # of which target is active -- nothing here is duplicated per mode.
 
-    def record_click(
-        self, step: WorkflowStep, x_pt: float, y_pt: float,
+    def record_click_on(
+        self, target: CalibrationTarget, x_pt: float, y_pt: float,
         hint_col_offset: Optional[int] = None, hint_row_offset: Optional[int] = None,
     ) -> ClickOutcome:
         """hint_col_offset/hint_row_offset are the workspace's already-drawn
@@ -433,7 +501,6 @@ class CalibrateState:
         it cannot compute a page-bounds estimate itself. Omit both (the
         default) when no hint is available; see infer_second_cell()'s
         docstring for what they change."""
-        target = self.target_for(step)
         if target.is_complete or len(target.measurements) >= 2:
             return ClickOutcome.IGNORED_ALREADY_COMPLETE
 
@@ -470,16 +537,24 @@ class CalibrateState:
         self._finalize(target)
         return ClickOutcome.COMPLETE
 
-    def cancel_ambiguous_second_card(self, step: WorkflowStep) -> None:
+    def record_click(
+        self, step: WorkflowStep, x_pt: float, y_pt: float,
+        hint_col_offset: Optional[int] = None, hint_row_offset: Optional[int] = None,
+    ) -> ClickOutcome:
+        return self.record_click_on(self.target_for(step), x_pt, y_pt, hint_col_offset, hint_row_offset)
+
+    def cancel_ambiguous_second_card_on(self, target: CalibrationTarget) -> None:
         """Abandons a NEEDS_CELL_LABEL click (e.g. the user dismissed the
         cell-label prompt) without touching the first, already-completed
         measurement -- unlike start_over(), which clears everything."""
-        self.target_for(step)._pending_second_box = None
+        target._pending_second_box = None
 
-    def add_measurement_with_cell(self, step: WorkflowStep, row: int, col: int) -> ClickOutcome:
+    def cancel_ambiguous_second_card(self, step: WorkflowStep) -> None:
+        self.cancel_ambiguous_second_card_on(self.target_for(step))
+
+    def add_measurement_with_cell_on(self, target: CalibrationTarget, row: int, col: int) -> ClickOutcome:
         """Resolves a NEEDS_CELL_LABEL outcome once the caller has an
         explicit row/col (e.g. from a user prompt)."""
-        target = self.target_for(step)
         if target._pending_second_box is None:
             return ClickOutcome.IGNORED_ALREADY_COMPLETE
         x1, y1, x2, y2 = target._pending_second_box
@@ -488,18 +563,26 @@ class CalibrateState:
         self._finalize(target)
         return ClickOutcome.COMPLETE
 
-    def finish_with_one_card(self, step: WorkflowStep) -> ClickOutcome:
+    def add_measurement_with_cell(self, step: WorkflowStep, row: int, col: int) -> ClickOutcome:
+        return self.add_measurement_with_cell_on(self.target_for(step), row, col)
+
+    def finish_with_one_card_on(self, target: CalibrationTarget) -> ClickOutcome:
         """User declined to measure a second card -- derives geometry
         from the single measurement (gap assumed 0.0/edge-to-edge)."""
-        target = self.target_for(step)
         if len(target.measurements) != 1:
             return ClickOutcome.IGNORED_ALREADY_COMPLETE
         target._pending_second_box = None
         self._finalize(target)
         return ClickOutcome.COMPLETE
 
+    def finish_with_one_card(self, step: WorkflowStep) -> ClickOutcome:
+        return self.finish_with_one_card_on(self.target_for(step))
+
+    def start_over_on(self, target: CalibrationTarget) -> None:
+        target.reset()
+
     def start_over(self, step: WorkflowStep) -> None:
-        self.target_for(step).reset()
+        self.start_over_on(self.target_for(step))
 
     def _finalize(self, target: CalibrationTarget) -> None:
         pixel_measurements: Sequence[CardMeasurement] = [
@@ -585,6 +668,29 @@ def ungauged_axis_warning(target: CalibrationTarget, page_size: Optional[tuple[f
     )
 
 
+def paired_topology_mismatch(
+    front_geometry: CalibratedGeometry, front_page_size: tuple[float, float],
+    back_geometry: CalibratedGeometry, back_page_size: tuple[float, float],
+) -> Optional[tuple[tuple[int, int], tuple[int, int]]]:
+    """Compares the Front page's suggested grid shape (rows, cols) against
+    the Paired Back page's, once both are calibrated -- Paired Backs
+    assumes matching row/column topology between the two page sets
+    (docs/design/MULTIPLE_BACK_MODES.md's Initial Assumptions), even
+    though margins, card size, and gaps may legitimately differ (a back
+    design can be printed with different bleed/trim than its front).
+
+    Returns None when the shapes match (the expected, common case);
+    otherwise the two differing (rows, cols) shapes, for the caller to
+    build an actionable message from -- this function has no opinion on
+    wording, and no PDF/Qt dependency of its own (the caller, which has an
+    open PDFRenderer, is the one that resolves each page's point-size)."""
+    front_shape = suggested_grid(front_geometry, *front_page_size)
+    back_shape = suggested_grid(back_geometry, *back_page_size)
+    if front_shape == back_shape:
+        return None
+    return (front_shape, back_shape)
+
+
 def calibrate_guidance_text(
     step: WorkflowStep,
     target: CalibrationTarget,
@@ -592,22 +698,16 @@ def calibrate_guidance_text(
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
     page_size: Optional[tuple[float, float]] = None,
     back_mode: BackMode = BackMode.SHARED,
+    back_page_count: int = 0,
 ) -> tuple[str, str]:
-    if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.PAIRED:
-        # shared_back_status collapses to UNRESOLVED for 2+ BACK pages (see
-        # find_cards_state.py's own docstring warning that it isn't
-        # meaningful once back_mode() is PAIRED) -- this branch must come
-        # first, or a Paired deck falls through to the UNRESOLVED case below
-        # and is wrongly told the back decision hasn't been made yet, even
-        # though it has (Paired Backs). Paired calibration itself isn't
-        # implemented yet (a later milestone); this is wording only, and the
-        # deck stays exactly as blocked here as it already was.
-        return (
-            "Paired Backs calibration isn't available yet.",
-            "This deck uses Paired Backs. Calibrating individual back pages "
-            "isn't supported in this version yet.",
-        )
-    if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
+    # shared_back_status is scoped to the zero/one-BACK-page decision
+    # only (find_cards_state.py's own docstring) and collapses to
+    # UNRESOLVED for 2+ BACK pages too -- back_mode is not PAIRED below
+    # excludes that case, letting Paired Backs instead fall through to the
+    # ordinary click-progress flow this function already shares between
+    # Cards and Shared Back, rather than being wrongly told its (already
+    # made) back decision "hasn't been decided yet".
+    if step is WorkflowStep.CALIBRATE_BACK and back_mode is not BackMode.PAIRED and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
             return (
                 "This deck is Front Only.",
@@ -623,7 +723,9 @@ def calibrate_guidance_text(
             "page or confirm this deck has none — Calibrate can't continue "
             "until that's decided.",
         )
-    subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
+    # "back design" only for Shared Back's single representative card;
+    # Paired Backs is full-grid, same click semantics as Fronts.
+    subject = "back design" if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.SHARED else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:
             return (
@@ -632,6 +734,16 @@ def calibrate_guidance_text(
                 f"geometry applies to all {front_page_count} selected "
                 "front pages — click Start Over if you'd like to "
                 f"remeasure it.{_grid_clause(target, page_size)}"
+                f"{ungauged_axis_warning(target, page_size)}",
+            )
+        if back_mode is BackMode.PAIRED:
+            noun = "page" if back_page_count == 1 else "pages"
+            return (
+                "Paired Backs calibration complete",
+                f"Calibrated using page {target.calibrated_page_num}. This "
+                f"geometry applies to all {back_page_count} Back {noun} "
+                "— click Start Over if you'd like to remeasure it."
+                f"{_grid_clause(target, page_size)}"
                 f"{ungauged_axis_warning(target, page_size)}",
             )
         return (
@@ -666,19 +778,26 @@ def calibrate_status_text(
     shared_back_status: SharedBackStatus = SharedBackStatus.ASSIGNED,
     page_size: Optional[tuple[float, float]] = None,
     back_mode: BackMode = BackMode.SHARED,
+    back_page_count: int = 0,
 ) -> str:
-    if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.PAIRED:
-        return "Paired Backs calibration isn't available yet — this version doesn't support it."
-    if step is WorkflowStep.CALIBRATE_BACK and shared_back_status is not SharedBackStatus.ASSIGNED:
+    if step is WorkflowStep.CALIBRATE_BACK and back_mode is not BackMode.PAIRED and shared_back_status is not SharedBackStatus.ASSIGNED:
         if shared_back_status is SharedBackStatus.CONFIRMED_NONE:
             return "This deck is Front Only — nothing to calibrate. Continue to Review Cards."
         return "Back hasn't been decided yet — go back to Select Card Pages to resolve it."
-    subject = "back design" if step is WorkflowStep.CALIBRATE_BACK else "card"
+    subject = "back design" if step is WorkflowStep.CALIBRATE_BACK and back_mode is BackMode.SHARED else "card"
     if target.is_complete:
         if step is WorkflowStep.CALIBRATE_CARDS:
             return (
                 f"Calibrated from page {target.calibrated_page_num} — "
                 f"applies to all {front_page_count} front pages. "
+                f"Click Start Over to remeasure.{_grid_clause(target, page_size)}"
+                f"{ungauged_axis_warning(target, page_size)}"
+            )
+        if back_mode is BackMode.PAIRED:
+            noun = "page" if back_page_count == 1 else "pages"
+            return (
+                f"Calibrated from page {target.calibrated_page_num} — applies "
+                f"to all {back_page_count} Back {noun}. "
                 f"Click Start Over to remeasure.{_grid_clause(target, page_size)}"
                 f"{ungauged_axis_warning(target, page_size)}"
             )

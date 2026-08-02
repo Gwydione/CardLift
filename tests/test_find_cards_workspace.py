@@ -232,4 +232,71 @@ class TestPairedModeSuppressesNoBackPrompt:
         workspace._refresh()
         workspace._on_confirm_no_back()
         assert workspace._back_summary_label.text() == "Front Only — no Back Pages."
+
+
+class TestSingleBackPageIntentControl:
+    """Approved design correction: exactly one BACK page is genuinely
+    ambiguous (Shared Back vs. a one-page Paired Backs deck), so the Deck
+    Summary gets a conditional toggle -- shown only at that exact count,
+    reading the *other* mode's name since clicking it switches to that
+    reading."""
+
+    def test_hidden_with_zero_back_pages(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace._refresh()
+        assert workspace._single_back_intent_btn.isVisibleTo(workspace) is False
+
+    def test_shown_with_exactly_one_back_page(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        assert workspace._single_back_intent_btn.isVisibleTo(workspace) is True
+
+    def test_hidden_with_two_or_more_back_pages(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(2, PageRole.FRONT)
+        workspace.state.set_role(4, PageRole.BACK)
+        workspace.state.set_role(5, PageRole.BACK)
+        workspace._refresh()
+        assert workspace._single_back_intent_btn.isVisibleTo(workspace) is False
+
+    def test_default_wording_offers_paired_back_page(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        assert workspace._single_back_intent_btn.text() == "Use as Paired Back Page instead"
+
+    def test_wording_flips_once_marked_paired(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        workspace._on_single_back_intent_toggled()
+        assert workspace._single_back_intent_btn.text() == "Use as Shared Back instead"
+
+    def test_clicking_switches_back_mode_to_paired(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        workspace._on_single_back_intent_toggled()
+        assert workspace.state.back_mode().name == "PAIRED"
+        assert workspace._back_summary_label.text() == "Paired Back Page: page 8."
+
+    def test_clicking_twice_returns_to_shared(self, workspace: FindCardsWorkspace) -> None:
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        workspace._on_single_back_intent_toggled()
+        workspace._on_single_back_intent_toggled()
+        assert workspace.state.back_mode().name == "SHARED"
+        assert workspace._back_summary_label.text() == "Shared Back: page 8."
+
+    def test_shared_back_flow_unaffected_when_left_untouched(self, workspace: FindCardsWorkspace) -> None:
+        """Regression: a plain Shared Back deck (the overwhelming common
+        case) must look exactly as it did before this control existed,
+        for anyone who never clicks it."""
+        workspace.state.set_role(1, PageRole.FRONT)
+        workspace.state.set_role(8, PageRole.BACK)
+        workspace._refresh()
+        assert workspace.state.back_mode().name == "SHARED"
+        assert workspace._back_summary_label.text() == "Shared Back: page 8."
         assert workspace._confirm_no_back_btn.isVisibleTo(workspace) is False
