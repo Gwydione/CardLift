@@ -120,6 +120,14 @@ _TILE_SPACING = 10
 INSPECT_RENDER_SCALE = REVIEW_RENDER_SCALE * 3
 INSPECT_MARGIN_PT = 24.0
 
+# Paired Backs' side-by-side inspection shows two context-margined crops at
+# once, so INSPECT_MARGIN_PT's neighboring-card content (fine for one image)
+# doubles up and competes with the actual front/back comparison. This floor
+# keeps a sliver of page context around each crop -- enough to still judge
+# placement -- even on a very tight-gap deck where the neighbor-safe margin
+# would otherwise round down to nothing.
+PAIRED_INSPECT_MARGIN_FLOOR_PT = 4.0
+
 _CONTROL_BUTTON_STYLE = f"""
 QPushButton {{
     padding: 6px 14px;
@@ -162,7 +170,19 @@ class _CardTile(QWidget):
     confidence shouldn't depend on a user incidentally discovering it, but
     it intensifies on hover so the interactivity still reads as intentional
     (DESIGN_SYSTEM.md). It's a distinct click target so the existing
-    toggle-inclusion click is completely unchanged."""
+    toggle-inclusion click is completely unchanged.
+
+    PAIRED BACKS: THE GLYPH ITSELF SIGNALS THE RICHER INTERACTION
+    ------------------------------------------------------------------
+    Manual testing found that a tooltip alone doesn't fix discoverability
+    here -- a tooltip only pays off once someone is already hovering with
+    a reason to. `is_paired` (only ever True for Paired Backs cards) swaps
+    the badge's resting glyph from the plain magnifying glass to two small
+    overlapping rounded "card" shapes, the same way _draw_badge() above
+    already swaps between a checkmark and an X depending on inclusion --
+    same badge circle, same size/position, same hover-intensify behavior,
+    same click target; only the glyph drawn inside changes, so a Paired
+    deck's tiles look different at rest, before any hover or click."""
 
     toggled = Signal(object)  # emits the ReviewCard this tile represents
     look_closer_requested = Signal(object)  # emits the ReviewCard
@@ -170,18 +190,25 @@ class _CardTile(QWidget):
     _LOOK_CLOSER_RADIUS = 9
     _LOOK_CLOSER_MARGIN = 4
 
-    def __init__(self, card: ReviewCard, pixmap: QPixmap, included: bool, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, card: ReviewCard, pixmap: QPixmap, included: bool, is_paired: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.card = card
         self._included = included
         self._pixmap = pixmap
         self._hovered = False
+        self._is_paired = is_paired
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
 
         thumb_h = round(_TILE_SIZE * pixmap.height() / pixmap.width()) if pixmap.width() else _TILE_SIZE
         self.setFixedSize(_TILE_SIZE, thumb_h)
-        self.setToolTip(f"PDF page {card.page_num} — look closer or toggle include/exclude")
+        if is_paired:
+            self.setToolTip(f"PDF page {card.page_num} — compare front and paired back, or toggle include/exclude")
+        else:
+            self.setToolTip(f"PDF page {card.page_num} — look closer or toggle include/exclude")
 
     def set_included(self, included: bool) -> None:
         if included != self._included:
@@ -260,16 +287,43 @@ class _CardTile(QWidget):
         painter.setPen(QPen(color, 1.5))
         painter.drawEllipse(look_rect)
 
-        # A plain magnifying-glass glyph (lens + handle) -- legible without
-        # a word, and avoids a new icon asset dependency.
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self._is_paired:
+            self._draw_paired_cards_glyph(painter, look_rect, color)
+        else:
+            self._draw_magnifying_glass_glyph(painter, look_rect)
+
+    @staticmethod
+    def _draw_magnifying_glass_glyph(painter: QPainter, look_rect) -> None:  # noqa: ANN001 -- QRect
+        """A plain magnifying-glass glyph (lens + handle) -- legible
+        without a word, and avoids a new icon asset dependency. Every
+        mode except Paired Backs (see _draw_paired_cards_glyph())."""
         lens_r = 3
         lens_center = QPoint(look_rect.center().x() - 1, look_rect.center().y() - 1)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(lens_center, lens_r, lens_r)
         painter.drawLine(
             lens_center.x() + 2, lens_center.y() + 2,
             look_rect.right() - 3, look_rect.bottom() - 3,
         )
+
+    @staticmethod
+    def _draw_paired_cards_glyph(painter: QPainter, look_rect, color: QColor) -> None:  # noqa: ANN001 -- QRect
+        """Two small overlapping rounded-rect "cards" -- Paired Backs
+        only (see class docstring, "PAIRED BACKS: THE GLYPH ITSELF
+        SIGNALS THE RICHER INTERACTION"). Drawn back-card-first so the
+        front card's fill occludes the overlap, reading as one card
+        sitting slightly in front of another."""
+        cx, cy = look_rect.center().x(), look_rect.center().y()
+        card_w, card_h = 6, 8
+        back_rect = QRect(round(cx - card_w / 2 + 2), round(cy - card_h / 2 + 2), card_w, card_h)
+        front_rect = QRect(round(cx - card_w / 2 - 2), round(cy - card_h / 2 - 2), card_w, card_h)
+
+        painter.setPen(QPen(color, 1.2))
+        painter.drawRoundedRect(back_rect, 1.5, 1.5)
+
+        painter.setBrush(QColor(255, 255, 255, 215))
+        painter.drawRoundedRect(front_rect, 1.5, 1.5)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
 
 class _CardInspector(QWidget):
@@ -286,7 +340,20 @@ class _CardInspector(QWidget):
     Review's own job of building confidence through sampling rather than
     demanding exhaustive inspection. Position is instead conveyed only by
     which of Previous/Next is enabled and by the source page label.
-    """
+
+    PAIRED BACKS: A SECOND IMAGE, NOT A SECOND FEATURE
+    -----------------------------------------------------
+    For Paired Backs, the review question stops being "is this crop
+    right" and becomes "does this front correspond to the right back" --
+    a relationship the front-only grid/inspector can never show. Rather
+    than build a separate pairing UI, show_card() optionally takes a
+    second pixmap for the paired back, displayed side by side with the
+    front (front left, back right) at comparable scale, reusing this same
+    overlay, the same Next/Previous stepping, and the same on-demand
+    rendering discipline. When no back pixmap is given (Front Only,
+    Shared Back, or this card simply hasn't been inspected yet), the
+    layout is pixel-identical to before this feature existed -- the
+    second image slot stays hidden and _image_label alone fills the row."""
 
     closed = Signal()
     previous_requested = Signal()
@@ -299,6 +366,7 @@ class _CardInspector(QWidget):
         self.setStyleSheet(f"_CardInspector {{ background: {BG_WORKSPACE}; }}")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._pixmap: Optional[QPixmap] = None
+        self._back_pixmap: Optional[QPixmap] = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -319,15 +387,28 @@ class _CardInspector(QWidget):
         header.addWidget(close_btn)
         outer.addLayout(header)
 
+        _image_style = f"background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px;"
+        images_row = QHBoxLayout()
+        images_row.setSpacing(14)
+
         self._image_label = QLabel()
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._image_label.setStyleSheet(
-            f"background: {BG_CARD}; border: 1px solid {BORDER_CARD}; border-radius: 8px;"
-        )
-        outer.addWidget(self._image_label, 1)
+        self._image_label.setStyleSheet(_image_style)
+        images_row.addWidget(self._image_label, 1)
+
+        # Hidden unless show_card() is given a back_pixmap -- see class
+        # docstring, "PAIRED BACKS: A SECOND IMAGE, NOT A SECOND FEATURE".
+        self._back_image_label = QLabel()
+        self._back_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._back_image_label.setStyleSheet(_image_style)
+        self._back_image_label.setVisible(False)
+        images_row.addWidget(self._back_image_label, 1)
+
+        outer.addLayout(images_row, 1)
 
         self._crop_caption = QLabel("The area inside the outline is what CardLift will export.")
         self._crop_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._crop_caption.setWordWrap(True)
         self._crop_caption.setStyleSheet(
             f"color: {TEXT_CAPTION_MUTED}; font-size: {FONT_CAPTION}px; background: transparent;"
         )
@@ -359,12 +440,31 @@ class _CardInspector(QWidget):
 
     def show_card(
         self, pixmap: QPixmap, page_num: int, included: bool, has_prev: bool, has_next: bool,
+        back_pixmap: Optional[QPixmap] = None, back_ok: bool = True,
     ) -> None:
+        """`back_pixmap` is None for every mode except Paired Backs, which
+        keeps this identical to pre-Paired-Backs behavior for Front Only/
+        Shared Back. `back_ok` distinguishes an actual paired-back crop
+        from an honest placeholder (no pairing found, or it couldn't be
+        rendered) -- see ReviewWorkspace._render_paired_back_inspect_
+        pixmap(), the only caller that ever passes back_ok=False."""
         self._pixmap = pixmap
+        self._back_pixmap = back_pixmap
         self._page_label.setText(f"PDF page {page_num}")
         self._prev_btn.setEnabled(has_prev)
         self._next_btn.setEnabled(has_next)
         self._toggle_btn.setText("Exclude this card" if included else "Include this card")
+        self._back_image_label.setVisible(back_pixmap is not None)
+        if back_pixmap is None:
+            self._crop_caption.setText("The area inside the outline is what CardLift will export.")
+        elif back_ok:
+            self._crop_caption.setText(
+                "Front (left) and its paired back (right). The area inside each outline is what CardLift will export."
+            )
+        else:
+            self._crop_caption.setText(
+                "Front (left). No paired back could be found or rendered for this card."
+            )
         self._apply_scaled_pixmap()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
@@ -372,14 +472,19 @@ class _CardInspector(QWidget):
         self._apply_scaled_pixmap()
 
     def _apply_scaled_pixmap(self) -> None:
-        if self._pixmap is None:
+        self._scale_into(self._image_label, self._pixmap)
+        self._scale_into(self._back_image_label, self._back_pixmap)
+
+    @staticmethod
+    def _scale_into(label: QLabel, pixmap: Optional[QPixmap]) -> None:
+        if pixmap is None:
             return
-        available = self._image_label.contentsRect().size()
+        available = label.contentsRect().size()
         if available.width() > 0 and available.height() > 0:
-            scaled = self._pixmap.scaled(
+            scaled = pixmap.scaled(
                 available, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
             )
-            self._image_label.setPixmap(scaled)
+            label.setPixmap(scaled)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
@@ -664,16 +769,16 @@ class ReviewWorkspace(QWidget):
         """The one place Review Cards explains back-related state --
         Front Only and Shared Back's branches are unchanged; Paired Backs
         gets its own honest caption rather than the panel disappearing.
-        There is no single "the back" to preview for Paired Backs
-        (calibrate_state.back was never calibrated for this mode, and
-        per-card back pairing is a later milestone -- docs/design/
-        MULTIPLE_BACK_MODES.md's Phase 3 scope), so this stays
-        caption-only, the same treatment Front Only already uses, with no
-        thumbnail."""
+        There is no single "the back" to preview here the way Shared
+        Back's one thumbnail works (calibrate_state.back was never
+        calibrated for this mode, and each card can have a different
+        back) -- per-card pairing is instead shown in Card Inspection
+        (see _render_paired_back_inspect_pixmap()), so this caption
+        points there rather than claiming it doesn't exist."""
         if back_mode is BackMode.PAIRED:
             self._back_thumb_label.setVisible(False)
             self._back_caption.setText(
-                "Paired Backs — back-card review isn't available yet. Showing front cards only."
+                "Paired Backs — click “look closer” on any card below to compare it with its paired back."
             )
             return
 
@@ -700,6 +805,7 @@ class ReviewWorkspace(QWidget):
         assert self._renderer is not None
         grid_geometry = geometry.to_grid_geometry()
         self._grid_geometry = grid_geometry
+        is_paired = self.find_cards_state.back_mode() is BackMode.PAIRED
 
         pages: list[int] = []
         for card in card_list:
@@ -723,7 +829,7 @@ class ReviewWorkspace(QWidget):
             page_grid.setSpacing(_TILE_SPACING)
             for card in page_cards:
                 pixmap = self._crop_pixmap(page_image, grid_geometry, card)
-                tile = _CardTile(card, pixmap, self.review_state.is_included(card))
+                tile = _CardTile(card, pixmap, self.review_state.is_included(card), is_paired=is_paired)
                 tile.toggled.connect(self._on_tile_toggled)
                 tile.look_closer_requested.connect(self._on_look_closer_requested)
                 self._tiles[card] = tile
@@ -804,13 +910,26 @@ class ReviewWorkspace(QWidget):
         if self._inspecting_index is None:
             return
         card = self._card_list[self._inspecting_index]
-        pixmap = self._render_inspect_pixmap(card)
+        is_paired = self.find_cards_state.back_mode() is BackMode.PAIRED
+        margin_pt = INSPECT_MARGIN_PT
+        paired_geometry = self.calibrate_state.paired_back.geometry if is_paired else None
+        if is_paired and self._grid_geometry is not None and paired_geometry is not None:
+            margin_pt = self._paired_inspect_margin_pt(
+                self._grid_geometry, paired_geometry.to_grid_geometry(),
+            )
+        pixmap = self._render_inspect_pixmap(card, margin_pt)
+        back_pixmap: Optional[QPixmap] = None
+        back_ok = True
+        if is_paired:
+            back_pixmap, back_ok = self._render_paired_back_inspect_pixmap(card, margin_pt)
         self._inspector.show_card(
             pixmap,
             card.page_num,
             self.review_state.is_included(card),
             has_prev=self._inspecting_index > 0,
             has_next=self._inspecting_index < len(self._card_list) - 1,
+            back_pixmap=back_pixmap,
+            back_ok=back_ok,
         )
 
     def _inspect_previous(self) -> None:
@@ -842,24 +961,77 @@ class ReviewWorkspace(QWidget):
                 return None
         return self._inspect_page_cache.get(page_num)
 
-    def _render_inspect_pixmap(self, card: ReviewCard) -> QPixmap:
+    def _render_inspect_pixmap(self, card: ReviewCard, margin_pt: float = INSPECT_MARGIN_PT) -> QPixmap:
         page_image = self._inspect_page_image(card.page_num)
         if page_image is None or self._grid_geometry is None:
-            blank = Image.new("RGB", (200, 280), (230, 230, 230))
-            return _pil_to_pixmap(blank)
-
+            return self._blank_inspect_pixmap()
         region, card_rect = self._inspect_cropper.crop_card_with_margin(
-            page_image, self._grid_geometry, _ZERO_TRIM, card.row, card.col, INSPECT_MARGIN_PT,
+            page_image, self._grid_geometry, _ZERO_TRIM, card.row, card.col, margin_pt,
         )
+        return self._outline_crop_pixmap(region, card_rect)
+
+    @staticmethod
+    def _paired_inspect_margin_pt(front_geometry: GridGeometry, back_geometry: GridGeometry) -> float:
+        """Context margin for Paired Backs' side-by-side inspection, used
+        symmetrically for both the front and back crop. Derived from the
+        tighter of either geometry's own gap (not a blind fixed value) so
+        the margin never actually reaches into a neighboring cell,
+        regardless of how tight or loose this particular deck's grid is,
+        while PAIRED_INSPECT_MARGIN_FLOOR_PT keeps at least a sliver of
+        context visible even on a near-zero-gap deck. Never exceeds
+        INSPECT_MARGIN_PT -- this only ever shrinks the existing margin,
+        never grows it."""
+        tightest_gap = min(front_geometry.gap_x, front_geometry.gap_y, back_geometry.gap_x, back_geometry.gap_y)
+        return max(PAIRED_INSPECT_MARGIN_FLOOR_PT, min(INSPECT_MARGIN_PT, tightest_gap / 2.0))
+
+    def _render_paired_back_inspect_pixmap(
+        self, card: ReviewCard, margin_pt: float = INSPECT_MARGIN_PT
+    ) -> tuple[QPixmap, bool]:
+        """(pixmap, ok) for `card`'s paired back, only meaningful while
+        back_mode() is PAIRED. The back page is resolved via find_cards_
+        state.paired_back_page_for() (ordered-index pairing, Phase 1) and
+        cropped at the *same* (row, col) on calibrate_state.paired_back's
+        own, independently-calibrated geometry -- Front and Back are only
+        guaranteed to share row/column topology (validated before Review
+        Cards is ever reachable), not margins, card size, or gaps, so the
+        cell index is the one thing safe to reuse as-is.
+
+        ok is False whenever no paired back could be resolved or
+        rendered -- an unbalanced deck reached via a stale sidebar jump,
+        or a render failure -- in which case pixmap is the same honest
+        gray placeholder _render_inspect_pixmap() already falls back to,
+        never a crash or a silently wrong image."""
+        back_page_num = self.find_cards_state.paired_back_page_for(card.page_num)
+        paired_geometry = self.calibrate_state.paired_back.geometry
+        if back_page_num is None or paired_geometry is None:
+            return self._blank_inspect_pixmap(), False
+        back_page_image = self._inspect_page_image(back_page_num)
+        if back_page_image is None:
+            return self._blank_inspect_pixmap(), False
+        region, card_rect = self._inspect_cropper.crop_card_with_margin(
+            back_page_image, paired_geometry.to_grid_geometry(), _ZERO_TRIM, card.row, card.col, margin_pt,
+        )
+        return self._outline_crop_pixmap(region, card_rect), True
+
+    @staticmethod
+    def _blank_inspect_pixmap() -> QPixmap:
+        blank = Image.new("RGB", (200, 280), (230, 230, 230))
+        return _pil_to_pixmap(blank)
+
+    @staticmethod
+    def _outline_crop_pixmap(region: Image.Image, card_rect: tuple[int, int, int, int]) -> QPixmap:
+        """Shared visual treatment for an inspected crop-with-margin
+        image -- dims everything outside the crop outline (reads as
+        reference, not exported output; see UI_DECISIONS.md "Card
+        Inspection") and draws the crop rectangle in the accent color.
+        Used for both the front card and (Paired Backs) its paired back,
+        so the two read as the same kind of inspection rather than two
+        different features bolted together."""
         pixmap = _pil_to_pixmap(region)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         x0, y0, x1, y1 = card_rect
 
-        # Soften the surrounding page context so it reads as reference, not
-        # exported output -- same dim treatment _CardTile uses for excluded
-        # cards, applied here to everything outside the crop outline instead
-        # of the whole tile (see UI_DECISIONS.md "Card Inspection").
         full_rect = pixmap.rect()
         crop_rect = QRect(x0, y0, x1 - x0, y1 - y0)
         dim_region = QRegion(full_rect) - QRegion(crop_rect)

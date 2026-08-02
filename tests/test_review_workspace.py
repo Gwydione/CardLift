@@ -28,7 +28,14 @@ from deckforge.pdf_renderer import PDFRenderError
 from deckforge_gui.calibrate_state import CalibratedGeometry, CalibrateState
 from deckforge_gui.find_cards_state import FindCardsState, PageRole
 from deckforge_gui.review_state import ReviewCard, ReviewCardsState
-from deckforge_gui.review_workspace import INSPECT_RENDER_SCALE, REVIEW_RENDER_SCALE, ReviewWorkspace, _CardTile
+from deckforge_gui.review_workspace import (
+    INSPECT_MARGIN_PT,
+    INSPECT_RENDER_SCALE,
+    PAIRED_INSPECT_MARGIN_FLOOR_PT,
+    REVIEW_RENDER_SCALE,
+    ReviewWorkspace,
+    _CardTile,
+)
 
 SAMPLE_PDF = Path(__file__).resolve().parent.parent / "sample_decks" / "CardLift_Demo_Deck.pdf"
 
@@ -79,6 +86,25 @@ class _RenderCallSpy:
         return self._real(page_number, scale)
 
 
+class _CropCallSpy:
+    """Wraps a bound crop_card_with_margin() method, recording each call's
+    (geometry, row, col) -- lets tests assert Card Inspection's paired-back
+    rendering uses the *same* row/col as the front card, on the paired
+    back's own (possibly different) geometry, without hand-verifying pixel
+    output. margin_pt is recorded separately (rather than folded into
+    `calls`) so existing (geometry, row, col) unpacking is unaffected."""
+
+    def __init__(self, real_crop_card_with_margin) -> None:
+        self._real = real_crop_card_with_margin
+        self.calls: list[tuple] = []
+        self.margins: list[float] = []
+
+    def __call__(self, page_image, geometry, trim, row, col, margin_pt):
+        self.calls.append((geometry, row, col))
+        self.margins.append(margin_pt)
+        return self._real(page_image, geometry, trim, row, col, margin_pt)
+
+
 class TestLookCloserAffordance:
     """_CardTile now routes a click to one of two different signals
     depending on where on the tile it lands -- the existing
@@ -115,6 +141,112 @@ class TestLookCloserAffordance:
 
         assert toggled == [tile.card]
         assert look_closer == []
+
+
+class TestLookCloserGlyphSwapsForPairedBacks:
+    """Manual testing found a hover-only tooltip insufficient for
+    discoverability -- the look-closer badge's *resting* glyph itself
+    must signal "front and back" before any hover happens. is_paired
+    swaps only the glyph drawn inside the existing badge; the circle,
+    size, position, hover-intensify behavior, and click target are all
+    unchanged (TestLookCloserAffordance above already covers click
+    behavior generically -- the last test here confirms it stays
+    identical for a Paired tile specifically)."""
+
+    def _make_tile(self, is_paired: bool, included: bool = True) -> _CardTile:
+        pixmap = QPixmap(150, 210)
+        pixmap.fill(Qt.GlobalColor.white)
+        return _CardTile(ReviewCard(2, 0, 0), pixmap, included=included, is_paired=is_paired)
+
+    def test_paired_tile_draws_the_paired_cards_glyph(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=True)
+        calls: list[str] = []
+        original = _CardTile._draw_paired_cards_glyph
+
+        def spy(painter, look_rect, color):
+            calls.append("paired")
+            original(painter, look_rect, color)
+
+        _CardTile._draw_paired_cards_glyph = staticmethod(spy)
+        try:
+            tile.grab()
+        finally:
+            _CardTile._draw_paired_cards_glyph = staticmethod(original)
+        assert calls == ["paired"]
+
+    def test_front_only_and_shared_back_tile_draws_the_magnifying_glass(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=False)
+        calls: list[str] = []
+        original = _CardTile._draw_magnifying_glass_glyph
+
+        def spy(painter, look_rect):
+            calls.append("glass")
+            original(painter, look_rect)
+
+        _CardTile._draw_magnifying_glass_glyph = staticmethod(spy)
+        try:
+            tile.grab()
+        finally:
+            _CardTile._draw_magnifying_glass_glyph = staticmethod(original)
+        assert calls == ["glass"]
+
+    def test_paired_tile_never_draws_the_magnifying_glass(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=True)
+        calls: list[str] = []
+        original = _CardTile._draw_magnifying_glass_glyph
+
+        def spy(painter, look_rect):
+            calls.append("glass")
+            original(painter, look_rect)
+
+        _CardTile._draw_magnifying_glass_glyph = staticmethod(spy)
+        try:
+            tile.grab()
+        finally:
+            _CardTile._draw_magnifying_glass_glyph = staticmethod(original)
+        assert calls == []
+
+    def test_non_paired_tile_never_draws_the_paired_cards_glyph(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=False)
+        calls: list[str] = []
+        original = _CardTile._draw_paired_cards_glyph
+
+        def spy(painter, look_rect, color):
+            calls.append("paired")
+            original(painter, look_rect, color)
+
+        _CardTile._draw_paired_cards_glyph = staticmethod(spy)
+        try:
+            tile.grab()
+        finally:
+            _CardTile._draw_paired_cards_glyph = staticmethod(original)
+        assert calls == []
+
+    def test_paired_tooltip_explains_the_comparison(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=True)
+        assert tile.toolTip() == "PDF page 2 — compare front and paired back, or toggle include/exclude"
+
+    def test_non_paired_tooltip_wording_unchanged(self, qapp: QApplication) -> None:
+        tile = self._make_tile(is_paired=False)
+        assert tile.toolTip() == "PDF page 2 — look closer or toggle include/exclude"
+
+    def test_click_behavior_unchanged_for_a_paired_tile(self, qapp: QApplication) -> None:
+        """The glyph swap must not affect which click -- the look-closer
+        corner vs. anywhere else -- fires which signal."""
+        tile = self._make_tile(is_paired=True)
+        toggled: list[ReviewCard] = []
+        look_closer: list[ReviewCard] = []
+        tile.toggled.connect(toggled.append)
+        tile.look_closer_requested.connect(look_closer.append)
+
+        corner = tile._look_closer_rect(tile.rect()).center()
+        QTest.mouseClick(tile, Qt.MouseButton.LeftButton, pos=corner)
+        assert look_closer == [tile.card]
+        assert toggled == []
+
+        QTest.mouseClick(tile, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        assert toggled == [tile.card]
+        assert look_closer == [tile.card]  # unchanged from the first click
 
 
 class TestOpeningAndClosingTheInspector:
@@ -384,7 +516,7 @@ class TestPairedBacksReachesReviewCards:
         assert workspace._back_panel.isHidden() is False
         assert workspace._back_thumb_label.isHidden() is True
         assert workspace._back_caption.text() == (
-            "Paired Backs — back-card review isn't available yet. Showing front cards only."
+            "Paired Backs — click “look closer” on any card below to compare it with its paired back."
         )
 
     def test_front_only_panel_regression(self, workspace: ReviewWorkspace) -> None:
@@ -470,6 +602,315 @@ class TestOnePageFrontOneBackPairedDeckReachesReviewCards:
         assert workspace._back_panel.isHidden() is False
         assert workspace._back_thumb_label.isHidden() is True
         assert workspace._back_caption.text() == (
-            "Paired Backs — back-card review isn't available yet. Showing front cards only."
+            "Paired Backs — click “look closer” on any card below to compare it with its paired back."
         )
         assert workspace._continue_btn.isEnabled() is True
+
+
+class TestPairedInspectMarginFormula:
+    """_paired_inspect_margin_pt() derives the reduced side-by-side margin
+    from the tighter geometry's own gap, rather than a blind fixed value,
+    so it's guaranteed to never reach a neighboring cell regardless of a
+    given deck's spacing. Tested directly against GridGeometry rather than
+    through a full workspace, since this is pure arithmetic."""
+
+    def _grid(self, gap: float) -> "GridGeometry":
+        return CalibratedGeometry(
+            left=27.0, top=139.5, card_width=180.0, card_height=252.0,
+            gap_x=gap, gap_y=gap, gap_x_derived=False, gap_y_derived=False,
+        ).to_grid_geometry()
+
+    def test_wide_gap_clamps_to_the_existing_constant(self) -> None:
+        wide = self._grid(gap=60.0)  # half the gap (30) exceeds INSPECT_MARGIN_PT
+        assert ReviewWorkspace._paired_inspect_margin_pt(wide, wide) == INSPECT_MARGIN_PT
+
+    def test_moderate_gap_uses_half_the_tighter_gap(self) -> None:
+        moderate = self._grid(gap=20.0)  # half (10) sits between the floor and the cap
+        assert ReviewWorkspace._paired_inspect_margin_pt(moderate, moderate) == 10.0
+
+    def test_tight_gap_clamps_to_the_floor(self) -> None:
+        tight = self._grid(gap=2.0)  # half (1.0) would otherwise round to almost nothing
+        assert ReviewWorkspace._paired_inspect_margin_pt(tight, tight) == PAIRED_INSPECT_MARGIN_FLOOR_PT
+
+    def test_uses_the_tighter_of_front_and_back_gaps(self) -> None:
+        loose_front = self._grid(gap=60.0)
+        tight_back = self._grid(gap=6.0)  # half (3.0) is below the floor
+        assert ReviewWorkspace._paired_inspect_margin_pt(loose_front, tight_back) == PAIRED_INSPECT_MARGIN_FLOOR_PT
+        # Order must not matter -- the tighter geometry governs either way.
+        assert ReviewWorkspace._paired_inspect_margin_pt(tight_back, loose_front) == PAIRED_INSPECT_MARGIN_FLOOR_PT
+
+
+class TestPairedBackCardInspection:
+    """Phase 4: Card Inspection extended for Paired Backs -- the inspected
+    front and its paired back appear side by side, resolved via
+    find_cards_state.paired_back_page_for() and cropped at the same
+    row/col on calibrate_state.paired_back's own, independently
+    calibrated geometry (Front and Back are only guaranteed to share
+    row/column topology, not margins/card size/gaps -- see
+    docs/design/MULTIPLE_BACK_MODES.md's Initial Assumptions)."""
+
+    BACK_PAGE = 1
+
+    def _one_page_paired(self, workspace: ReviewWorkspace, back_geometry: CalibratedGeometry = FRONT_GEOMETRY) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.mark_single_back_page_as_paired()
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = back_geometry
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+    def test_paired_back_resolution_shows_both_images(self, workspace: ReviewWorkspace) -> None:
+        self._one_page_paired(workspace)
+        workspace._on_look_closer_requested(workspace._card_list[0])
+        assert workspace._inspector._back_image_label.isHidden() is False
+        assert workspace._inspector._back_pixmap is not None
+        assert workspace._inspector._crop_caption.text() == (
+            "Front (left) and its paired back (right). The area inside each outline is what CardLift will export."
+        )
+
+    def test_grid_tiles_are_wired_as_paired(self, workspace: ReviewWorkspace) -> None:
+        """_render_grid() must thread back_mode() into every tile it
+        builds, not just the ones opened via the inspector -- the glyph
+        swap has to be visible on every card at rest, not only on demand."""
+        self._one_page_paired(workspace)
+        assert len(workspace._tiles) > 0
+        for tile in workspace._tiles.values():
+            assert tile._is_paired is True
+
+    def test_same_row_and_column_used_for_the_paired_back(self, workspace: ReviewWorkspace) -> None:
+        """The core correctness guarantee: the back crop must come from
+        the *same* (row, col) as the front, on the paired back's own
+        geometry -- not the front's geometry reused, and not always
+        (0, 0)."""
+        # Deliberately different origin from FRONT_GEOMETRY, so a bug that
+        # accidentally reused the front's geometry for the back crop
+        # would produce a different (and therefore caught) call.
+        back_geometry = CalibratedGeometry(
+            left=50.0, top=60.0, card_width=180.0, card_height=252.0,
+            gap_x=9.0, gap_y=9.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        self._one_page_paired(workspace, back_geometry=back_geometry)
+        spy = _CropCallSpy(workspace._inspect_cropper.crop_card_with_margin)
+        workspace._inspect_cropper.crop_card_with_margin = spy
+
+        # A card other than (0, 0), so "always crops the corner cell"
+        # would also be caught.
+        card = next(c for c in workspace._card_list if (c.row, c.col) != (0, 0))
+        workspace._on_look_closer_requested(card)
+
+        assert len(spy.calls) == 2
+        front_geom, front_row, front_col = spy.calls[0]
+        back_geom, back_row, back_col = spy.calls[1]
+        assert (front_row, front_col) == (card.row, card.col)
+        assert (back_row, back_col) == (card.row, card.col)
+        assert front_geom == workspace._grid_geometry
+        assert back_geom == back_geometry.to_grid_geometry()
+        assert front_geom != back_geom  # genuinely independent geometries
+
+    def test_one_page_paired_deck(self, workspace: ReviewWorkspace) -> None:
+        self._one_page_paired(workspace)
+        assert workspace.find_cards_state.back_mode().name == "PAIRED"
+        assert workspace.find_cards_state.front_page_count() == 1
+        assert len(workspace.find_cards_state.back_pages()) == 1
+        card = workspace._card_list[0]
+        pixmap, ok = workspace._render_paired_back_inspect_pixmap(card)
+        assert ok is True
+        assert pixmap is not None
+
+    def test_multi_page_paired_deck_resolves_a_different_back_per_front_page(self, workspace: ReviewWorkspace) -> None:
+        """Two Front pages, two Back pages -- the second Back page is
+        deliberately a page number outside the real 3-page sample PDF, so
+        this single scenario also proves the per-front-page resolution is
+        genuinely independent (front page 2 gets a real, renderable back;
+        front page 3 gets one that fails to render) rather than always
+        reusing whichever back page resolved first."""
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.set_role(4, PageRole.BACK)  # out of range for the real sample PDF
+        assert find_cards.back_mode().name == "PAIRED"
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        card_on_page_2 = next(c for c in workspace._card_list if c.page_num == FRONT_PAGE)
+        card_on_page_3 = next(c for c in workspace._card_list if c.page_num == 3)
+
+        assert find_cards.paired_back_page_for(FRONT_PAGE) == self.BACK_PAGE
+        assert find_cards.paired_back_page_for(3) == 4
+
+        _, ok_2 = workspace._render_paired_back_inspect_pixmap(card_on_page_2)
+        _, ok_3 = workspace._render_paired_back_inspect_pixmap(card_on_page_3)
+        assert ok_2 is True   # page 1 is real -- renders successfully
+        assert ok_3 is False  # page 4 doesn't exist -- graceful fallback
+
+    def test_missing_pair_fallback_when_counts_unbalanced(self, workspace: ReviewWorkspace) -> None:
+        """paired_back_page_for() itself returns None (the front page's
+        index has no corresponding Back page) -- a different failure mode
+        than an unrenderable page number, and one review_ready() does not
+        itself prevent reaching (see review_state.review_ready()'s PAIRED
+        branch, which does not check paired_page_counts_balanced())."""
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(3, PageRole.FRONT)
+        find_cards.set_role(self.BACK_PAGE, PageRole.BACK)
+        find_cards.mark_single_back_page_as_paired()
+        assert find_cards.paired_page_counts_balanced() is False
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.paired_back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.paired_back.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.paired_back.calibrated_page_num = self.BACK_PAGE
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()  # must not raise despite the mismatch
+
+        card_on_page_3 = next(c for c in workspace._card_list if c.page_num == 3)
+        assert find_cards.paired_back_page_for(3) is None
+
+        pixmap, ok = workspace._render_paired_back_inspect_pixmap(card_on_page_3)
+        assert ok is False
+        assert pixmap is not None  # an honest placeholder, not None/a crash
+
+        workspace._on_look_closer_requested(card_on_page_3)  # must not raise
+        assert workspace._inspector._back_image_label.isHidden() is False
+        assert "No paired back could be found" in workspace._inspector._crop_caption.text()
+
+    def test_front_and_back_receive_the_same_reduced_margin(self, workspace: ReviewWorkspace) -> None:
+        """The margin passed to crop_card_with_margin() must be identical
+        for both the front and back crop -- an asymmetric margin would
+        make the two previews look inconsistently framed, undermining the
+        side-by-side comparison this feature exists for. FRONT_GEOMETRY's
+        gap is 9.0 and this back geometry's is 6.0, so the *combined*
+        tightest gap (6.0) governs both, halved (3.0) and floored to
+        PAIRED_INSPECT_MARGIN_FLOOR_PT."""
+        back_geometry = CalibratedGeometry(
+            left=50.0, top=60.0, card_width=180.0, card_height=252.0,
+            gap_x=6.0, gap_y=6.0, gap_x_derived=True, gap_y_derived=True,
+        )
+        self._one_page_paired(workspace, back_geometry=back_geometry)
+        spy = _CropCallSpy(workspace._inspect_cropper.crop_card_with_margin)
+        workspace._inspect_cropper.crop_card_with_margin = spy
+
+        workspace._on_look_closer_requested(workspace._card_list[0])
+
+        assert len(spy.margins) == 2
+        front_margin, back_margin = spy.margins
+        assert front_margin == back_margin == PAIRED_INSPECT_MARGIN_FLOOR_PT
+
+    def test_next_previous_updates_both_previews(self, workspace: ReviewWorkspace) -> None:
+        """Advancing the logical card must re-render both sides -- not
+        just the front, leaving a stale back preview behind."""
+        self._one_page_paired(workspace)
+        spy = _CropCallSpy(workspace._inspect_cropper.crop_card_with_margin)
+        workspace._inspect_cropper.crop_card_with_margin = spy
+
+        workspace._on_look_closer_requested(workspace._card_list[0])
+        assert len(spy.calls) == 2  # one front, one back
+        first_card = workspace._card_list[0]
+        assert (spy.calls[0][1], spy.calls[0][2]) == (first_card.row, first_card.col)
+        assert (spy.calls[1][1], spy.calls[1][2]) == (first_card.row, first_card.col)
+
+        workspace._inspect_next()
+        assert len(spy.calls) == 4  # a fresh front+back pair, not reused
+        second_card = workspace._card_list[1]
+        assert (spy.calls[2][1], spy.calls[2][2]) == (second_card.row, second_card.col)
+        assert (spy.calls[3][1], spy.calls[3][2]) == (second_card.row, second_card.col)
+        assert second_card.row != first_card.row or second_card.col != first_card.col
+
+
+class TestFrontOnlyAndSharedBackInspectorRegression:
+    """Approved scope: Front Only and Shared Back's inspector behavior
+    must be exactly what it was before Card Inspection learned about
+    Paired Backs -- single image, no second slot, unchanged caption."""
+
+    def test_front_only_inspector_has_no_back_image(self, workspace: ReviewWorkspace) -> None:
+        _make_ready(workspace)
+        workspace._on_look_closer_requested(workspace._card_list[0])
+        assert workspace._inspector._back_image_label.isHidden() is True
+        assert workspace._inspector._back_pixmap is None
+        assert workspace._inspector._crop_caption.text() == (
+            "The area inside the outline is what CardLift will export."
+        )
+
+    def test_front_only_still_uses_the_full_inspect_margin(self, workspace: ReviewWorkspace) -> None:
+        """The reduced Paired Backs margin must never leak into Front
+        Only's single-image inspection -- FRONT_GEOMETRY's own gap (9.0)
+        would otherwise clamp the margin down from INSPECT_MARGIN_PT."""
+        _make_ready(workspace)
+        spy = _CropCallSpy(workspace._inspect_cropper.crop_card_with_margin)
+        workspace._inspect_cropper.crop_card_with_margin = spy
+
+        workspace._on_look_closer_requested(workspace._card_list[0])
+
+        assert spy.margins == [INSPECT_MARGIN_PT]
+
+    def test_front_only_grid_tiles_are_not_wired_as_paired(self, workspace: ReviewWorkspace) -> None:
+        _make_ready(workspace)
+        assert len(workspace._tiles) > 0
+        for tile in workspace._tiles.values():
+            assert tile._is_paired is False
+
+    def test_shared_back_inspector_has_no_back_image(self, workspace: ReviewWorkspace) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(1, PageRole.BACK)
+        assert find_cards.back_mode().name == "SHARED"
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.back.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.back.calibrated_page_num = 1
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        workspace._on_look_closer_requested(workspace._card_list[0])
+        assert workspace._inspector._back_image_label.isHidden() is True
+        assert workspace._inspector._back_pixmap is None
+        assert workspace._inspector._crop_caption.text() == (
+            "The area inside the outline is what CardLift will export."
+        )
+
+    def test_shared_back_still_uses_the_full_inspect_margin(self, workspace: ReviewWorkspace) -> None:
+        find_cards = workspace.find_cards_state
+        find_cards._roles.clear()
+        find_cards.set_role(FRONT_PAGE, PageRole.FRONT)
+        find_cards.set_role(1, PageRole.BACK)
+        assert find_cards.back_mode().name == "SHARED"
+
+        workspace.calibrate_state.cards.reset()
+        workspace.calibrate_state.back.reset()
+        workspace.calibrate_state.cards.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.cards.calibrated_page_num = FRONT_PAGE
+        workspace.calibrate_state.back.geometry = FRONT_GEOMETRY
+        workspace.calibrate_state.back.calibrated_page_num = 1
+        workspace.set_pdf(SAMPLE_PDF, 12)
+        workspace.on_shown()
+
+        spy = _CropCallSpy(workspace._inspect_cropper.crop_card_with_margin)
+        workspace._inspect_cropper.crop_card_with_margin = spy
+
+        workspace._on_look_closer_requested(workspace._card_list[0])
+
+        assert spy.margins == [INSPECT_MARGIN_PT]
